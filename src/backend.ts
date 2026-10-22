@@ -71,6 +71,7 @@ export interface SchemaObjects {
   views: ObjectInfo[];
   matviews: ObjectInfo[];
   functions: ObjectInfo[];
+  types: ObjectInfo[];
   sequences: ObjectInfo[];
 }
 
@@ -122,6 +123,21 @@ export interface ViewDetail {
   rules: { name: string; definition: string }[];
   /** View materializada já preenchida com dados. Views comuns: sempre true. */
   populated: boolean;
+}
+
+export interface TypeDetail {
+  name: string;
+  kind: "enum" | "composite" | "domain" | "range";
+  owner: string | null;
+  comment: string | null;
+  labels: string[];
+  attributes: { name: string; dataType: string }[];
+  baseType: string | null;
+  default: string | null;
+  notNull: boolean;
+  /** `definition` vem do servidor, ex.: CHECK ((VALUE > 0)). */
+  checks: { name: string; definition: string }[];
+  subtype: string | null;
 }
 
 export interface SequenceDetail {
@@ -287,6 +303,8 @@ export const pg = {
     call<TableDetail>("pg_table_detail", { sessionId, database, schema, table }),
   viewDetail: (sessionId: string, database: string, schema: string, view: string) =>
     call<ViewDetail>("pg_view_detail", { sessionId, database, schema, view }),
+  typeDetail: (sessionId: string, database: string, schema: string, name: string) =>
+    call<TypeDetail>("pg_type_detail", { sessionId, database, schema, name }),
   sequenceDetail: (sessionId: string, database: string, schema: string, name: string) =>
     call<SequenceDetail>("pg_sequence_detail", { sessionId, database, schema, name }),
   functionDetail: (sessionId: string, database: string, schema: string, name: string, identity: string) =>

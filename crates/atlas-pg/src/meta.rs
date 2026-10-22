@@ -5,7 +5,7 @@ use crate::connect::PgSession;
 use crate::error::map_error;
 use atlas_core::{
     ColumnInfo, ConstraintInfo, DatabaseError, DatabaseList, ErrorKind, IndexInfo, ObjectInfo, RoleInfo, RuleInfo,
-    FunctionDetail, SchemaObjects, SequenceDetail, TableDetail, TriggerInfo, ViewDetail,
+    FunctionDetail, SchemaObjects, SequenceDetail, TableDetail, TypeAttribute, TypeCheck, TypeDetail, TriggerInfo, ViewDetail,
 };
 
 pub async fn list_databases(s: &PgSession) -> Result<DatabaseList, DatabaseError> {
@@ -93,7 +93,26 @@ pub async fn list_objects(s: &PgSession, schema: &str) -> Result<SchemaObjects, 
         })
         .collect();
 
-    Ok(SchemaObjects { tables, views, matviews, functions, sequences })
+    // Tipos do schema: enum (e), domínio (d), faixa (r) e composto avulso (c cuja relação é do tipo 'c', e não de uma tabela).
+    let trows = s
+        .client
+        .query(
+            "SELECT t.typname::text, CASE t.typtype WHEN 'e' THEN 'enum' WHEN 'd' THEN 'domain' WHEN 'r' THEN 'range' ELSE 'composite' END, \
+                    pg_get_userbyid(t.typowner)::text, obj_description(t.oid, 'pg_type') \
+               FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace \
+              WHERE n.nspname = $1 AND (t.typtype IN ('e', 'd', 'r') \
+                    OR (t.typtype = 'c' AND EXISTS (SELECT 1 FROM pg_catalog.pg_class c WHERE c.oid = t.typrelid AND c.relkind = 'c'))) \
+              ORDER BY t.typname",
+            &[&schema],
+        )
+        .await
+        .map_err(|e| map_error(&e))?;
+    let types = trows
+        .iter()
+        .map(|r| ObjectInfo { name: r.get(0), data_type: Some(r.get(1)), owner: r.get(2), comment: r.get(3), ..Default::default() })
+        .collect();
+
+    Ok(SchemaObjects { tables, views, matviews, functions, types, sequences })
 }
 
 /// Tamanho/decimais no formato da grade de campos (deriva de `atttypmod`).
@@ -334,6 +353,88 @@ async fn relation_detail(s: &PgSession, schema: &str, view: &str, materialized: 
         rules,
         populated,
     })
+}
+
+/// Detalhe de um tipo definido pelo usuário (enum, composto, domínio ou faixa).
+pub async fn type_detail(s: &PgSession, schema: &str, name: &str) -> Result<TypeDetail, DatabaseError> {
+    let head = s
+        .client
+        .query_opt(
+            "SELECT t.oid, t.typtype::text, t.typrelid, pg_get_userbyid(t.typowner)::text, obj_description(t.oid, 'pg_type'), \
+                    CASE WHEN t.typtype = 'd' THEN format_type(t.typbasetype, t.typtypmod) END, t.typdefault, t.typnotnull \
+               FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace \
+              WHERE n.nspname = $1 AND t.typname = $2 AND (t.typtype IN ('e', 'd', 'r') \
+                    OR (t.typtype = 'c' AND EXISTS (SELECT 1 FROM pg_catalog.pg_class c WHERE c.oid = t.typrelid AND c.relkind = 'c')))",
+            &[&schema, &name],
+        )
+        .await
+        .map_err(|e| map_error(&e))?;
+    let Some(head) = head else {
+        let mut err = DatabaseError::new(ErrorKind::Server, format!("type \"{schema}\".\"{name}\" does not exist"));
+        err.code = Some("42704".into());
+        return Err(err);
+    };
+    let oid: u32 = head.get(0);
+    let kind = match head.get::<_, String>(1).as_str() {
+        "e" => "enum",
+        "d" => "domain",
+        "r" => "range",
+        _ => "composite",
+    };
+    let relid: u32 = head.get(2);
+
+    let mut detail = TypeDetail {
+        name: name.to_string(),
+        kind: kind.to_string(),
+        owner: head.get(3),
+        comment: head.get(4),
+        labels: Vec::new(),
+        attributes: Vec::new(),
+        base_type: head.get(5),
+        default: head.get(6),
+        not_null: head.get(7),
+        checks: Vec::new(),
+        subtype: None,
+    };
+    match kind {
+        "enum" => {
+            let rows = s
+                .client
+                .query("SELECT enumlabel::text FROM pg_catalog.pg_enum WHERE enumtypid = $1 ORDER BY enumsortorder", &[&oid])
+                .await
+                .map_err(|e| map_error(&e))?;
+            detail.labels = rows.iter().map(|r| r.get(0)).collect();
+        }
+        "composite" => {
+            let rows = s
+                .client
+                .query(
+                    "SELECT attname::text, format_type(atttypid, atttypmod) FROM pg_catalog.pg_attribute \
+                      WHERE attrelid = $1 AND attnum > 0 AND NOT attisdropped ORDER BY attnum",
+                    &[&relid],
+                )
+                .await
+                .map_err(|e| map_error(&e))?;
+            detail.attributes = rows.iter().map(|r| TypeAttribute { name: r.get(0), data_type: r.get(1) }).collect();
+        }
+        "domain" => {
+            let rows = s
+                .client
+                .query("SELECT conname::text, pg_get_constraintdef(oid) FROM pg_catalog.pg_constraint WHERE contypid = $1 AND contype = 'c' ORDER BY conname", &[&oid])
+                .await
+                .map_err(|e| map_error(&e))?;
+            detail.checks = rows.iter().map(|r| TypeCheck { name: r.get(0), definition: r.get(1) }).collect();
+        }
+        _ => {
+            let r = s
+                .client
+                .query_opt("SELECT format_type(rngsubtype, NULL) FROM pg_catalog.pg_range WHERE rngtypid = $1", &[&oid])
+                .await
+                .map_err(|e| map_error(&e))?;
+            detail.subtype = r.map(|r| r.get(0));
+        }
+    }
+    Ok(detail)
 }
 
 /// Parâmetros e posição atual de uma sequência. No PostgreSQL 10+ vêm de `pg_sequences`; antes, da própria

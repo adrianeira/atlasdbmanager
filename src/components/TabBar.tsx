@@ -3,7 +3,7 @@ import { SmallIcon, type SmallIconName } from "../icons";
 
 export interface DocTab {
   id: string;
-  kind: "objects" | "query" | "data" | "designer" | "viewDesigner" | "functionDesigner" | "sequenceDesigner" | "placeholder";
+  kind: "objects" | "query" | "data" | "designer" | "viewDesigner" | "functionDesigner" | "sequenceDesigner" | "typeDesigner" | "placeholder";
   /** Aba "data": tabela ou view (view abre só leitura). */
   objectKind?: "table" | "view" | "matview";
   title: string;

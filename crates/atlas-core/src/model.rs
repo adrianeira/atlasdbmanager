@@ -99,6 +99,8 @@ pub struct SchemaObjects {
     pub views: Vec<ObjectInfo>,
     pub matviews: Vec<ObjectInfo>,
     pub functions: Vec<ObjectInfo>,
+    /// Tipos próprios do schema: enum, composto, domínio e faixa (`data_type` diz qual).
+    pub types: Vec<ObjectInfo>,
     pub sequences: Vec<ObjectInfo>,
 }
 
@@ -194,6 +196,45 @@ pub struct ViewDetail {
     pub rules: Vec<RuleInfo>,
     /// View materializada já preenchida com dados (`false` após `WITH NO DATA`). Views comuns: sempre `true`.
     pub populated: bool,
+}
+
+/// Atributo de um tipo composto.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TypeAttribute {
+    pub name: String,
+    pub data_type: String,
+}
+
+/// Restrição `CHECK` de um domínio.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TypeCheck {
+    pub name: String,
+    /// `pg_get_constraintdef`, ex.: `CHECK ((VALUE > 0))`.
+    pub definition: String,
+}
+
+/// Tipo definido pelo usuário (enum, composto, domínio ou faixa).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TypeDetail {
+    pub name: String,
+    /// "enum" | "composite" | "domain" | "range".
+    pub kind: String,
+    pub owner: Option<String>,
+    pub comment: Option<String>,
+    /// Rótulos do enum, na ordem.
+    pub labels: Vec<String>,
+    /// Atributos do tipo composto, na ordem.
+    pub attributes: Vec<TypeAttribute>,
+    /// Domínio: tipo base, valor padrão, `NOT NULL` e restrições.
+    pub base_type: Option<String>,
+    pub default: Option<String>,
+    pub not_null: bool,
+    pub checks: Vec<TypeCheck>,
+    /// Faixa: tipo dos elementos.
+    pub subtype: Option<String>,
 }
 
 /// Sequência: parâmetros e posição atual. Números como texto (um `bigint` não cabe num número JSON).

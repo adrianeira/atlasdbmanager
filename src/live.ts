@@ -39,7 +39,7 @@ export function schemaFromServer(name: string, objs: SchemaObjects): SchemaMock 
       matview: objs.matviews.map(objInfo),
       function: objs.functions.map(functionInfo),
       sequence: objs.sequences.map(objInfo),
-      type: [],
+      type: objs.types.map(objInfo),
       query: [],
       backup: [],
     },

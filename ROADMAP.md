@@ -128,6 +128,14 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       no `ALTER SEQUENCE`; compatível com o PostgreSQL 9.6 (lê a própria relação) e 10+ (`pg_sequences`)
       *(`src/documents/SequenceDesignerDoc.tsx`, `src/sql/sequence.ts`, `crates/atlas-pg/src/meta.rs`)*
 
+### Tipos definidos pelo usuário
+- [x] A lista **Outros → Tipo** mostra enum, composto, domínio e faixa do schema; duplo clique abre o designer; **Novo**
+      e **Excluir** (`DROP TYPE` / `DROP DOMAIN`) pelo menu de contexto
+- [x] **ENUM**: acrescentar valores (`ADD VALUE`, fora de transação como o PostgreSQL exige antes do 12) e renomear
+      (`RENAME VALUE`, 10+); **composto**: adicionar, remover, renomear e trocar o tipo de atributos; **domínio**:
+      padrão, `NOT NULL` e restrições `CHECK`; renomear, dono e comentário; faixa só para leitura
+      *(`src/documents/TypeDesignerDoc.tsx`, `src/sql/typedef.ts`, `crates/atlas-pg/src/meta.rs`)*
+
 ### Navegação / Árvore
 - [x] **Fechar schema** no menu de contexto (colapsa + marca como não-carregado para rebuscar
       na próxima abertura) *(`src/App.tsx`)*
@@ -230,7 +238,7 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [x] Materialized View: designer, abrir dados, atualizar dados (ver "Views materializadas" em Entregues)
 - [x] Function / Procedure designer (ver "Funções e procedimentos" em Entregues)
 - [ ] Debugger de PL/pgSQL
-- [ ] Type (ENUM, composite, domain)
+- [x] Type (ENUM, composto, domínio): designer (ver "Tipos" em Entregues)
 - [x] Sequence: designer, reiniciar, definir valor (ver "Sequências" em Entregues)
 - [ ] Trigger / Event Trigger
 - [ ] Extension

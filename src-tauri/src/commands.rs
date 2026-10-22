@@ -4,7 +4,7 @@
 use crate::local::Local;
 use crate::sessions::Sessions;
 use atlas_core::{
-    ConnectionParams, DatabaseError, DatabaseList, FunctionDetail, OrderBy, SequenceDetail, QueryOutcome, RoleInfo, SchemaObjects, ServerInfo, TableDetail,
+    ConnectionParams, DatabaseError, DatabaseList, FunctionDetail, OrderBy, SequenceDetail, TypeDetail, QueryOutcome, RoleInfo, SchemaObjects, ServerInfo, TableDetail,
     TableFilter, ViewDetail,
 };
 use serde::Serialize;
@@ -98,6 +98,18 @@ pub async fn pg_view_detail(
 ) -> Result<ViewDetail, DatabaseError> {
     let s = sessions.get(&session_id, Some(&database)).await?;
     atlas_pg::view_detail(&s, &schema, &view).await
+}
+
+#[tauri::command]
+pub async fn pg_type_detail(
+    sessions: State<'_, Sessions>,
+    session_id: String,
+    database: String,
+    schema: String,
+    name: String,
+) -> Result<TypeDetail, DatabaseError> {
+    let s = sessions.get(&session_id, Some(&database)).await?;
+    atlas_pg::type_detail(&s, &schema, &name).await
 }
 
 #[tauri::command]

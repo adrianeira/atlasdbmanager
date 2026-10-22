@@ -351,6 +351,68 @@ async fn sequence_detail_reads_parameters_position_and_owner() {
 }
 
 #[tokio::test]
+async fn user_types_are_listed_and_described() {
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    let ns = format!("atlas_ty_{}", std::process::id());
+    atlas_pg::execute(
+        &s,
+        &format!(
+            "DROP SCHEMA IF EXISTS {ns} CASCADE; CREATE SCHEMA {ns}; \
+             CREATE TYPE {ns}.cor AS ENUM ('vermelho', 'verde', 'azul'); \
+             CREATE TYPE {ns}.ponto AS (x integer, y numeric(10,2), rotulo text); \
+             CREATE DOMAIN {ns}.positivo AS integer DEFAULT 1 NOT NULL CONSTRAINT maior_zero CHECK (VALUE > 0); \
+             CREATE TYPE {ns}.faixa AS RANGE (subtype = integer); \
+             CREATE TABLE {ns}.tabela(id integer); \
+             COMMENT ON TYPE {ns}.cor IS 'cores'"
+        ),
+        1,
+    )
+    .await
+    .unwrap();
+
+    // A listagem traz os 4 tipos, sem o tipo de linha da tabela nem tipos de array.
+    let objs = atlas_pg::list_objects(&s, &ns).await.unwrap();
+    let listed: Vec<(String, String)> = objs.types.iter().map(|t| (t.name.clone(), t.data_type.clone().unwrap())).collect();
+    assert_eq!(
+        listed,
+        vec![
+            ("cor".to_string(), "enum".to_string()),
+            ("faixa".to_string(), "range".to_string()),
+            ("ponto".to_string(), "composite".to_string()),
+            ("positivo".to_string(), "domain".to_string()),
+        ]
+    );
+
+    let cor = atlas_pg::type_detail(&s, &ns, "cor").await.expect("enum");
+    assert_eq!(cor.kind, "enum");
+    assert_eq!(cor.labels, ["vermelho", "verde", "azul"]);
+    assert_eq!(cor.comment.as_deref(), Some("cores"));
+
+    let ponto = atlas_pg::type_detail(&s, &ns, "ponto").await.expect("composite");
+    assert_eq!(ponto.kind, "composite");
+    let attrs: Vec<(String, String)> = ponto.attributes.iter().map(|a| (a.name.clone(), a.data_type.clone())).collect();
+    assert_eq!(attrs, [("x".into(), "integer".into()), ("y".into(), "numeric(10,2)".into()), ("rotulo".into(), "text".into())]);
+
+    let pos = atlas_pg::type_detail(&s, &ns, "positivo").await.expect("domain");
+    assert_eq!(pos.kind, "domain");
+    assert_eq!(pos.base_type.as_deref(), Some("integer"));
+    assert_eq!(pos.default.as_deref(), Some("1"));
+    assert!(pos.not_null);
+    assert_eq!(pos.checks.len(), 1);
+    assert_eq!(pos.checks[0].name, "maior_zero");
+    assert!(pos.checks[0].definition.starts_with("CHECK"), "{}", pos.checks[0].definition);
+
+    let faixa = atlas_pg::type_detail(&s, &ns, "faixa").await.expect("range");
+    assert_eq!(faixa.kind, "range");
+    assert_eq!(faixa.subtype.as_deref(), Some("integer"));
+
+    // Tabela não é tipo "avulso".
+    assert!(atlas_pg::type_detail(&s, &ns, "tabela").await.is_err());
+    atlas_pg::execute(&s, &format!("DROP SCHEMA {ns} CASCADE"), 1).await.unwrap();
+}
+
+#[tokio::test]
 async fn syntax_error_reports_position() {
     let p = require_server!();
     let s = atlas_pg::connect(&p, None).await.expect("connect");
