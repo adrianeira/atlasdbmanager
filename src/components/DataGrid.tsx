@@ -479,11 +479,9 @@ export function DataGrid({
                         title={v === null ? "(Null)" : undefined}
                         aria-readonly={readOnly || !onEdit}
                         onMouseDown={(e) => { onActiveRow(ri); setActiveCol(ci); e.stopPropagation(); }}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          toggleBool(ri, ci);
-                        }}
-                        onChange={() => undefined}
+                        // Um clique = uma troca. O duplo clique não chega à célula (que também alternaria).
+                        onDoubleClick={(e) => e.stopPropagation()}
+                        onChange={() => toggleBool(ri, ci)}
                       />
                     ) : v === null ? (
                       <span className="dg-null">(Null)</span>
