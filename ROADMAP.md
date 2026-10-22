@@ -12,7 +12,7 @@ entrada" no código (botão/ação existente, só falta implementar o comportame
 > **12 (Features cross-cutting)** não serão trabalhadas no ciclo atual. Ficam listadas aqui
 > apenas como referência de paridade futura com o produto de referência.
 
-## Entregues neste ciclo (2026-10-22)
+## Entregues neste ciclo (até 2026-10-22)
 
 Fora da lista original de paridade: ajustes de UX, novos recursos e polimento visual.
 
@@ -43,6 +43,12 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [x] Botão **⏹ Parar** funcional (cancela a consulta no servidor via `pg.cancel`)
 - [x] Botão **▶| Última página** funcional (`SELECT COUNT(*)` cacheado, calcula a última página)
 - [x] Campo de **página editável** (digite e pressione Enter para saltar)
+
+- [x] Colunas **boolean** como caixa de seleção (marcada / desmarcada / esmaecida para NULL), alternada
+      com um clique; ícones próprios para colunas **PK** e **FK** no cabeçalho
+- [x] **"Definir como NULL"** desabilitado em colunas `NOT NULL`; comentário da coluna (do banco) como
+      dica no cabeçalho
+- [x] Edição de célula salva ao sair do campo quando passa na validação
 
 ### Exportação de dados
 - [x] **Assistente de exportação em etapas** (formato → tabelas e arquivos → campos → resumo com log e
@@ -75,11 +81,19 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [x] Ícone do schema fica **cinza** quando fechado *(`src/components/NavigationPane.tsx`,
       `src/icons.tsx`)*
 
+- [x] **Novo schema...** no menu de contexto do banco (cria e recarrega a árvore)
+
 ### Editor SQL / Toolbar da consulta
 - [x] **Dropdown próprio** (connection/database/schema) no lugar do `<select>` nativo —
       hover/selecionado controlados por CSS (o popup do Chromium pintava cinza escuro no hover
       e ignorava o CSS) *(`src/components/Dropdown.tsx`)*
 - [x] Linha amarela removida: autofill do Chromium neutralizado nos dropdowns
+
+- [x] Os seletores de conexão, banco e schema do editor se filtram em cascata (trocar o servidor recarrega
+      os bancos) sem piscar o indicador de carregamento
+- [x] O **schema escolhido é aplicado à execução** (`search_path`), então tabelas sem prefixo são
+      encontradas; a execução descreve os tipos das colunas só depois de executar, sem derrubar
+      transações do usuário
 
 ### Visual / Tema
 - [x] Cor do checkbox padronizada em **#0277BD** (accent-color global) *(`src/styles/tokens.css`)*
@@ -88,8 +102,20 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [x] Campo da página do rodapé em azul-claro
 - [x] Dropdowns da consulta com borda cinza (fundo branco mantido)
 
+### Identidade visual
+- [x] Logo e ícones do Atlas (janela, barra de tarefas, instalador), logo na janela **Sobre** e favicon
+      *(`branding/`, `src-tauri/icons/`, `scripts/brand-assets.py`)*
+- [x] **Tela de abertura (splash)** com barra de progresso e texto animados (pt/en), tempo mínimo de 3 s
+      e só exibida depois de carregada *(`public/splash.html`, `public/splash.js`, `src-tauri/src/lib.rs`)*
+
 ### i18n
 - [x] Novas chaves `data.find.*`, `dtp.*`, `grid.generated`, `cmd.closeSchema` (pt + en)
+
+## Limitações conhecidas
+- A lista de schemas fica em cache até atualizar a árvore: um schema criado fora do app não aparece nos
+  seletores do editor.
+- Exportar o resultado de uma consulta exige um único comando que devolva linhas.
+- Exportação de tabela sem filtro/ordenação usa a ordem natural do servidor.
 
 ## 1. Conexões
 - [ ] Importar/exportar conexões (arquivo de perfil), compartilhamento via nuvem
