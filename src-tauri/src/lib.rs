@@ -159,6 +159,9 @@ pub fn run() {
             local::history_favorite,
             local::history_delete,
             local::history_clear,
+            local::snippets_list,
+            local::snippet_save,
+            local::snippet_delete,
             local::pref_get,
             local::pref_set,
         ])

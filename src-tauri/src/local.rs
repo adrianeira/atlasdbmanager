@@ -1,7 +1,7 @@
 //! Estado e comandos do armazenamento local (`atlas.db` + cofre de credenciais).
 
 use atlas_core::{ConnectionParams, DatabaseError, ErrorKind, Secret};
-use atlas_local::{HistoryEntry, HistoryQuery, LocalStore, NewHistory, PasswordAction, ProfileRecord};
+use atlas_local::{HistoryEntry, HistoryQuery, LocalStore, NewHistory, PasswordAction, ProfileRecord, Snippet};
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -116,6 +116,37 @@ pub fn history_delete(local: State<'_, Local>, id: String) -> Result<(), Databas
 #[tauri::command]
 pub fn history_clear(local: State<'_, Local>, keep_favorites: bool) -> Result<u64, DatabaseError> {
     local.with(|s| s.clear_history(keep_favorites))
+}
+
+/// Snippets que acompanham o app: gravados na primeira listagem com a lista vazia, uma única vez.
+const STARTER_SNIPPETS: &[(&str, &str)] = &[
+    ("select", "SELECT ${1:*}\nFROM ${2:tabela}\nWHERE ${3:condicao};"),
+    ("select count", "SELECT count(*) FROM ${1:tabela};"),
+    ("insert", "INSERT INTO ${1:tabela} (${2:colunas})\nVALUES (${3:valores});"),
+    ("update", "UPDATE ${1:tabela}\n   SET ${2:coluna} = ${3:valor}\n WHERE ${4:condicao};"),
+    ("delete", "DELETE FROM ${1:tabela}\n WHERE ${2:condicao};"),
+    ("create table", "CREATE TABLE ${1:nome} (\n  id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,\n  ${2:coluna} ${3:text} NOT NULL\n);"),
+    ("cte (with)", "WITH ${1:nome} AS (\n  SELECT ${2:*} FROM ${3:tabela}\n)\nSELECT * FROM ${1:nome};"),
+    ("explain analyze", "EXPLAIN (ANALYZE, BUFFERS)\n${1:SELECT 1};"),
+];
+
+#[tauri::command]
+pub fn snippets_list(local: State<'_, Local>) -> Result<Vec<Snippet>, DatabaseError> {
+    local.with(|s| {
+        s.seed_snippets(STARTER_SNIPPETS)?;
+        s.list_snippets()
+    })
+}
+
+/// Sem `id` cria um snippet novo; com `id` atualiza. Devolve o id.
+#[tauri::command]
+pub fn snippet_save(local: State<'_, Local>, id: Option<String>, name: String, body: String) -> Result<String, DatabaseError> {
+    local.with(|s| s.save_snippet(id.as_deref(), &name, &body))
+}
+
+#[tauri::command]
+pub fn snippet_delete(local: State<'_, Local>, id: String) -> Result<(), DatabaseError> {
+    local.with(|s| s.delete_snippet(&id))
 }
 
 #[tauri::command]

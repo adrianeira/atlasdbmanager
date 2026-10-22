@@ -2061,3 +2061,19 @@ select.et-input {
 .hist-detail { flex: 1; min-width: 0; margin: 0; padding: 8px 12px; overflow: auto; font: 12px/1.45 Consolas, "Cascadia Mono", monospace; white-space: pre-wrap; word-break: break-word; background: var(--c-surface); user-select: text; }
 .hist-empty { padding: 24px; color: var(--c-text-muted); text-align: center; }
 .hist-footer { display: flex; align-items: center; gap: 6px; }
+
+/* Gerenciador de snippets. */
+.snip-dialog { width: min(900px, 92vw); height: min(560px, 84vh); display: flex; flex-direction: column; }
+.snip-body { flex: 1; min-height: 0; display: flex; }
+.snip-side { width: 260px; flex: none; display: flex; flex-direction: column; border-right: 1px solid var(--c-border); }
+.snip-side-bar { display: flex; gap: 6px; padding: 8px; }
+.snip-side-bar .field { flex: 1; min-width: 0; }
+.snip-list { flex: 1; overflow: auto; }
+.snip-item { padding: 5px 10px; cursor: default; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.snip-item:hover { background: var(--c-hover); }
+.snip-item.is-selected { background: var(--c-selected); }
+.snip-edit { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 8px 12px; }
+.snip-name { width: 100%; box-sizing: border-box; }
+.snip-text { flex: 1; min-height: 0; resize: none; padding: 6px 8px; border: 1px solid var(--c-border-strong); background: var(--c-surface); color: var(--c-text); font: 13px/1.45 var(--font-mono); }
+.snip-text:focus { outline: none; border-color: #0078d7; }
+.snip-hint { font-size: 11px; }

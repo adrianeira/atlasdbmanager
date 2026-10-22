@@ -5,7 +5,7 @@ pub mod secrets;
 mod store;
 
 use atlas_core::{DatabaseError, Secret};
-pub use store::{HistoryEntry, HistoryQuery, LocalStore, NewHistory, ProfileRecord};
+pub use store::{HistoryEntry, HistoryQuery, LocalStore, NewHistory, ProfileRecord, Snippet};
 
 /// O que fazer com a senha ao salvar um perfil.
 pub enum PasswordAction<'a> {

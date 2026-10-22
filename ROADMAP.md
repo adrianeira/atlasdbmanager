@@ -112,6 +112,13 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       para desligar (as consultas ficam como digitadas no banco local do computador)
       *(`crates/atlas-local`, `src/components/HistoryDialog.tsx`)*
 
+### Snippets
+- [x] Botão **Trecho de código** do editor: gerenciador com lista e filtro, criar, editar, salvar e excluir; **inserir
+      no cursor** (duplo clique ou botão) com **pontos de tabulação** (`${1:padrão}`: Tab pula para o próximo, o
+      mesmo número em dois lugares preenche os dois); a seleção do editor abre como snippet novo
+- [x] 8 snippets de partida (select, insert, update, delete, create table, CTE, explain...) gravados uma única vez
+      *(`src/components/SnippetDialog.tsx`, `crates/atlas-local`)*
+
 ### Navegação / Árvore
 - [x] **Fechar schema** no menu de contexto (colapsa + marca como não-carregado para rebuscar
       na próxima abertura) *(`src/App.tsx`)*
@@ -195,7 +202,7 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [ ] Agrupamento / sumário no rodapé do grid
 
 ## 4. Editor SQL
-- [ ] Snippet manager *(`src/documents/QueryDoc.tsx` — `query.snippet` sem handler)*
+- [x] Snippet manager (ver "Snippets" em Entregues)
 - [ ] Ask AI *(`query.askAi` sem handler)*
 - [ ] Split horizontal/vertical *(`src/documents/QueryDoc.tsx:292-293`)*
 - [x] Histórico de consultas e favoritos (ver "Histórico de consultas" em Entregues)

@@ -226,6 +226,14 @@ export interface HistoryQuery {
   offset: number;
 }
 
+/** Trecho de código reutilizável; `${1:padrão}` no corpo vira ponto de tabulação ao inserir. */
+export interface Snippet {
+  id: string;
+  name: string;
+  body: string;
+  updatedUtc: string;
+}
+
 export const local = {
   status: () => call<{ path: string; schemaVersion: number | null; error: string | null }>("local_status"),
   profiles: () => call<ProfileRecord[]>("profiles_list"),
@@ -239,6 +247,10 @@ export const local = {
   historyDelete: (id: string) => call<void>("history_delete", { id }),
   /** Apaga o histórico; com `keepFavorites` os favoritos ficam. Devolve quantas consultas saíram. */
   historyClear: (keepFavorites: boolean) => call<number>("history_clear", { keepFavorites }),
+  snippetsList: () => call<Snippet[]>("snippets_list"),
+  /** `id` null cria; com id atualiza. Devolve o id. */
+  snippetSave: (id: string | null, name: string, body: string) => call<string>("snippet_save", { id, name, body }),
+  snippetDelete: (id: string) => call<void>("snippet_delete", { id }),
   getPref: <T>(key: string) => call<T | null>("pref_get", { key }),
   setPref: (key: string, value: unknown) => call<void>("pref_set", { key, value }),
 };

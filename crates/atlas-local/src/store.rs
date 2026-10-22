@@ -8,7 +8,11 @@ use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
 /// Migrações em ordem. Nunca editar uma migração já publicada: criar a próxima.
-const MIGRATIONS: &[(i64, &str)] = &[(1, include_str!("migrations/v1.sql")), (2, include_str!("migrations/v2.sql"))];
+const MIGRATIONS: &[(i64, &str)] = &[(1, include_str!("migrations/v1.sql")), (2, include_str!("migrations/v2.sql")), (3, include_str!("migrations/v3.sql"))];
+
+/* Snippets: limites. */
+const SNIPPET_MAX_NAME_CHARS: usize = 120;
+const SNIPPET_MAX_BODY_CHARS: usize = 100_000;
 
 /* Histórico de consultas: limites. */
 const HISTORY_MAX_SQL_CHARS: usize = 100_000;
@@ -93,6 +97,16 @@ pub struct HistoryQuery {
     pub errors_only: bool,
     pub limit: u32,
     pub offset: u32,
+}
+
+/// Trecho de código reutilizável. O corpo aceita marcadores de tabulação (`${1:padrão}`, `${}`).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Snippet {
+    pub id: String,
+    pub name: String,
+    pub body: String,
+    pub updated_utc: String,
 }
 
 /// Nenhuma opção pode carregar segredo (spec §9.2: proibido `password` em options_json).
@@ -340,6 +354,69 @@ impl LocalStore {
         Ok(n as u64)
     }
 
+    /* ---------- Snippets ---------- */
+
+    /// Grava os snippets de partida uma única vez: só se a lista está vazia e a preferência `snippets.seeded` ainda
+    /// não existe. Acontece dentro da trava do banco local, então chamadas simultâneas não duplicam.
+    pub fn seed_snippets(&self, starters: &[(&str, &str)]) -> Result<bool, DatabaseError> {
+        if self.get_pref("snippets.seeded")?.and_then(|v| v.as_bool()) == Some(true) {
+            return Ok(false);
+        }
+        let count: i64 = self.conn.query_row("SELECT count(*) FROM snippets", [], |r| r.get(0)).map_err(local_err)?;
+        if count == 0 {
+            for (name, body) in starters {
+                self.save_snippet(None, name, body)?;
+            }
+        }
+        self.set_pref("snippets.seeded", &serde_json::json!(true))?;
+        Ok(count == 0)
+    }
+
+    pub fn list_snippets(&self) -> Result<Vec<Snippet>, DatabaseError> {
+        let mut st = self
+            .conn
+            .prepare("SELECT id, name, body, updated_utc FROM snippets ORDER BY name COLLATE NOCASE, rowid")
+            .map_err(local_err)?;
+        let rows = st
+            .query_map([], |r| Ok(Snippet { id: r.get(0)?, name: r.get(1)?, body: r.get(2)?, updated_utc: r.get(3)? }))
+            .map_err(local_err)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(local_err)
+    }
+
+    /// Cria (sem `id`) ou atualiza um snippet e devolve o id.
+    pub fn save_snippet(&self, id: Option<&str>, name: &str, body: &str) -> Result<String, DatabaseError> {
+        let name: String = name.trim().chars().take(SNIPPET_MAX_NAME_CHARS).collect();
+        if name.is_empty() {
+            return Err(DatabaseError::new(ErrorKind::InvalidInput, "snippet name is required"));
+        }
+        let body: String = body.chars().take(SNIPPET_MAX_BODY_CHARS).collect();
+        match id {
+            Some(id) => {
+                let n = self
+                    .conn
+                    .execute(&format!("UPDATE snippets SET name = ?2, body = ?3, updated_utc = {NOW} WHERE id = ?1"), params![id, name, body])
+                    .map_err(local_err)?;
+                if n == 0 {
+                    return Err(DatabaseError::new(ErrorKind::InvalidInput, "snippet not found"));
+                }
+                Ok(id.to_string())
+            }
+            None => self
+                .conn
+                .query_row(
+                    &format!("INSERT INTO snippets(id, name, body, updated_utc) VALUES (lower(hex(randomblob(16))), ?1, ?2, {NOW}) RETURNING id"),
+                    params![name, body],
+                    |r| r.get(0),
+                )
+                .map_err(local_err),
+        }
+    }
+
+    pub fn delete_snippet(&self, id: &str) -> Result<(), DatabaseError> {
+        self.conn.execute("DELETE FROM snippets WHERE id = ?1", params![id]).map_err(local_err)?;
+        Ok(())
+    }
+
     /* ---------- Preferências ---------- */
 
     pub fn get_pref(&self, key: &str) -> Result<Option<serde_json::Value>, DatabaseError> {
@@ -389,14 +466,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("atlas.db");
         let store = LocalStore::open(&path).unwrap();
-        assert_eq!(store.schema_version().unwrap(), 2);
+        assert_eq!(store.schema_version().unwrap(), 3);
         let checksum: String = store.conn.query_row("SELECT checksum FROM schema_migrations WHERE version = 1", [], |r| r.get(0)).unwrap();
         assert_eq!(checksum.len(), 64);
         drop(store);
         // Reabrir não reaplica a migração.
         let store = LocalStore::open(&path).unwrap();
         let n: i64 = store.conn.query_row("SELECT count(*) FROM schema_migrations", [], |r| r.get(0)).unwrap();
-        assert_eq!(n, 2);
+        assert_eq!(n, 3);
     }
 
     #[test]
@@ -496,6 +573,43 @@ mod tests {
         store.add_history(&run(&"x".repeat(150_000), None)).unwrap();
         let e = &store.list_history(&HistoryQuery::default()).unwrap()[0];
         assert_eq!(e.sql.chars().count(), HISTORY_MAX_SQL_CHARS);
+    }
+
+    #[test]
+    fn snippets_crud_sorted_by_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(&dir.path().join("atlas.db")).unwrap();
+        let b = store.save_snippet(None, "beta", "SELECT ${1:col} FROM ${2:tabela}").unwrap();
+        store.save_snippet(None, "Alfa", "SELECT 1").unwrap();
+        let list = store.list_snippets().unwrap();
+        assert_eq!(list.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(), ["Alfa", "beta"], "ordem sem diferenciar maiúsculas");
+        assert_eq!(list[1].body, "SELECT ${1:col} FROM ${2:tabela}");
+
+        store.save_snippet(Some(&b), "  gama  ", "SELECT 2").unwrap();
+        let list = store.list_snippets().unwrap();
+        assert_eq!(list[1].name, "gama");
+        assert_eq!(list[1].body, "SELECT 2");
+
+        assert!(store.save_snippet(None, "   ", "x").is_err(), "nome vazio");
+        assert!(store.save_snippet(Some("nao-existe"), "x", "y").is_err());
+        store.delete_snippet(&b).unwrap();
+        assert_eq!(store.list_snippets().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn starter_snippets_are_seeded_only_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(&dir.path().join("atlas.db")).unwrap();
+        let starters = [("a", "SELECT 1"), ("b", "SELECT 2")];
+        assert!(store.seed_snippets(&starters).unwrap());
+        assert!(!store.seed_snippets(&starters).unwrap(), "segunda chamada não faz nada");
+        assert_eq!(store.list_snippets().unwrap().len(), 2);
+        // Quem apagou tudo de propósito não vê os iniciais voltarem.
+        for s in store.list_snippets().unwrap() {
+            store.delete_snippet(&s.id).unwrap();
+        }
+        assert!(!store.seed_snippets(&starters).unwrap());
+        assert!(store.list_snippets().unwrap().is_empty());
     }
 
     #[test]

@@ -6,7 +6,7 @@ import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import {
   drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, placeholder as cmPlaceholder,
 } from "@codemirror/view";
-import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from "@codemirror/autocomplete";
+import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, snippet } from "@codemirror/autocomplete";
 import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
 import { tags } from "@lezer/highlight";
 
@@ -37,6 +37,8 @@ export interface SqlEditorHandle {
   getText: () => string;
   getSelection: () => string;
   replaceAll: (text: string) => void;
+  /** Insere no cursor (ou no lugar da seleção); `${1:padrão}` vira ponto de tabulação (Tab/Shift+Tab). */
+  insertSnippet: (template: string) => void;
   focus: () => void;
 }
 
@@ -108,6 +110,11 @@ export function SqlEditor({ value, readOnly, schema, defaultSchema, placeholder,
         return v.state.sliceDoc(from, to);
       },
       replaceAll: (text) => v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: text } }),
+      insertSnippet: (template) => {
+        const { from, to } = v.state.selection.main;
+        snippet(template)({ state: v.state, dispatch: v.dispatch }, null, from, to);
+        v.focus();
+      },
       focus: () => v.focus(),
     });
     return () => {

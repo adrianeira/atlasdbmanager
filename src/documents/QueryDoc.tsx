@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as R
 import { DataGrid, typeKind, type GridColumn } from "../components/DataGrid";
 import { Dropdown } from "../components/Dropdown";
 import { HistoryDialog } from "../components/HistoryDialog";
+import { SnippetDialog } from "../components/SnippetDialog";
 import { PopupMenu } from "../components/PopupMenu";
 import { SqlEditor, type SqlEditorHandle } from "../components/SqlEditor";
 import type { StatusCell } from "../components/StatusBar";
@@ -144,6 +145,8 @@ export function QueryDoc({
   const [cursor, setCursor] = useState({ line: 1, col: 1 });
   const [running, setRunning] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  // Gerenciador de snippets; guarda a seleção do editor para oferecê-la como snippet novo.
+  const [snippets, setSnippets] = useState<{ selection: string } | null>(null);
   const [outcome, setOutcome] = useState<RunOutcome | null>(null);
   const [resultTab, setResultTab] = useState(0);
   const [activeRow, setActiveRow] = useState(0);
@@ -369,7 +372,7 @@ export function QueryDoc({
         {tool("queryBuilder", "query.builder")}
         {tool("beautify", "query.beautify", beautify)}
         {tool("history", "query.history", () => setHistoryOpen(true))}
-        {tool("snippet", "query.snippet")}
+        {tool("snippet", "query.snippet", () => setSnippets({ selection: editor.current?.getSelection() ?? "" }))}
         {tool("ai", "query.askAi")}
         <div className="ot-spacer" />
         <button type="button" className="icon-button is-active" title={t("query.layoutStacked")}><SmallIcon name="splitH" /></button>
@@ -472,6 +475,16 @@ export function QueryDoc({
           </>
         )}
       </div>
+      {snippets && (
+        <SnippetDialog
+          initialBody={snippets.selection}
+          onInsert={(body) => {
+            editor.current?.insertSnippet(body);
+            setSnippets(null);
+          }}
+          onClose={() => setSnippets(null)}
+        />
+      )}
       {historyOpen && (
         <HistoryDialog
           connections={connections.filter((c) => c.live).map((c) => ({ id: c.id, name: c.name }))}
