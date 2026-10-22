@@ -290,6 +290,8 @@ export interface TreeNode {
   provider?: ProviderId;
   color?: ConnectionColor;
   starred?: boolean;
+  /** Coluna: parte da chave primária ou de uma chave estrangeira (ícone próprio na árvore). */
+  columnRole?: "pk" | "fk";
 }
 
 /** Pastas exibidas sob um schema PostgreSQL, na ordem da referência. */
@@ -383,8 +385,11 @@ export function buildVisibleTree(
             out.push({ id: oId, kind: "object", label: cat === "function" ? functionLabel(o) : o.name, depth: 4, expandable: hasCols, category: cat });
             if (!hasCols || !state.expanded.has(oId)) continue;
             // DECISÃO_ATLAS: tabela expandida mostra suas colunas com o tipo.
+            // Colunas de FK (inclusive compostas: "a, b"); a PK tem prioridade no ícone.
+            const fkCols = new Set((o.foreignKeys ?? []).flatMap((fk) => fk.fields.split(",").map((f) => f.trim())));
             for (const c of o.columns ?? []) {
-              out.push({ id: `col:${scPath}/table/${seg(o.name)}/${seg(c.name)}`, kind: "column", label: `${c.name} (${c.type})`, depth: 5, expandable: false });
+              const columnRole = c.key ? "pk" : fkCols.has(c.name) ? "fk" : undefined;
+              out.push({ id: `col:${scPath}/table/${seg(o.name)}/${seg(c.name)}`, kind: "column", label: `${c.name} (${c.type})`, depth: 5, expandable: false, columnRole });
             }
           }
         }

@@ -249,6 +249,26 @@ const small: Record<string, ReactElement> = {
       <rect x="2.5" y="4.5" width="3.5" height="7" fill="#2f7fd0" opacity=".5" />
     </>
   ),
+  // Coluna da chave primária: coluna + chave dourada.
+  columnPk: (
+    <>
+      <rect x="1.5" y="2.5" width="10" height="6.5" rx="1" fill="#fff" stroke="#8c8c8c" />
+      <path d="M4.8 2.5v6.5" stroke="#8c8c8c" />
+      <rect x="1.5" y="2.5" width="3.3" height="6.5" fill="#2f7fd0" opacity=".5" />
+      <circle cx="9.3" cy="10.3" r="2.1" fill="#fff" stroke="#d99a0b" strokeWidth="1.5" />
+      <path d="M10.8 11.8l3.4 3.2M12.6 13.5l1-1" stroke="#d99a0b" strokeWidth="1.5" strokeLinecap="round" />
+    </>
+  ),
+  // Coluna de chave estrangeira: coluna + elo azul.
+  columnFk: (
+    <>
+      <rect x="1.5" y="2.5" width="10" height="6.5" rx="1" fill="#fff" stroke="#8c8c8c" />
+      <path d="M4.8 2.5v6.5" stroke="#8c8c8c" />
+      <rect x="1.5" y="2.5" width="3.3" height="6.5" fill="#2f7fd0" opacity=".5" />
+      <path d="M10.6 12.4l1.6-1.6" stroke="#1f6fc4" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M11.2 9.7l.8-.8a1.7 1.7 0 0 1 2.4 2.4l-.8.8M11.6 13.5l-.8.8a1.7 1.7 0 0 1-2.4-2.4l.8-.8" fill="#fff" stroke="#1f6fc4" strokeWidth="1.4" strokeLinecap="round" />
+    </>
+  ),
   key: (
     <>
       <circle cx="5" cy="6" r="3" fill="none" stroke="#e0a412" strokeWidth="1.8" />

@@ -96,7 +96,7 @@ export function NavigationPane(p: Props) {
       case "schema":
         return <SmallIcon name="schema" />;
       case "column":
-        return <SmallIcon name="column" />;
+        return <SmallIcon name={n.columnRole === "pk" ? "columnPk" : n.columnRole === "fk" ? "columnFk" : "column"} />;
       default:
         return <SmallIcon name={n.category ?? "table"} />;
     }
@@ -152,7 +152,7 @@ export function NavigationPane(p: Props) {
                 </span>
               )}
               <span className="tree-icon">{icon(n)}</span>
-              <span className="tree-label">{n.label}</span>
+              <span className="tree-label" title={n.columnRole === "pk" ? t("des.primaryKey") : n.columnRole === "fk" ? t("nav.foreignKey") : undefined}>{n.label}</span>
               {n.starred && <span className="tree-star" aria-label="★"><SmallIcon name="starFilled" size={12} /></span>}
               {busy && n.kind === "connection" && <span className="tree-busy">{t("nav.connecting")}</span>}
             </div>
