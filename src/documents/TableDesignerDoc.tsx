@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ComboInput } from "../components/ComboInput";
 import { EditTable, type EditColumn } from "../components/EditTable";
 import { MessageDialog } from "../components/MessageDialog";
 import { PopupMenu } from "../components/PopupMenu";
@@ -495,8 +496,13 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, serverVer
       <>
         {prop("des.default", (
           <>
-            <input className="field prop-field" list="des-defaults" value={field.default ?? ""} onChange={(e) => patch({ fields: d.fields.map((f, i) => (i === selected ? { ...f, default: e.target.value || undefined } : f)) })} spellCheck={false} />
-            <datalist id="des-defaults">{["NULL", "now()", "CURRENT_TIMESTAMP", "gen_random_uuid()", "''::text", "0", "true", "false"].map((o) => <option key={o} value={o} />)}</datalist>
+            <ComboInput
+              className="prop-field"
+              value={field.default ?? ""}
+              options={["NULL", "now()", "CURRENT_TIMESTAMP", "gen_random_uuid()", "''::text", "0", "true", "false"]}
+              onChange={(v) => patch({ fields: d.fields.map((f, i) => (i === selected ? { ...f, default: v || undefined } : f)) })}
+              spellCheck={false}
+            />
           </>
         ))}
         {prop("des.collation", (
