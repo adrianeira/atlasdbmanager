@@ -2041,3 +2041,23 @@ select.et-input {
 .fn-run-form { display: flex; flex-direction: column; gap: 6px; }
 .fn-run-form .prop-row { display: flex; align-items: center; gap: 8px; }
 .fn-run-form .prop-row > span { width: 140px; flex: none; }
+
+/* Histórico de consultas. */
+.hist-dialog { width: min(980px, 92vw); height: min(640px, 86vh); display: flex; flex-direction: column; }
+.hist-filters { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--c-border); }
+.hist-search { flex: 1; min-width: 160px; }
+.hist-body { flex: 1; min-height: 0; display: flex; }
+.hist-list { flex: 1.3; min-width: 0; overflow: auto; border-right: 1px solid var(--c-border); }
+.hist-row { display: flex; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--c-border); cursor: default; }
+.hist-row.is-selected { background: var(--c-selected); }
+.hist-star { flex: none; align-self: flex-start; border: 0; background: transparent; color: var(--c-text-muted); font-size: 15px; line-height: 1; padding: 0 2px; cursor: default; }
+.hist-star.is-on { color: #e0a100; }
+.hist-main { min-width: 0; flex: 1; }
+.hist-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--c-text-muted); font-size: 11px; }
+.hist-where { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist-tag { padding: 0 6px; border-radius: 8px; background: var(--c-surface-alt); }
+.hist-tag.is-error { background: #fbe3e3; color: #a12b2b; }
+.hist-sql { margin: 3px 0 0; font: 12px/1.35 Consolas, "Cascadia Mono", monospace; white-space: pre-wrap; word-break: break-word; max-height: 4.1em; overflow: hidden; }
+.hist-detail { flex: 1; min-width: 0; margin: 0; padding: 8px 12px; overflow: auto; font: 12px/1.45 Consolas, "Cascadia Mono", monospace; white-space: pre-wrap; word-break: break-word; background: var(--c-surface); user-select: text; }
+.hist-empty { padding: 24px; color: var(--c-text-muted); text-align: center; }
+.hist-footer { display: flex; align-items: center; gap: 6px; }

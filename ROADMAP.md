@@ -103,6 +103,15 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [x] Procedimentos (`CREATE PROCEDURE`, PostgreSQL 11+) com `CALL`
       *(`src/documents/FunctionDesignerDoc.tsx`, `src/sql/func.ts`, `crates/atlas-pg/src/meta.rs`)*
 
+### Histórico de consultas
+- [x] Cada execução do editor SQL (com êxito ou erro) vai para o banco local: conexão, banco, schema, horário,
+      duração, linhas ou mensagem de erro e o SQL como foi digitado
+- [x] Botão **Histórico** no editor: busca no texto, filtro por conexão, só favoritas, só com erro; **usar no editor**
+      (substitui) ou **acrescentar**, copiar, excluir, **favoritar** e **limpar** (os favoritos ficam)
+- [x] Retenção de 2.000 consultas (preferência `history.max`; favoritas nunca saem) e opção **Gravar histórico**
+      para desligar (as consultas ficam como digitadas no banco local do computador)
+      *(`crates/atlas-local`, `src/components/HistoryDialog.tsx`)*
+
 ### Navegação / Árvore
 - [x] **Fechar schema** no menu de contexto (colapsa + marca como não-carregado para rebuscar
       na próxima abertura) *(`src/App.tsx`)*
@@ -189,8 +198,7 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [ ] Snippet manager *(`src/documents/QueryDoc.tsx` — `query.snippet` sem handler)*
 - [ ] Ask AI *(`query.askAi` sem handler)*
 - [ ] Split horizontal/vertical *(`src/documents/QueryDoc.tsx:292-293`)*
-- [ ] Histórico de consultas
-- [ ] Favoritos de SQL
+- [x] Histórico de consultas e favoritos (ver "Histórico de consultas" em Entregues)
 - [ ] Transaction panel, Parameters window
 - [ ] Beautify / Minify além de "Formatar"
 - [ ] Plano de execução gráfico *(hoje `EXPLAIN` só em texto)*

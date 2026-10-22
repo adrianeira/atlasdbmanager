@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { DataGrid, typeKind, type GridColumn } from "../components/DataGrid";
 import { Dropdown } from "../components/Dropdown";
+import { HistoryDialog } from "../components/HistoryDialog";
 import { PopupMenu } from "../components/PopupMenu";
 import { SqlEditor, type SqlEditorHandle } from "../components/SqlEditor";
 import type { StatusCell } from "../components/StatusBar";
@@ -37,6 +38,8 @@ interface Props {
   onLoadSchemas?: (connectionId: string, database: string) => void;
   /** Abriu a lista de schemas: relê do servidor (pega schemas criados fora do app), sem indicador de carregamento. */
   onRefreshSchemas?: (connectionId: string, database: string) => void;
+  /** Uma execução terminou (com êxito ou erro): vai para o histórico. Só com banco real. */
+  onExecuted?: (e: { connectionId: string; connectionName: string; database: string; schema?: string; sql: string; durationMs: number; rows: number | null; error: string | null }) => void;
   /** Exportar o resultado: reexecuta a consulta em streaming (sem o limite de linhas da tela). Só com banco real. */
   onExport?: (info: { sql: string; schema?: string; columns: string[]; connectionId: string; database: string }) => void;
 }
@@ -133,13 +136,14 @@ function mockExecute(sqlText: string, conn: ConnectionMock | undefined, database
 }
 
 export function QueryDoc({
-  connections, openConnections, initial, initialSql, active, onStatus, onDirty, registerActions, backend: backendProp, connecting, onOpenConnection, onLoadSchemas, onRefreshSchemas, onExport,
+  connections, openConnections, initial, initialSql, active, onStatus, onDirty, registerActions, backend: backendProp, connecting, onOpenConnection, onLoadSchemas, onRefreshSchemas, onExport, onExecuted,
 }: Props) {
   const t = useT();
   const editor = useRef<SqlEditorHandle | null>(null);
   const [ctx, setCtx] = useState<QueryContext>(initial);
   const [cursor, setCursor] = useState({ line: 1, col: 1 });
   const [running, setRunning] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [outcome, setOutcome] = useState<RunOutcome | null>(null);
   const [resultTab, setResultTab] = useState(0);
   const [activeRow, setActiveRow] = useState(0);
@@ -215,16 +219,24 @@ export function QueryDoc({
     if (backend && conn) {
       const database = ctx.database ?? conn.initialDatabase;
       void (async () => {
+        const started = Date.now();
+        const record = (rows: number | null, error: string | null, ms: number) =>
+          onExecuted?.({ connectionId: conn.id, connectionName: conn.name, database, schema: ctx.schema, sql: text.trim(), durationMs: ms, rows, error });
         try {
           await backend.ensureOpen(conn.id);
-          const res = fromLive(text, await backend.execute(conn.id, database, text, EDITOR_MAX_ROWS, ctx.schema), t);
+          const out = await backend.execute(conn.id, database, text, EDITOR_MAX_ROWS, ctx.schema);
+          const res = fromLive(text, out, t);
           setOutcome(res);
           setResultTab(res.results.length ? 1 : 0);
+          // Linhas: as devolvidas pelo primeiro resultado ou, sem resultado, as afetadas (soma).
+          const first = out.statements.find((s) => s.result)?.result;
+          record(first ? first.rows.length : out.statements.reduce((n, s) => n + (s.rowsAffected ?? 0), 0), null, out.elapsedMs);
         } catch (e) {
           const err = toAtlasError(e);
           const pos = err.position ? `\n> ${t("query.errorPosition", { n: err.position })}` : "";
           setOutcome({ sql: text.trim(), ms: 0, results: [], message: "", error: `${errorText(err)}${pos}` });
           setResultTab(0);
+          record(null, errorText(err), Date.now() - started);
         } finally {
           setActiveRow(0);
           setRunning(false);
@@ -239,7 +251,7 @@ export function QueryDoc({
       setActiveRow(0);
       setRunning(false);
     }, 280);
-  }, [running, conn, ctx.database, ctx.schema, backend, t]);
+  }, [running, conn, ctx.database, ctx.schema, backend, t, onExecuted]);
 
   const stop = useCallback(() => {
     if (backend && conn && running) {
@@ -356,6 +368,7 @@ export function QueryDoc({
         {tool("save", "query.save")}
         {tool("queryBuilder", "query.builder")}
         {tool("beautify", "query.beautify", beautify)}
+        {tool("history", "query.history", () => setHistoryOpen(true))}
         {tool("snippet", "query.snippet")}
         {tool("ai", "query.askAi")}
         <div className="ot-spacer" />
@@ -459,6 +472,22 @@ export function QueryDoc({
           </>
         )}
       </div>
+      {historyOpen && (
+        <HistoryDialog
+          connections={connections.filter((c) => c.live).map((c) => ({ id: c.id, name: c.name }))}
+          currentConnectionId={conn?.id}
+          onUse={(sql, mode) => {
+            const ed = editor.current;
+            if (ed) {
+              const current = ed.getText();
+              ed.replaceAll(mode === "append" && current.trim() ? `${current.replace(/\s+$/, "")}\n\n${sql}` : sql);
+              ed.focus();
+            }
+            setHistoryOpen(false);
+          }}
+          onClose={() => setHistoryOpen(false)}
+        />
+      )}
     </div>
   );
 }

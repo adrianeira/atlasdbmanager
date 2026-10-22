@@ -154,6 +154,11 @@ pub fn run() {
             local::profiles_list,
             local::profile_save,
             local::profile_delete,
+            local::history_add,
+            local::history_list,
+            local::history_favorite,
+            local::history_delete,
+            local::history_clear,
             local::pref_get,
             local::pref_set,
         ])

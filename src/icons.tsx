@@ -406,6 +406,13 @@ const small: Record<string, ReactElement> = {
   removeRow: <path d="M3.5 8h9" stroke="currentColor" strokeLinecap="round" />,
   apply: <path d="M3 8.5l3 3 7-7" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />,
   discard: <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeLinecap="round" />,
+  history: (
+    <>
+      <path d="M2.5 8a5.5 5.5 0 1 0 1.7-4" fill="none" stroke="currentColor" strokeLinecap="round" />
+      <path d="M2.4 1.8v3h3" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8 5v3.2l2 1.3" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />
+    </>
+  ),
   refresh: (
     <>
       <path d="M13 8a5 5 0 1 1-1.6-3.7" fill="none" stroke="currentColor" strokeLinecap="round" />

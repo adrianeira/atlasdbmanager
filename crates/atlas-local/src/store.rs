@@ -8,7 +8,12 @@ use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
 /// Migrações em ordem. Nunca editar uma migração já publicada: criar a próxima.
-const MIGRATIONS: &[(i64, &str)] = &[(1, include_str!("migrations/v1.sql"))];
+const MIGRATIONS: &[(i64, &str)] = &[(1, include_str!("migrations/v1.sql")), (2, include_str!("migrations/v2.sql"))];
+
+/* Histórico de consultas: limites. */
+const HISTORY_MAX_SQL_CHARS: usize = 100_000;
+/// Quantas consultas (fora os favoritos) o histórico guarda quando a preferência `history.max` não existe.
+const HISTORY_DEFAULT_KEEP: i64 = 2_000;
 
 const NOW: &str = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 
@@ -41,6 +46,53 @@ pub struct ProfileRecord {
     pub sort_order: i64,
     #[serde(default)]
     pub has_password: bool,
+}
+
+/// Consulta executada, como a interface a envia para o histórico.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewHistory {
+    /// Perfil salvo (se a conexão não é um perfil salvo, fica sem vínculo e só o nome é guardado).
+    pub connection_id: Option<String>,
+    pub connection_name: String,
+    pub database: Option<String>,
+    pub schema: Option<String>,
+    pub sql: String,
+    pub duration_ms: Option<i64>,
+    pub rows: Option<i64>,
+    /// `Some` = a execução falhou com esta mensagem.
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryEntry {
+    pub id: String,
+    pub connection_id: Option<String>,
+    pub connection_name: Option<String>,
+    pub database: Option<String>,
+    pub schema: Option<String>,
+    pub sql: String,
+    pub executed_utc: String,
+    pub duration_ms: Option<i64>,
+    /// "ok" | "error".
+    pub status: String,
+    pub rows: Option<i64>,
+    pub error: Option<String>,
+    pub favorite: bool,
+}
+
+/// Filtro da listagem do histórico.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct HistoryQuery {
+    pub search: String,
+    /// Só esta conexão (id do perfil).
+    pub connection_id: Option<String>,
+    pub favorites_only: bool,
+    pub errors_only: bool,
+    pub limit: u32,
+    pub offset: u32,
 }
 
 /// Nenhuma opção pode carregar segredo (spec §9.2: proibido `password` em options_json).
@@ -189,6 +241,105 @@ impl LocalStore {
         Ok(())
     }
 
+    /* ---------- Histórico de consultas ---------- */
+
+    /// Grava uma execução e apaga as mais antigas (os favoritos nunca são apagados).
+    pub fn add_history(&self, h: &NewHistory) -> Result<String, DatabaseError> {
+        let sql: String = h.sql.chars().take(HISTORY_MAX_SQL_CHARS).collect();
+        let keep = self
+            .get_pref("history.max")?
+            .and_then(|v| v.as_i64())
+            .filter(|n| *n >= 10)
+            .unwrap_or(HISTORY_DEFAULT_KEEP);
+        let id: String = self
+            .conn
+            .query_row(
+                &format!(
+                    "INSERT INTO sql_history(id, connection_profile_id, executed_utc, duration_ms, status, statement_redacted, \
+                                             row_count, error_code, connection_name, database_name, schema_name, error_message) \
+                     VALUES (lower(hex(randomblob(16))), (SELECT id FROM connection_profiles WHERE id = ?1), {NOW}, ?2, ?3, ?4, ?5, NULL, ?6, ?7, ?8, ?9) \
+                     RETURNING id"
+                ),
+                params![
+                    h.connection_id,
+                    h.duration_ms,
+                    if h.error.is_some() { "error" } else { "ok" },
+                    sql,
+                    h.rows,
+                    h.connection_name,
+                    h.database,
+                    h.schema,
+                    h.error
+                ],
+                |r| r.get(0),
+            )
+            .map_err(local_err)?;
+        self.conn
+            .execute(
+                "DELETE FROM sql_history WHERE favorite = 0 AND id NOT IN \
+                 (SELECT id FROM sql_history WHERE favorite = 0 ORDER BY executed_utc DESC, rowid DESC LIMIT ?1)",
+                params![keep],
+            )
+            .map_err(local_err)?;
+        Ok(id)
+    }
+
+    pub fn list_history(&self, q: &HistoryQuery) -> Result<Vec<HistoryEntry>, DatabaseError> {
+        let limit = if q.limit == 0 { 200 } else { q.limit.min(1_000) };
+        // O texto buscado entra só como parâmetro (com `%` e `_` escapados).
+        let like = format!("%{}%", q.search.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
+        let mut st = self
+            .conn
+            .prepare(
+                "SELECT id, connection_profile_id, connection_name, database_name, schema_name, statement_redacted, executed_utc, \
+                        duration_ms, status, row_count, error_message, favorite \
+                   FROM sql_history \
+                  WHERE (?1 = '' OR statement_redacted LIKE ?2 ESCAPE '\\') \
+                    AND (?3 IS NULL OR connection_profile_id = ?3) \
+                    AND (?4 = 0 OR favorite = 1) AND (?5 = 0 OR status = 'error') \
+                  ORDER BY executed_utc DESC, rowid DESC LIMIT ?6 OFFSET ?7",
+            )
+            .map_err(local_err)?;
+        let rows = st
+            .query_map(params![q.search, like, q.connection_id, q.favorites_only, q.errors_only, limit, q.offset], |r| {
+                Ok(HistoryEntry {
+                    id: r.get(0)?,
+                    connection_id: r.get(1)?,
+                    connection_name: r.get(2)?,
+                    database: r.get(3)?,
+                    schema: r.get(4)?,
+                    sql: r.get::<_, Option<String>>(5)?.unwrap_or_default(),
+                    executed_utc: r.get(6)?,
+                    duration_ms: r.get(7)?,
+                    status: r.get(8)?,
+                    rows: r.get(9)?,
+                    error: r.get(10)?,
+                    favorite: r.get::<_, i64>(11)? != 0,
+                })
+            })
+            .map_err(local_err)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(local_err)
+    }
+
+    pub fn set_history_favorite(&self, id: &str, favorite: bool) -> Result<(), DatabaseError> {
+        self.conn.execute("UPDATE sql_history SET favorite = ?2 WHERE id = ?1", params![id, favorite]).map_err(local_err)?;
+        Ok(())
+    }
+
+    pub fn delete_history(&self, id: &str) -> Result<(), DatabaseError> {
+        self.conn.execute("DELETE FROM sql_history WHERE id = ?1", params![id]).map_err(local_err)?;
+        Ok(())
+    }
+
+    /// Esvazia o histórico; com `keep_favorites` os favoritos ficam.
+    pub fn clear_history(&self, keep_favorites: bool) -> Result<u64, DatabaseError> {
+        let n = self
+            .conn
+            .execute("DELETE FROM sql_history WHERE (?1 = 0 OR favorite = 0)", params![keep_favorites])
+            .map_err(local_err)?;
+        Ok(n as u64)
+    }
+
     /* ---------- Preferências ---------- */
 
     pub fn get_pref(&self, key: &str) -> Result<Option<serde_json::Value>, DatabaseError> {
@@ -238,14 +389,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("atlas.db");
         let store = LocalStore::open(&path).unwrap();
-        assert_eq!(store.schema_version().unwrap(), 1);
+        assert_eq!(store.schema_version().unwrap(), 2);
         let checksum: String = store.conn.query_row("SELECT checksum FROM schema_migrations WHERE version = 1", [], |r| r.get(0)).unwrap();
         assert_eq!(checksum.len(), 64);
         drop(store);
         // Reabrir não reaplica a migração.
         let store = LocalStore::open(&path).unwrap();
         let n: i64 = store.conn.query_row("SELECT count(*) FROM schema_migrations", [], |r| r.get(0)).unwrap();
-        assert_eq!(n, 1);
+        assert_eq!(n, 2);
     }
 
     #[test]
@@ -267,6 +418,84 @@ mod tests {
 
         store.delete_profile("p1").unwrap();
         assert!(store.list_profiles().unwrap().is_empty());
+    }
+
+    fn run(sql: &str, error: Option<&str>) -> NewHistory {
+        NewHistory {
+            connection_id: Some("p1".into()),
+            connection_name: "PostgreSQL 9.6".into(),
+            database: Some("atlas_demo".into()),
+            schema: Some("public".into()),
+            sql: sql.into(),
+            duration_ms: Some(12),
+            rows: if error.is_some() { None } else { Some(3) },
+            error: error.map(Into::into),
+        }
+    }
+
+    #[test]
+    fn history_records_filters_favorites_and_trims() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(&dir.path().join("atlas.db")).unwrap();
+        store.upsert_profile(&profile("p1"), None).unwrap();
+        let q = |f: &dyn Fn(&mut HistoryQuery)| {
+            let mut query = HistoryQuery::default();
+            f(&mut query);
+            store.list_history(&query).unwrap()
+        };
+
+        let a = store.add_history(&run("SELECT 1", None)).unwrap();
+        store.add_history(&run("SELECT nome FROM clientes WHERE x LIKE '50%_a'", None)).unwrap();
+        store.add_history(&run("SELEC oops", Some("syntax error"))).unwrap();
+        // Conexão sem perfil salvo (ex.: demonstração): grava sem vínculo, só com o nome.
+        let mut orphan = run("SELECT 'sem perfil'", None);
+        orphan.connection_id = Some("nao-existe".into());
+        store.add_history(&orphan).unwrap();
+
+        let all = q(&|_| {});
+        assert_eq!(all.len(), 4);
+        assert_eq!(all[0].sql, "SELECT 'sem perfil'", "mais recente primeiro");
+        assert_eq!(all[0].connection_id, None);
+        assert_eq!(all[0].connection_name.as_deref(), Some("PostgreSQL 9.6"));
+        assert_eq!(all[1].status, "error");
+        assert_eq!(all[1].error.as_deref(), Some("syntax error"));
+
+        // Busca por texto: `%` e `_` valem como texto literal, não como curinga.
+        assert_eq!(q(&|f| f.search = "50%_a".into()).len(), 1);
+        assert_eq!(q(&|f| f.search = "5_".into()).len(), 0);
+        assert_eq!(q(&|f| f.search = "select".into()).len(), 3, "sem diferenciar maiúsculas");
+        assert_eq!(q(&|f| f.errors_only = true).len(), 1);
+        assert_eq!(q(&|f| f.connection_id = Some("p1".into())).len(), 3);
+
+        store.set_history_favorite(&a, true).unwrap();
+        assert_eq!(q(&|f| f.favorites_only = true).len(), 1);
+
+        // Limpar mantendo os favoritos, depois tudo.
+        assert_eq!(store.clear_history(true).unwrap(), 3);
+        assert_eq!(q(&|_| {}).len(), 1);
+        store.delete_history(&a).unwrap();
+        assert!(q(&|_| {}).is_empty());
+
+        // Retenção: acima do limite as mais antigas saem, os favoritos ficam.
+        store.set_pref("history.max", &serde_json::json!(10)).unwrap();
+        let fav = store.add_history(&run("SELECT 'favorita'", None)).unwrap();
+        store.set_history_favorite(&fav, true).unwrap();
+        for i in 0..25 {
+            store.add_history(&run(&format!("SELECT {i}"), None)).unwrap();
+        }
+        let kept = q(&|f| f.limit = 100);
+        assert_eq!(kept.len(), 11, "10 recentes + 1 favorita");
+        assert!(kept.iter().any(|e| e.favorite));
+        assert_eq!(kept[0].sql, "SELECT 24");
+    }
+
+    #[test]
+    fn history_truncates_huge_statements() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(&dir.path().join("atlas.db")).unwrap();
+        store.add_history(&run(&"x".repeat(150_000), None)).unwrap();
+        let e = &store.list_history(&HistoryQuery::default()).unwrap()[0];
+        assert_eq!(e.sql.chars().count(), HISTORY_MAX_SQL_CHARS);
     }
 
     #[test]

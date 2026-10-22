@@ -1623,6 +1623,16 @@ export default function App() {
           connecting={connecting}
           onOpenConnection={connect}
           onLoadSchemas={(connId, dbName) => { void loadDatabase(connId, dbName).catch((e) => showError(dbName, e)); }}
+          onExecuted={(e) => {
+            // O histórico fica só no banco local; a preferência "history.enabled" (padrão ligada) o desliga.
+            void local.getPref<boolean>("history.enabled").then((on) => {
+              if (on === false) return;
+              return local.historyAdd({
+                connectionId: e.connectionId, connectionName: e.connectionName, database: e.database, schema: e.schema ?? null,
+                sql: e.sql, durationMs: e.durationMs, rows: e.rows, error: e.error,
+              });
+            }).catch(() => undefined);
+          }}
           onRefreshSchemas={(connId, dbName) => { void loadDatabase(connId, dbName, false, true).catch(() => undefined); }}
           onExport={(info) => setExportTarget({
             connId: info.connectionId, database: info.database, schema: info.schema ?? "public",

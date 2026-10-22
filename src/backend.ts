@@ -189,6 +189,43 @@ export interface ProfileRecord {
 /** A interface terminou de carregar: o núcleo troca a tela de abertura pela janela principal. */
 export const appReady = () => call<void>("app_ready");
 
+/** Consulta executada no editor, como o histórico a guarda. */
+export interface HistoryEntry {
+  id: string;
+  connectionId: string | null;
+  connectionName: string | null;
+  database: string | null;
+  schema: string | null;
+  sql: string;
+  /** ISO 8601 em UTC. */
+  executedUtc: string;
+  durationMs: number | null;
+  status: "ok" | "error";
+  rows: number | null;
+  error: string | null;
+  favorite: boolean;
+}
+
+export interface NewHistory {
+  connectionId: string | null;
+  connectionName: string;
+  database: string | null;
+  schema: string | null;
+  sql: string;
+  durationMs: number | null;
+  rows: number | null;
+  error: string | null;
+}
+
+export interface HistoryQuery {
+  search: string;
+  connectionId: string | null;
+  favoritesOnly: boolean;
+  errorsOnly: boolean;
+  limit: number;
+  offset: number;
+}
+
 export const local = {
   status: () => call<{ path: string; schemaVersion: number | null; error: string | null }>("local_status"),
   profiles: () => call<ProfileRecord[]>("profiles_list"),
@@ -196,6 +233,12 @@ export const local = {
   saveProfile: (profile: ProfileRecord, password: string | null, savePassword: boolean) =>
     call<void>("profile_save", { profile, password, savePassword }),
   deleteProfile: (id: string) => call<void>("profile_delete", { id }),
+  historyAdd: (entry: NewHistory) => call<string>("history_add", { entry }),
+  historyList: (query: HistoryQuery) => call<HistoryEntry[]>("history_list", { query }),
+  historyFavorite: (id: string, favorite: boolean) => call<void>("history_favorite", { id, favorite }),
+  historyDelete: (id: string) => call<void>("history_delete", { id }),
+  /** Apaga o histórico; com `keepFavorites` os favoritos ficam. Devolve quantas consultas saíram. */
+  historyClear: (keepFavorites: boolean) => call<number>("history_clear", { keepFavorites }),
   getPref: <T>(key: string) => call<T | null>("pref_get", { key }),
   setPref: (key: string, value: unknown) => call<void>("pref_set", { key, value }),
 };

@@ -1,7 +1,7 @@
 //! Estado e comandos do armazenamento local (`atlas.db` + cofre de credenciais).
 
 use atlas_core::{ConnectionParams, DatabaseError, ErrorKind, Secret};
-use atlas_local::{LocalStore, PasswordAction, ProfileRecord};
+use atlas_local::{HistoryEntry, HistoryQuery, LocalStore, NewHistory, PasswordAction, ProfileRecord};
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -90,6 +90,32 @@ pub fn profile_save(
 #[tauri::command]
 pub fn profile_delete(local: State<'_, Local>, id: String) -> Result<(), DatabaseError> {
     local.with(|s| atlas_local::delete_profile(s, &id))
+}
+
+#[tauri::command]
+pub fn history_add(local: State<'_, Local>, entry: NewHistory) -> Result<String, DatabaseError> {
+    local.with(|s| s.add_history(&entry))
+}
+
+#[tauri::command]
+pub fn history_list(local: State<'_, Local>, query: HistoryQuery) -> Result<Vec<HistoryEntry>, DatabaseError> {
+    local.with(|s| s.list_history(&query))
+}
+
+#[tauri::command]
+pub fn history_favorite(local: State<'_, Local>, id: String, favorite: bool) -> Result<(), DatabaseError> {
+    local.with(|s| s.set_history_favorite(&id, favorite))
+}
+
+#[tauri::command]
+pub fn history_delete(local: State<'_, Local>, id: String) -> Result<(), DatabaseError> {
+    local.with(|s| s.delete_history(&id))
+}
+
+/// Esvazia o histórico; com `keep_favorites` os favoritos ficam. Devolve quantas consultas foram apagadas.
+#[tauri::command]
+pub fn history_clear(local: State<'_, Local>, keep_favorites: bool) -> Result<u64, DatabaseError> {
+    local.with(|s| s.clear_history(keep_favorites))
 }
 
 #[tauri::command]
