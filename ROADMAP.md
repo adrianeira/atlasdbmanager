@@ -115,6 +115,8 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [x] Cor do checkbox padronizada em **#0277BD** (accent-color global) *(`src/styles/tokens.css`)*
 - [x] Borda de foco mais fina (1 px) *(`src/styles/shell.css`)*
 - [x] Dropdown: item hover/selecionado em **#0277BD** com texto branco
+- [x] Bordas dos controles e divisórias do tema claro em **#dbdbdb** (tokens `--c-border`/`--c-border-strong`)
+- [x] Campo **Default** do designer de tabela com lista própria (`ComboInput`), com a seta alinhada à borda
 - [x] Campo da página do rodapé em azul-claro
 - [x] Dropdowns da consulta com borda cinza (fundo branco mantido)
 
