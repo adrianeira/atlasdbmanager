@@ -2081,3 +2081,11 @@ select.et-input {
 /* Designer de sequência. */
 .seq-position { margin-top: 12px; padding: 8px 12px; border: 1px solid var(--c-border); background: var(--c-surface-alt); display: flex; flex-direction: column; gap: 3px; width: max-content; max-width: 100%; }
 .field.is-invalid { border-color: var(--c-danger); }
+
+/* Designer de papel: listas de participação. */
+.role-membership { display: flex; flex-direction: column; gap: 8px; height: 100%; min-height: 0; padding: 4px 0; }
+.role-membership > .field { width: 280px; }
+.role-lists { flex: 1; min-height: 0; display: flex; gap: 12px; }
+.role-list { flex: 1; min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--c-border); }
+.role-list-title { padding: 4px 8px; font-weight: 600; background: var(--c-surface-alt); border-bottom: 1px solid var(--c-border); }
+.role-list-body { flex: 1; overflow: auto; padding: 4px 8px; }

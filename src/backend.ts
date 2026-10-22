@@ -125,6 +125,25 @@ export interface ViewDetail {
   populated: boolean;
 }
 
+export interface RoleDetail {
+  name: string;
+  superuser: boolean;
+  inherit: boolean;
+  createRole: boolean;
+  createDb: boolean;
+  canLogin: boolean;
+  replication: boolean;
+  /** PostgreSQL 9.5+; null antes disso. */
+  bypassRls: boolean | null;
+  /** -1 = sem limite. */
+  connectionLimit: number;
+  /** VALID UNTIL como texto do servidor; null = sem validade. */
+  validUntil: string | null;
+  comment: string | null;
+  memberOf: string[];
+  members: string[];
+}
+
 export interface TypeDetail {
   name: string;
   kind: "enum" | "composite" | "domain" | "range";
@@ -303,6 +322,7 @@ export const pg = {
     call<TableDetail>("pg_table_detail", { sessionId, database, schema, table }),
   viewDetail: (sessionId: string, database: string, schema: string, view: string) =>
     call<ViewDetail>("pg_view_detail", { sessionId, database, schema, view }),
+  roleDetail: (sessionId: string, name: string) => call<RoleDetail>("pg_role_detail", { sessionId, name }),
   typeDetail: (sessionId: string, database: string, schema: string, name: string) =>
     call<TypeDetail>("pg_type_detail", { sessionId, database, schema, name }),
   sequenceDetail: (sessionId: string, database: string, schema: string, name: string) =>

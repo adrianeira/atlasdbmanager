@@ -198,6 +198,30 @@ pub struct ViewDetail {
     pub populated: bool,
 }
 
+/// Papel (usuário ou grupo) com todos os atributos editáveis. A senha nunca é lida: o servidor só guarda o hash.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleDetail {
+    pub name: String,
+    pub superuser: bool,
+    pub inherit: bool,
+    pub create_role: bool,
+    pub create_db: bool,
+    pub can_login: bool,
+    pub replication: bool,
+    /// `BYPASSRLS` (PostgreSQL 9.5+); `None` em servidores mais antigos.
+    pub bypass_rls: Option<bool>,
+    /// Limite de conexões simultâneas (`-1` = sem limite).
+    pub connection_limit: i32,
+    /// `VALID UNTIL` como texto do servidor; `None` = sem validade.
+    pub valid_until: Option<String>,
+    pub comment: Option<String>,
+    /// Papéis dos quais este é membro (`GRANT x TO este`).
+    pub member_of: Vec<String>,
+    /// Papéis que são membros deste (`GRANT este TO x`).
+    pub members: Vec<String>,
+}
+
 /// Atributo de um tipo composto.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

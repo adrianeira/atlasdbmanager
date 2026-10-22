@@ -5,7 +5,7 @@ use crate::connect::PgSession;
 use crate::error::map_error;
 use atlas_core::{
     ColumnInfo, ConstraintInfo, DatabaseError, DatabaseList, ErrorKind, IndexInfo, ObjectInfo, RoleInfo, RuleInfo,
-    FunctionDetail, SchemaObjects, SequenceDetail, TableDetail, TypeAttribute, TypeCheck, TypeDetail, TriggerInfo, ViewDetail,
+    FunctionDetail, RoleDetail, SchemaObjects, SequenceDetail, TableDetail, TypeAttribute, TypeCheck, TypeDetail, TriggerInfo, ViewDetail,
 };
 
 pub async fn list_databases(s: &PgSession) -> Result<DatabaseList, DatabaseError> {
@@ -578,6 +578,55 @@ pub async fn function_detail(s: &PgSession, schema: &str, name: &str, identity: 
         owner: r.get(10),
         comment: r.get(11),
         procedure: is_procedure,
+    })
+}
+
+/// Atributos e participações de um papel.
+pub async fn role_detail(s: &PgSession, name: &str) -> Result<RoleDetail, DatabaseError> {
+    // `rolbypassrls` existe a partir do PostgreSQL 9.5.
+    let bypass = if s.server.version_num >= 90500 { "rolbypassrls" } else { "NULL::boolean" };
+    let sql = format!(
+        "SELECT oid, rolsuper, rolinherit, rolcreaterole, rolcreatedb, rolcanlogin, rolreplication, {bypass}, rolconnlimit, \
+                rolvaliduntil::text, shobj_description(oid, 'pg_authid') \
+           FROM pg_catalog.pg_roles WHERE rolname = $1"
+    );
+    let row = s.client.query_opt(&sql, &[&name]).await.map_err(|e| map_error(&e))?;
+    let Some(r) = row else {
+        let mut err = DatabaseError::new(ErrorKind::Server, format!("role \"{name}\" does not exist"));
+        err.code = Some("42704".into());
+        return Err(err);
+    };
+    let oid: u32 = r.get(0);
+    let member_of = s
+        .client
+        .query(
+            "SELECT g.rolname::text FROM pg_catalog.pg_auth_members m JOIN pg_catalog.pg_roles g ON g.oid = m.roleid WHERE m.member = $1 ORDER BY 1",
+            &[&oid],
+        )
+        .await
+        .map_err(|e| map_error(&e))?;
+    let members = s
+        .client
+        .query(
+            "SELECT g.rolname::text FROM pg_catalog.pg_auth_members m JOIN pg_catalog.pg_roles g ON g.oid = m.member WHERE m.roleid = $1 ORDER BY 1",
+            &[&oid],
+        )
+        .await
+        .map_err(|e| map_error(&e))?;
+    Ok(RoleDetail {
+        name: name.to_string(),
+        superuser: r.get(1),
+        inherit: r.get(2),
+        create_role: r.get(3),
+        create_db: r.get(4),
+        can_login: r.get(5),
+        replication: r.get(6),
+        bypass_rls: r.get(7),
+        connection_limit: r.get(8),
+        valid_until: r.get(9),
+        comment: r.get(10),
+        member_of: member_of.iter().map(|x| x.get(0)).collect(),
+        members: members.iter().map(|x| x.get(0)).collect(),
     })
 }
 

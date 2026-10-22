@@ -413,6 +413,42 @@ async fn user_types_are_listed_and_described() {
 }
 
 #[tokio::test]
+async fn role_detail_reads_attributes_and_memberships() {
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    let suffix = std::process::id();
+    let (grupo, usuario) = (format!("atlas_grp_{suffix}"), format!("atlas_usr_{suffix}"));
+    atlas_pg::execute(
+        &s,
+        &format!(
+            "DROP ROLE IF EXISTS {usuario}; DROP ROLE IF EXISTS {grupo}; \
+             CREATE ROLE {grupo} NOLOGIN; \
+             CREATE ROLE {usuario} LOGIN CREATEDB NOINHERIT CONNECTION LIMIT 7 VALID UNTIL '2099-01-01 00:00:00+00' IN ROLE {grupo}; \
+             COMMENT ON ROLE {usuario} IS 'conta de teste'"
+        ),
+        1,
+    )
+    .await
+    .unwrap();
+
+    let u = atlas_pg::role_detail(&s, &usuario).await.expect("user");
+    assert!(u.can_login && u.create_db && !u.inherit && !u.superuser && !u.create_role && !u.replication);
+    assert_eq!(u.connection_limit, 7);
+    assert!(u.valid_until.as_deref().is_some_and(|v| v.starts_with("2098-12-31") || v.starts_with("2099-01-01")), "{:?}", u.valid_until);
+    assert_eq!(u.comment.as_deref(), Some("conta de teste"));
+    assert_eq!(u.member_of, std::slice::from_ref(&grupo));
+    assert!(u.members.is_empty());
+    assert_eq!(u.bypass_rls.is_some(), s.server.version_num >= 90500);
+
+    let g = atlas_pg::role_detail(&s, &grupo).await.expect("group");
+    assert!(!g.can_login && g.inherit && g.connection_limit == -1 && g.valid_until.is_none());
+    assert_eq!(g.members, std::slice::from_ref(&usuario));
+
+    assert!(atlas_pg::role_detail(&s, "atlas_nao_existe_xyz").await.is_err());
+    atlas_pg::execute(&s, &format!("DROP ROLE {usuario}; DROP ROLE {grupo}"), 1).await.unwrap();
+}
+
+#[tokio::test]
 async fn syntax_error_reports_position() {
     let p = require_server!();
     let s = atlas_pg::connect(&p, None).await.expect("connect");

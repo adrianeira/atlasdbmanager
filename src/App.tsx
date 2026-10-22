@@ -25,6 +25,8 @@ import { refreshMatviewSql } from "./sql/view";
 import { dropFuncSql } from "./sql/func";
 import { dropSeqSql } from "./sql/sequence";
 import { dropTypeSql } from "./sql/typedef";
+import { dropRoleSql } from "./sql/role";
+import { RoleDesignerDoc, type RoleBackend } from "./documents/RoleDesignerDoc";
 import { TypeDesignerDoc, type TypeBackend } from "./documents/TypeDesignerDoc";
 import { SequenceDesignerDoc, type SequenceBackend } from "./documents/SequenceDesignerDoc";
 import { FunctionDesignerDoc, type FunctionBackend } from "./documents/FunctionDesignerDoc";
@@ -190,7 +192,7 @@ interface DdlRequest {
   database: string;
   schema?: string;
   /** O que reler na árvore depois de executar. */
-  refresh: "connection" | "database" | "schema";
+  refresh: "connection" | "database" | "schema" | "roles";
   danger?: boolean;
   /** `false` para comandos que o PostgreSQL não aceita em transação (CREATE/DROP DATABASE). */
   transactional?: boolean;
@@ -362,6 +364,12 @@ export default function App() {
     } finally {
       setLoadingNodes((s) => remove(s, nodeId));
     }
+  };
+
+  /** Relê a lista de papéis do servidor (depois de criar, alterar ou excluir um). */
+  const reloadRoles = async (connId: string) => {
+    const roles = await pg.listRoles(connId);
+    updateConn(connId, (c) => ({ ...c, roles: roles.map((r) => ({ name: r.name, canLogin: r.canLogin, superuser: r.superuser })) }));
   };
 
   /** Abre a sessão no servidor e lê bancos/roles. Rejeita se a senha ainda não é conhecida. */
@@ -670,7 +678,8 @@ export default function App() {
       setDialog(null);
       d.after?.();
       const fail = (e: unknown) => showError(t("cmd.refresh"), e);
-      if (d.refresh === "schema" && d.schema) void loadSchema(d.connId, d.database, d.schema, true).catch(fail);
+      if (d.refresh === "roles") void reloadRoles(d.connId).catch(fail);
+      else if (d.refresh === "schema" && d.schema) void loadSchema(d.connId, d.database, d.schema, true).catch(fail);
       else if (d.refresh === "database") void loadDatabase(d.connId, d.database, true).catch(fail);
       else {
         const node = nodes.find((n) => n.id === `conn:${seg(d.connId)}`);
@@ -712,6 +721,12 @@ export default function App() {
     if (!ctx.connection || !ctx.database || !ctx.schema) return;
     const title = objectTitle(t("des.untitled"), "tb.function");
     openTab({ kind: "functionDesigner", title, windowTitle: title, icon: "function", connectionId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name });
+  };
+
+  const newRole = () => {
+    if (!ctx.connection?.live) return;
+    const title = objectTitle(t("des.untitled"), "tb.user", { connection: ctx.connection });
+    openTab({ kind: "roleDesigner", title, windowTitle: title, icon: "design", connectionId: ctx.connection.id, database: ctx.database?.name ?? ctx.connection.initialDatabase });
   };
 
   const newType = () => {
@@ -769,6 +784,7 @@ export default function App() {
       if (cat === "function") return newFunction();
       if (cat === "sequence") return newSequence();
       if (cat === "type") return newType();
+      if (cat === "user") return newRole();
       return openTab({ kind: "placeholder", title: `${t("act.new")} ${t(CATEGORY_LABEL[cat])}`, icon: cat, note: t("placeholder.designer") });
     }
     for (const name of names) {
@@ -789,6 +805,9 @@ export default function App() {
         const fn = c.schema?.objects.function?.find((o) => o.name === name);
         const title = objectTitle(fn?.fnName ?? name, "tb.function", c);
         openTab({ ...base, kind: "functionDesigner", fnName: fn?.fnName, fnIdentity: fn?.args, title, windowTitle: title, icon: "function" }, `${t("act.designFunction")} - ${name}`);
+      } else if (cat === "user" && c.connection?.live) {
+        const title = objectTitle(name, "tb.user", c);
+        openTab({ ...base, kind: "roleDesigner", database: c.database?.name ?? c.connection.initialDatabase, title, windowTitle: title, icon: "design" }, `${t("act.editUser")} - ${name}`);
       } else if (cat === "type" && c.connection?.live) {
         const title = objectTitle(name, "cat.type", c);
         openTab({ ...base, kind: "typeDesigner", title, windowTitle: title, icon: "design" }, `${t("act.design")} - ${name}`);
@@ -1149,6 +1168,31 @@ export default function App() {
       );
     }
 
+    if (node.kind === "folder" && node.category === "user") {
+      items.push(
+        item("act.newUser", newRole),
+        sep,
+        item("cmd.refresh", live && c.connection ? () => { void reloadRoles(c.connection!.id).catch((e) => showError(t("cmd.refresh"), e)); } : undefined),
+      );
+    }
+
+    if (node.kind === "object" && node.category === "user" && c.connection && c.objectName) {
+      const name = c.objectName;
+      const conn = c.connection;
+      items.push(
+        item("act.editUser", () => openObjects("design", [name], "user", c)),
+        item("act.newUser", newRole),
+        item("act.deleteUser", live ? () => askDdl({
+          title: t("act.deleteUser"), statements: [dropRoleSql(name)], connId: conn.id, database: c.database?.name ?? conn.initialDatabase,
+          refresh: "roles", danger: true, confirmText: prod ? name : undefined,
+        }) : undefined),
+        sep,
+        item("cmd.copyName", () => { void navigator.clipboard?.writeText(name).catch(() => undefined); }),
+        sep,
+        item("cmd.refresh", live ? () => { void reloadRoles(conn.id).catch((e) => showError(t("cmd.refresh"), e)); } : undefined),
+      );
+    }
+
     if (node.kind === "folder" && node.category === "type") {
       items.push(
         item("act.new", newType),
@@ -1342,7 +1386,7 @@ export default function App() {
     newView: { id: "newView", label: "cmd.newView", run: hasSchema ? newView : undefined },
     newMatview: { id: "newMatview", label: "cmd.newMatview", run: hasSchema ? newMatview : undefined },
     newFunction: { id: "newFunction", label: "cmd.newFunction", run: hasSchema ? newFunction : undefined },
-    newRole: { id: "newRole", label: "cmd.newRole" },
+    newRole: { id: "newRole", label: "cmd.newRole", run: ctx.connection?.live ? newRole : undefined },
     newTablespace: { id: "newTablespace", label: "cmd.newTablespace" },
     newCast: { id: "newCast", label: "cmd.newCast" },
     newForeignServer: { id: "newForeignServer", label: "cmd.newForeignServer" },
@@ -1561,6 +1605,7 @@ export default function App() {
     : active.kind === "functionDesigner" ? "function"
     : active.kind === "sequenceDesigner" ? "sequence"
     : active.kind === "typeDesigner" ? "type"
+    : active.kind === "roleDesigner" ? "user"
     : active.objectKind === "matview" ? "matview"
     : active.kind === "viewDesigner" || (active.kind === "data" && active.objectKind === "view") ? "view"
     : active.kind === "data" || active.kind === "designer" ? "table" : category;
@@ -1687,6 +1732,17 @@ export default function App() {
     });
   };
 
+  const roleBackends = useRef<Record<string, RoleBackend>>({});
+  const roleBackendFor = (tab: DocTab, conn: ConnectionMock): RoleBackend => {
+    const db = tab.database ?? conn.initialDatabase;
+    return (roleBackends.current[tab.id] ??= {
+      loadDetail: (name) => pg.roleDetail(conn.id, name),
+      apply: async (statements) => {
+        await pg.apply(conn.id, db, statements.map((sql) => ({ sql, params: [], expectOneRow: false })));
+      },
+    });
+  };
+
   const typeBackends = useRef<Record<string, TypeBackend>>({});
   const typeBackendFor = (tab: DocTab, conn: ConnectionMock): TypeBackend => {
     const db = tab.database ?? "";
@@ -1794,6 +1850,26 @@ export default function App() {
             if (conn?.live && tab.database && tab.schema) void loadSchema(conn.id, tab.database, tab.schema, true).catch(() => undefined);
           }}
           backend={conn?.live ? viewBackendFor(tab, conn) : undefined}
+        />
+      );
+    }
+    if (tab.kind === "roleDesigner") {
+      const conn = connections.find((c) => c.id === tab.connectionId);
+      return (
+        <RoleDesignerDoc
+          roleName={tab.object}
+          allRoles={conn?.roles.map((r) => r.name) ?? []}
+          serverVersionNum={conn?.serverVersionNum ?? 0}
+          active={isActive}
+          production={conn?.environment === "production"}
+          onStatus={statusFor(tab.id)}
+          onDirty={(dirty) => setTabDirty(tab.id, dirty)}
+          onSaved={(name) => {
+            const title = objectTitle(name, "tb.user", { connection: conn });
+            setTabs((ts) => ts.map((x) => (x.id === tab.id ? { ...x, object: name, title, windowTitle: title } : x)));
+            if (conn?.live) void reloadRoles(conn.id).catch(() => undefined);
+          }}
+          backend={conn?.live ? roleBackendFor(tab, conn) : undefined}
         />
       );
     }
@@ -1950,6 +2026,14 @@ export default function App() {
                   onAction={(kind, names) => openObjects(kind, names)}
                   onContextMenu={(name, x, y) => {
                     // Mesmo menu da árvore: monta o nó equivalente (objeto ou pasta da categoria).
+                    // Papéis pertencem ao servidor, não a um schema: o menu só precisa da conexão.
+                    if (category === "user" && ctx.connection) {
+                      const userPath = `${seg(ctx.connection.id)}/${seg(ctx.database?.name ?? "")}/${seg(ctx.schema?.name ?? "")}`;
+                      showContextMenu(name
+                        ? { id: `obj:${userPath}/user/${seg(name)}`, kind: "object", label: name, depth: 4, expandable: false, category }
+                        : { id: `folder:${userPath}/user`, kind: "folder", label: "", depth: 3, expandable: false, category }, x, y);
+                      return;
+                    }
                     if (!ctx.connection || !ctx.database || !ctx.schema) return;
                     const scPath = `${seg(ctx.connection.id)}/${seg(ctx.database.name)}/${seg(ctx.schema.name)}`;
                     const node: TreeNode = name
