@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { errorText, isDesktop, local, pg, toAtlasError, type ConnectionParams, type ProfileRecord } from "./backend";
 import { entries, matchesShortcut, sub, type CommandMap, type MenuDef, type MenuEntry } from "./commands";
 import { ConnectionDialog, type ConnectionForm } from "./components/ConnectionDialog";
@@ -215,6 +216,17 @@ export default function App() {
     if (layout.theme === "system") delete root.dataset.theme;
     else root.dataset.theme = layout.theme;
     root.lang = layout.lang;
+    // A barra de título nativa acompanha o tema que a interface está mostrando
+    // (sem isso ela segue o modo de apps do Windows e pode ficar escura com a UI clara).
+    if (!isDesktop) return;
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const apply = () => {
+      const effective = layout.theme === "system" ? (media.matches ? "dark" : "light") : layout.theme;
+      void getCurrentWindow().setTheme(effective).catch(() => undefined);
+    };
+    apply();
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
   }, [layout.theme, layout.lang]);
 
   /* ---------- Conexões e árvore ---------- */
