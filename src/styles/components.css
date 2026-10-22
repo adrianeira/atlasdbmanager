@@ -912,6 +912,11 @@ textarea.field.remarks {
   display: flex;
 }
 
+.dg-row.is-alt,
+.dg-row.is-alt .dg-rowhead {
+  background: var(--c-grid-alt-row);
+}
+
 .dg-row.is-active,
 .dg-row.is-active .dg-rowhead {
   background: var(--c-grid-active-row);

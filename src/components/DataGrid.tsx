@@ -249,7 +249,8 @@ export function DataGrid({ columns, rows, readOnly, edited, deletedRows, newRows
         {rows.slice(first, last).map((r, k) => {
           const ri = first + k;
           const isActive = ri === activeRow;
-          const cls = `dg-row${isActive ? " is-active" : ""}${deletedRows?.has(ri) ? " is-deleted" : ""}${newRows?.has(ri) ? " is-new" : ""}`;
+          // Linhas zebradas (alternadas), como na referência.
+          const cls = `dg-row${ri % 2 === 1 ? " is-alt" : ""}${isActive ? " is-active" : ""}${deletedRows?.has(ri) ? " is-deleted" : ""}${newRows?.has(ri) ? " is-new" : ""}`;
           return (
             <div key={ri} className={cls} style={{ top: headerHeight + ri * rowHeight, height: rowHeight }} role="row" aria-rowindex={ri + 1}>
               <div className="dg-rowhead" style={{ width: rowHeadWidth }} />
