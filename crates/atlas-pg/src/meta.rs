@@ -5,7 +5,7 @@ use crate::connect::PgSession;
 use crate::error::map_error;
 use atlas_core::{
     ColumnInfo, ConstraintInfo, DatabaseError, DatabaseList, ErrorKind, IndexInfo, ObjectInfo, RoleInfo, RuleInfo,
-    FunctionDetail, SchemaObjects, TableDetail, TriggerInfo, ViewDetail,
+    FunctionDetail, SchemaObjects, SequenceDetail, TableDetail, TriggerInfo, ViewDetail,
 };
 
 pub async fn list_databases(s: &PgSession) -> Result<DatabaseList, DatabaseError> {
@@ -333,6 +333,107 @@ async fn relation_detail(s: &PgSession, schema: &str, view: &str, materialized: 
         security_barrier,
         rules,
         populated,
+    })
+}
+
+/// Parâmetros e posição atual de uma sequência. No PostgreSQL 10+ vêm de `pg_sequences`; antes, da própria
+/// relação da sequência (que tinha uma linha com os parâmetros).
+pub async fn sequence_detail(s: &PgSession, schema: &str, name: &str) -> Result<SequenceDetail, DatabaseError> {
+    let head = s
+        .client
+        .query_opt(
+            "SELECT c.oid, pg_get_userbyid(c.relowner)::text, obj_description(c.oid, 'pg_class'), \
+                    quote_ident(n.nspname) || '.' || quote_ident(c.relname) \
+               FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+              WHERE n.nspname = $1 AND c.relname = $2 AND c.relkind = 'S'",
+            &[&schema, &name],
+        )
+        .await
+        .map_err(|e| map_error(&e))?;
+    let Some(head) = head else {
+        let mut err = DatabaseError::new(ErrorKind::Server, format!("sequence \"{schema}\".\"{name}\" does not exist"));
+        err.code = Some("42P01".into());
+        return Err(err);
+    };
+    let oid: u32 = head.get(0);
+    let qualified: String = head.get(3);
+
+    let owned = s
+        .client
+        .query_opt(
+            "SELECT quote_ident(tn.nspname) || '.' || quote_ident(t.relname) || '.' || quote_ident(a.attname) \
+               FROM pg_catalog.pg_depend d \
+               JOIN pg_catalog.pg_class t ON t.oid = d.refobjid \
+               JOIN pg_catalog.pg_namespace tn ON tn.oid = t.relnamespace \
+               JOIN pg_catalog.pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid \
+              WHERE d.classid = 'pg_catalog.pg_class'::regclass AND d.objid = $1 AND d.deptype = 'a' AND d.refobjsubid > 0",
+            &[&oid],
+        )
+        .await
+        .map_err(|e| map_error(&e))?;
+    let owned_by: Option<String> = owned.map(|r| r.get(0));
+
+    let text = |v: i64| v.to_string();
+    let (data_type, start, increment, min, max, cache, cycle, last_value, is_called);
+    if s.server.version_num >= 100000 {
+        let r = s
+            .client
+            .query_one(
+                "SELECT data_type::text, start_value, increment_by, min_value, max_value, cache_size, cycle, last_value \
+                   FROM pg_catalog.pg_sequences WHERE schemaname = $1 AND sequencename = $2",
+                &[&schema, &name],
+            )
+            .await
+            .map_err(|e| map_error(&e))?;
+        data_type = r.get::<_, String>(0);
+        start = text(r.get(1));
+        increment = text(r.get(2));
+        min = text(r.get(3));
+        max = text(r.get(4));
+        cache = text(r.get(5));
+        cycle = r.get::<_, bool>(6);
+        // `last_value` é NULL enquanto a sequência nunca foi usada (a posição vem da relação, abaixo).
+        let used: Option<i64> = r.get(7);
+        let pos = s
+            .client
+            .query_one(&format!("SELECT last_value, is_called FROM {qualified}"), &[])
+            .await
+            .map_err(|e| map_error(&e))?;
+        last_value = text(used.unwrap_or_else(|| pos.get::<_, i64>(0)));
+        is_called = pos.get::<_, bool>(1);
+    } else {
+        let r = s
+            .client
+            .query_one(
+                &format!("SELECT start_value, increment_by, min_value, max_value, cache_value, is_cycled, last_value, is_called FROM {qualified}"),
+                &[],
+            )
+            .await
+            .map_err(|e| map_error(&e))?;
+        data_type = "bigint".to_string();
+        start = text(r.get(0));
+        increment = text(r.get(1));
+        min = text(r.get(2));
+        max = text(r.get(3));
+        cache = text(r.get(4));
+        cycle = r.get::<_, bool>(5);
+        last_value = text(r.get(6));
+        is_called = r.get::<_, bool>(7);
+    }
+    Ok(SequenceDetail {
+        name: name.to_string(),
+        owner: head.get(1),
+        comment: head.get(2),
+        data_type,
+        start,
+        increment,
+        min,
+        max,
+        cache,
+        cycle,
+        last_value,
+        is_called,
+        owned_by,
     })
 }
 

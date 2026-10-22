@@ -136,6 +136,7 @@ pub fn run() {
             commands::pg_view_detail,
             commands::pg_matview_detail,
             commands::pg_function_detail,
+            commands::pg_sequence_detail,
             commands::pg_list_roles,
             commands::pg_execute,
             commands::pg_cancel,

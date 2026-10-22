@@ -124,6 +124,25 @@ export interface ViewDetail {
   populated: boolean;
 }
 
+export interface SequenceDetail {
+  name: string;
+  owner: string | null;
+  comment: string | null;
+  dataType: "smallint" | "integer" | "bigint";
+  /** Números como texto: um bigint não cabe num número JSON. */
+  start: string;
+  increment: string;
+  min: string;
+  max: string;
+  cache: string;
+  cycle: boolean;
+  lastValue: string;
+  /** Já entregou algum valor; falso = o próximo nextval devolve lastValue. */
+  isCalled: boolean;
+  /** Coluna dona (OWNED BY), como "schema"."tabela"."coluna". */
+  ownedBy: string | null;
+}
+
 export interface FunctionDetail {
   name: string;
   language: string;
@@ -268,6 +287,8 @@ export const pg = {
     call<TableDetail>("pg_table_detail", { sessionId, database, schema, table }),
   viewDetail: (sessionId: string, database: string, schema: string, view: string) =>
     call<ViewDetail>("pg_view_detail", { sessionId, database, schema, view }),
+  sequenceDetail: (sessionId: string, database: string, schema: string, name: string) =>
+    call<SequenceDetail>("pg_sequence_detail", { sessionId, database, schema, name }),
   functionDetail: (sessionId: string, database: string, schema: string, name: string, identity: string) =>
     call<FunctionDetail>("pg_function_detail", { sessionId, database, schema, name, identity }),
   matviewDetail: (sessionId: string, database: string, schema: string, view: string) =>

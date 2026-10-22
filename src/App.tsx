@@ -23,6 +23,8 @@ import { TableDesignerDoc } from "./documents/TableDesignerDoc";
 import { ViewDesignerDoc, type ViewBackend } from "./documents/ViewDesignerDoc";
 import { refreshMatviewSql } from "./sql/view";
 import { dropFuncSql } from "./sql/func";
+import { dropSeqSql } from "./sql/sequence";
+import { SequenceDesignerDoc, type SequenceBackend } from "./documents/SequenceDesignerDoc";
 import { FunctionDesignerDoc, type FunctionBackend } from "./documents/FunctionDesignerDoc";
 import { detectLang, I18nContext, makeTranslator, type Lang, type MessageKey } from "./i18n";
 import { ProviderIcon, SmallIcon } from "./icons";
@@ -710,6 +712,12 @@ export default function App() {
     openTab({ kind: "functionDesigner", title, windowTitle: title, icon: "function", connectionId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name });
   };
 
+  const newSequence = () => {
+    if (!ctx.connection || !ctx.database || !ctx.schema) return;
+    const title = objectTitle(t("des.untitled"), "cat.sequence");
+    openTab({ kind: "sequenceDesigner", title, windowTitle: title, icon: "sequence", connectionId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name });
+  };
+
   const newMatview = () => {
     if (!ctx.connection || !ctx.database || !ctx.schema) return;
     const title = objectTitle(t("des.untitled"), "tb.matview");
@@ -751,6 +759,7 @@ export default function App() {
       if (cat === "view") return newView();
       if (cat === "matview") return newMatview();
       if (cat === "function") return newFunction();
+      if (cat === "sequence") return newSequence();
       return openTab({ kind: "placeholder", title: `${t("act.new")} ${t(CATEGORY_LABEL[cat])}`, icon: cat, note: t("placeholder.designer") });
     }
     for (const name of names) {
@@ -771,6 +780,9 @@ export default function App() {
         const fn = c.schema?.objects.function?.find((o) => o.name === name);
         const title = objectTitle(fn?.fnName ?? name, "tb.function", c);
         openTab({ ...base, kind: "functionDesigner", fnName: fn?.fnName, fnIdentity: fn?.args, title, windowTitle: title, icon: "function" }, `${t("act.designFunction")} - ${name}`);
+      } else if (cat === "sequence" && c.connection?.live) {
+        const title = objectTitle(name, "cat.sequence", c);
+        openTab({ ...base, kind: "sequenceDesigner", title, windowTitle: title, icon: "sequence" }, `${t("act.design")} - ${name}`);
       } else if (cat === "matview" && kind === "open") {
         const title = objectTitle(name, "tb.matview", c);
         openTab({ ...base, kind: "data", objectKind: "matview", title, windowTitle: title, icon: "matview" }, `${t("act.openMatview")} - ${name}`);
@@ -1122,6 +1134,33 @@ export default function App() {
         item("cmd.newQuery", () => newQuery()),
         sep,
         item("cmd.refresh", live ? () => refreshNode(node) : undefined),
+      );
+    }
+
+    if (node.kind === "folder" && node.category === "sequence") {
+      items.push(
+        item("act.new", newSequence),
+        item("cmd.newQuery", () => newQuery()),
+        sep,
+        item("cmd.refresh", live ? () => refreshNode(node) : undefined),
+      );
+    }
+
+    if (node.kind === "object" && node.category === "sequence" && c.connection && c.database && c.schema && c.objectName) {
+      const scName = c.schema.name;
+      const name = c.objectName;
+      const scope = { connId: c.connection.id, database: c.database.name, schema: scName, refresh: "schema" as const };
+      items.push(
+        item("act.design", () => openObjects("design", [name], "sequence", c)),
+        item("act.new", newSequence),
+        item("act.delete", live ? () => askDdl({
+          ...scope, title: t("act.delete"), statements: [dropSeqSql(scName, name)], danger: true, confirmText: prod ? name : undefined,
+        }) : undefined),
+        sep,
+        item("cmd.copyName", () => { void navigator.clipboard?.writeText(name).catch(() => undefined); }),
+        sep,
+        item("cmd.refresh", live ? () => refreshNode(node) : undefined),
+        item("cmd.objectInfo", () => patchLayout({ infoVisible: true })),
       );
     }
 
@@ -1480,6 +1519,7 @@ export default function App() {
   const tabsForBar = tabs.map((x) => (x.kind === "objects" ? { ...x, title: t("tab.objects") } : x));
   const highlight: Category = active.kind === "query" ? "query"
     : active.kind === "functionDesigner" ? "function"
+    : active.kind === "sequenceDesigner" ? "sequence"
     : active.objectKind === "matview" ? "matview"
     : active.kind === "viewDesigner" || (active.kind === "data" && active.objectKind === "view") ? "view"
     : active.kind === "data" || active.kind === "designer" ? "table" : category;
@@ -1606,6 +1646,17 @@ export default function App() {
     });
   };
 
+  const sequenceBackends = useRef<Record<string, SequenceBackend>>({});
+  const sequenceBackendFor = (tab: DocTab, conn: ConnectionMock): SequenceBackend => {
+    const db = tab.database ?? "";
+    return (sequenceBackends.current[tab.id] ??= {
+      loadDetail: (name) => pg.sequenceDetail(conn.id, db, tab.schema ?? "", name),
+      apply: async (statements) => {
+        await pg.apply(conn.id, db, statements.map((sql) => ({ sql, params: [], expectOneRow: false })));
+      },
+    });
+  };
+
   const renderDoc = (tab: DocTab) => {
     const isActive = tab.id === activeTab;
     if (tab.kind === "query") {
@@ -1690,6 +1741,27 @@ export default function App() {
             if (conn?.live && tab.database && tab.schema) void loadSchema(conn.id, tab.database, tab.schema, true).catch(() => undefined);
           }}
           backend={conn?.live ? viewBackendFor(tab, conn) : undefined}
+        />
+      );
+    }
+    if (tab.kind === "sequenceDesigner") {
+      const conn = connections.find((c) => c.id === tab.connectionId);
+      return (
+        <SequenceDesignerDoc
+          schema={tab.schema ?? "public"}
+          seqName={tab.object}
+          owners={conn?.roles.map((r) => r.name) ?? []}
+          serverVersionNum={conn?.serverVersionNum ?? 0}
+          active={isActive}
+          production={conn?.environment === "production"}
+          onStatus={statusFor(tab.id)}
+          onDirty={(dirty) => setTabDirty(tab.id, dirty)}
+          onSaved={(name) => {
+            const title = objectTitle(name, "cat.sequence", resolveNode(`schema:${seg(tab.connectionId ?? "")}/${seg(tab.database ?? "")}/${seg(tab.schema ?? "")}`, connections));
+            setTabs((ts) => ts.map((x) => (x.id === tab.id ? { ...x, object: name, title, windowTitle: title } : x)));
+            if (conn?.live && tab.database && tab.schema) void loadSchema(conn.id, tab.database, tab.schema, true).catch(() => undefined);
+          }}
+          backend={conn?.live ? sequenceBackendFor(tab, conn) : undefined}
         />
       );
     }

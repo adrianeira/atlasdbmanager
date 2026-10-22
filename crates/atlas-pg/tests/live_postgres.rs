@@ -305,6 +305,52 @@ async fn function_detail_reads_signature_options_and_overloads() {
 }
 
 #[tokio::test]
+async fn sequence_detail_reads_parameters_position_and_owner() {
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    let ns = format!("atlas_sq_{}", std::process::id());
+    atlas_pg::execute(
+        &s,
+        &format!(
+            "DROP SCHEMA IF EXISTS {ns} CASCADE; CREATE SCHEMA {ns}; CREATE TABLE {ns}.t(id integer); \
+             CREATE SEQUENCE {ns}.s1 INCREMENT BY 5 MINVALUE 10 MAXVALUE 1000 START WITH 20 CACHE 1 CYCLE OWNED BY {ns}.t.id; \
+             CREATE SEQUENCE {ns}.s2; CREATE SEQUENCE {ns}.s3 CACHE 3; \
+             COMMENT ON SEQUENCE {ns}.s2 IS 'contador'"
+        ),
+        1,
+    )
+    .await
+    .unwrap();
+
+    let a = atlas_pg::sequence_detail(&s, &ns, "s1").await.expect("detail");
+    assert_eq!((a.start.as_str(), a.increment.as_str(), a.min.as_str(), a.max.as_str(), a.cache.as_str()), ("20", "5", "10", "1000", "1"));
+    assert!(a.cycle);
+    assert_eq!(a.owned_by.as_deref(), Some(format!("{ns}.t.id").as_str()));
+    // Nunca usada: o próximo valor é o inicial.
+    assert!(!a.is_called);
+    assert_eq!(a.last_value, "20");
+
+    // Depois de usar, `last_value` é o último entregue.
+    atlas_pg::execute(&s, &format!("SELECT nextval('{ns}.s1'); SELECT nextval('{ns}.s1')"), 1).await.unwrap();
+    let a = atlas_pg::sequence_detail(&s, &ns, "s1").await.unwrap();
+    assert!(a.is_called);
+    assert_eq!(a.last_value, "25");
+
+    let b = atlas_pg::sequence_detail(&s, &ns, "s2").await.unwrap();
+    assert_eq!(b.data_type, "bigint");
+    assert_eq!((b.start.as_str(), b.increment.as_str(), b.min.as_str(), b.cache.as_str()), ("1", "1", "1", "1"));
+    assert_eq!(b.max, "9223372036854775807");
+    assert!(!b.cycle && b.owned_by.is_none());
+    assert_eq!(b.comment.as_deref(), Some("contador"));
+
+    assert_eq!(atlas_pg::sequence_detail(&s, &ns, "s3").await.unwrap().cache, "3");
+
+    // Uma tabela não é sequência.
+    assert!(atlas_pg::sequence_detail(&s, &ns, "t").await.is_err());
+    atlas_pg::execute(&s, &format!("DROP SCHEMA {ns} CASCADE"), 1).await.unwrap();
+}
+
+#[tokio::test]
 async fn syntax_error_reports_position() {
     let p = require_server!();
     let s = atlas_pg::connect(&p, None).await.expect("connect");

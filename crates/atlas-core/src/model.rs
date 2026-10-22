@@ -196,6 +196,29 @@ pub struct ViewDetail {
     pub populated: bool,
 }
 
+/// Sequência: parâmetros e posição atual. Números como texto (um `bigint` não cabe num número JSON).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SequenceDetail {
+    pub name: String,
+    pub owner: Option<String>,
+    pub comment: Option<String>,
+    /// "smallint" | "integer" | "bigint" (antes do PostgreSQL 10 é sempre bigint).
+    pub data_type: String,
+    pub start: String,
+    pub increment: String,
+    pub min: String,
+    pub max: String,
+    pub cache: String,
+    pub cycle: bool,
+    /// Último valor entregue (ou o inicial, se `is_called` for falso).
+    pub last_value: String,
+    /// Já entregou algum valor; falso = o próximo `nextval` devolve `last_value`.
+    pub is_called: bool,
+    /// Coluna dona da sequência (`OWNED BY`), como `"schema"."tabela"."coluna"`.
+    pub owned_by: Option<String>,
+}
+
 /// Função ou procedimento: o suficiente para o designer remontar o `CREATE OR REPLACE`.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

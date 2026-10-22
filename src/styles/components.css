@@ -2077,3 +2077,7 @@ select.et-input {
 .snip-text { flex: 1; min-height: 0; resize: none; padding: 6px 8px; border: 1px solid var(--c-border-strong); background: var(--c-surface); color: var(--c-text); font: 13px/1.45 var(--font-mono); }
 .snip-text:focus { outline: none; border-color: #0078d7; }
 .snip-hint { font-size: 11px; }
+
+/* Designer de sequência. */
+.seq-position { margin-top: 12px; padding: 8px 12px; border: 1px solid var(--c-border); background: var(--c-surface-alt); display: flex; flex-direction: column; gap: 3px; width: max-content; max-width: 100%; }
+.field.is-invalid { border-color: var(--c-danger); }

@@ -119,6 +119,15 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [x] 8 snippets de partida (select, insert, update, delete, create table, CTE, explain...) gravados uma única vez
       *(`src/components/SnippetDialog.tsx`, `crates/atlas-local`)*
 
+### Sequências
+- [x] Abre pela lista de objetos (barra **Outros** → Sequência): duplo clique ou **Projetar**; **Nova** e **Excluir** pelo
+      menu de contexto; sequências novas e existentes no mesmo designer
+- [x] **Designer**: nome, tipo (`AS smallint/integer/bigint`, PostgreSQL 10+), incremento, mínimo, máximo, inicial,
+      cache, cíclica, **pertence a** (`OWNED BY tabela.coluna`), dono e comentário; mostra o **valor atual e o próximo**
+- [x] **Reiniciar** (`RESTART [WITH n]`) e **Definir valor** (`setval`) com revisão do comando; só o que mudou vai
+      no `ALTER SEQUENCE`; compatível com o PostgreSQL 9.6 (lê a própria relação) e 10+ (`pg_sequences`)
+      *(`src/documents/SequenceDesignerDoc.tsx`, `src/sql/sequence.ts`, `crates/atlas-pg/src/meta.rs`)*
+
 ### Navegação / Árvore
 - [x] **Fechar schema** no menu de contexto (colapsa + marca como não-carregado para rebuscar
       na próxima abertura) *(`src/App.tsx`)*
@@ -222,7 +231,7 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [x] Function / Procedure designer (ver "Funções e procedimentos" em Entregues)
 - [ ] Debugger de PL/pgSQL
 - [ ] Type (ENUM, composite, domain)
-- [ ] Sequence (manage, reset, cache)
+- [x] Sequence: designer, reiniciar, definir valor (ver "Sequências" em Entregues)
 - [ ] Trigger / Event Trigger
 - [ ] Extension
 - [ ] Foreign Server / Foreign Table
