@@ -202,6 +202,14 @@ export const pg = {
     call<number>("pg_table_count", { sessionId, database, schema, table, filter }),
   apply: (sessionId: string, database: string, statements: PlannedStatement[]) =>
     call<number[]>("pg_apply", { sessionId, database, statements }),
+  /** Transação manual (conexão dedicada que fica com a transação aberta até `txEnd`). */
+  txBegin: (sessionId: string, database: string) => call<string>("pg_tx_begin", { sessionId, database }),
+  txApply: (txId: string, statements: PlannedStatement[]) => call<number[]>("pg_tx_apply", { txId, statements }),
+  txRows: (txId: string, schema: string, table: string, orderBy: OrderBy[], filter: TableFilter | null, limit: number | null, offset: number) =>
+    call<{ sql: string; outcome: QueryOutcome }>("pg_tx_table_rows", { txId, schema, table, orderBy, filter, limit, offset }),
+  txCount: (txId: string, schema: string, table: string, filter: TableFilter | null) =>
+    call<number>("pg_tx_table_count", { txId, schema, table, filter }),
+  txEnd: (txId: string, commit: boolean) => call<void>("pg_tx_end", { txId, commit }),
   export: (req: ExportRequest) => call<ExportResult>("pg_export", { req }),
   exportCancel: (exportId: string) => call<void>("pg_export_cancel", { exportId }),
 };

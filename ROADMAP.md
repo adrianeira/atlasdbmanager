@@ -40,6 +40,10 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       `GENERATED ... STORED`) — backend ganhou `identity` e `generated` em `ColumnInfo`
       *(`crates/atlas-core/src/model.rs`, `crates/atlas-pg/src/meta.rs`, `src/components/DataGrid.tsx`)*
 - [x] **Scroll automático** ao clicar "Adicionar registro" (rola o grid até a nova linha)
+- [x] **Iniciar transação** (botão da toolbar): abre uma transação numa conexão dedicada; o Aplicar passa a
+      gravar dentro dela (cada lote sob SAVEPOINT, então um erro desfaz só o lote), a grade relê enxergando as
+      alterações, e **Confirmar** (COMMIT) / **Desfazer** (ROLLBACK) encerram. Fechar a aba desfaz tudo
+      *(`src-tauri/src/tx.rs`, `crates/atlas-pg/src/apply.rs`)*
 - [x] Botão **⏹ Parar** funcional (cancela a consulta no servidor via `pg.cancel`)
 - [x] Botão **▶| Última página** funcional (`SELECT COUNT(*)` cacheado, calcula a última página)
 - [x] Campo de **página editável** (digite e pressione Enter para saltar)
@@ -145,7 +149,7 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [ ] Data Profiling *(sem handler)*
 - [ ] Data Generation *(sem handler)*
 - [ ] Create BI Workspace *(sem handler)*
-- [ ] Begin Transaction manual *(sem handler)*
+- [x] Begin Transaction manual (ver "Grid de dados" em Entregues)
 - [x] Cell Editor expandido para texto grande / JSON (painel inferior com textarea, quebra de
       linha, "Formatar JSON" e "Definir como NULL"; aberto pelo botão da toolbar — liga/desliga —
       ou pelo menu de contexto da célula; sincroniza em tempo real com a célula ativa)

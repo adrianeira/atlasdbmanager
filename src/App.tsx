@@ -1397,20 +1397,33 @@ export default function App() {
     const connId = tab.connectionId ?? "";
     const db = tab.database ?? "";
     const schema = tab.schema ?? "";
+    // Transação manual da aba: enquanto aberta, gravação, leitura e contagem usam a conexão dedicada dela.
+    let txId: string | null = null;
     return (dataBackends.current[tab.id] ??= {
       loadDetail: async () => tableFromServer(base, await pg.tableDetail(connId, db, schema, tab.object ?? base.name)),
+      beginTx: async () => { txId = await pg.txBegin(connId, db); },
+      endTx: async (commit) => {
+        const id = txId;
+        txId = null;
+        if (id) await pg.txEnd(id, commit);
+      },
       loadRows: async (orderBy, filter, limit, offset) => {
-        const r = await pg.tableRows(connId, db, schema, tab.object ?? base.name, orderBy, filter, limit, offset);
+        const r = txId
+          ? await pg.txRows(txId, schema, tab.object ?? base.name, orderBy, filter, limit, offset)
+          : await pg.tableRows(connId, db, schema, tab.object ?? base.name, orderBy, filter, limit, offset);
         const rs = r.outcome.statements[0]?.result;
         return { sql: r.sql, rows: rs?.rows ?? [], truncated: !!rs?.truncated };
       },
       apply: async (statements) => {
-        await pg.apply(connId, db, statements);
+        if (txId) await pg.txApply(txId, statements);
+        else await pg.apply(connId, db, statements);
       },
       cancel: async () => {
         await pg.cancel(connId, db);
       },
-      count: async (filter) => pg.tableCount(connId, db, schema, tab.object ?? base.name, filter),
+      count: async (filter) => (txId
+        ? pg.txCount(txId, schema, tab.object ?? base.name, filter)
+        : pg.tableCount(connId, db, schema, tab.object ?? base.name, filter)),
     });
   };
 

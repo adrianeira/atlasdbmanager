@@ -42,3 +42,46 @@ pub async fn apply_in_transaction(conn: PgSession, statements: &[PlannedStatemen
     tx.commit().await.map_err(|e| map_error(&e))?;
     Ok(affected)
 }
+
+/// Abre uma transação manual na conexão (fica aberta até `end_manual_transaction`).
+pub async fn begin_manual_transaction(conn: &PgSession) -> Result<(), DatabaseError> {
+    conn.client.batch_execute("BEGIN").await.map_err(|e| map_error(&e))
+}
+
+/// Encerra a transação manual: `commit` grava, senão desfaz.
+pub async fn end_manual_transaction(conn: &PgSession, commit: bool) -> Result<(), DatabaseError> {
+    conn.client.batch_execute(if commit { "COMMIT" } else { "ROLLBACK" }).await.map_err(|e| map_error(&e))
+}
+
+/// Aplica os comandos dentro da transação manual já aberta. Cada lote roda sob um SAVEPOINT: se algo falhar, só o
+/// lote é desfeito e a transação continua utilizável (o que já foi feito antes permanece até o COMMIT/ROLLBACK).
+pub async fn apply_in_open_transaction(conn: &PgSession, statements: &[PlannedStatement]) -> Result<Vec<u64>, DatabaseError> {
+    let _guard = conn.exec_lock.lock().await;
+    conn.client.batch_execute("SAVEPOINT atlas_batch").await.map_err(|e| map_error(&e))?;
+    let mut affected = Vec::with_capacity(statements.len());
+    for (i, st) in statements.iter().enumerate() {
+        let params: Vec<&(dyn ToSql + Sync)> = st.params.iter().map(|p| p as &(dyn ToSql + Sync)).collect();
+        let res = conn.client.execute(st.sql.as_str(), &params).await.map_err(|e| map_error(&e));
+        let failure = match res {
+            Ok(n) if st.expect_one_row && n != 1 => {
+                let mut err = DatabaseError::new(
+                    ErrorKind::ConcurrencyConflict,
+                    format!("statement {} affected {n} rows (expected exactly 1); this batch was rolled back", i + 1),
+                );
+                err.detail = Some(st.sql.clone());
+                Some(err)
+            }
+            Ok(n) => {
+                affected.push(n);
+                None
+            }
+            Err(e) => Some(e),
+        };
+        if let Some(err) = failure {
+            let _ = conn.client.batch_execute("ROLLBACK TO SAVEPOINT atlas_batch").await;
+            return Err(err);
+        }
+    }
+    conn.client.batch_execute("RELEASE SAVEPOINT atlas_batch").await.map_err(|e| map_error(&e))?;
+    Ok(affected)
+}

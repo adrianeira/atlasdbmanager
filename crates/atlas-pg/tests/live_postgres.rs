@@ -155,6 +155,55 @@ async fn apply_commits_or_rolls_back_on_conflict() {
 }
 
 #[tokio::test]
+async fn manual_transaction_keeps_batches_until_commit() {
+    let p = require_server!();
+    let name = format!("atlas_mt_{}", std::process::id());
+    let setup = atlas_pg::connect(&p, None).await.expect("connect");
+    atlas_pg::execute(&setup, &format!("DROP TABLE IF EXISTS {name}; CREATE TABLE {name}(id int primary key, v text); INSERT INTO {name} VALUES (1,'a'),(2,'b')"), 1)
+        .await
+        .unwrap();
+    let st = |sql: String, params: Vec<Option<String>>| atlas_pg::PlannedStatement { sql, params, expect_one_row: true };
+
+    let tx = atlas_pg::connect(&p, None).await.expect("connect");
+    atlas_pg::begin_manual_transaction(&tx).await.unwrap();
+    // Lote 1 ok; lote 2 falha (chave duplicada) e só ele é desfeito; a transação segue válida.
+    atlas_pg::apply_in_open_transaction(&tx, &[st(format!("UPDATE {name} SET v = 'x' WHERE id = 1"), vec![])]).await.unwrap();
+    let Err(err) = atlas_pg::apply_in_open_transaction(
+        &tx,
+        &[st(format!("UPDATE {name} SET v = 'y' WHERE id = 2"), vec![]), st(format!("UPDATE {name} SET id = 1 WHERE id = 2"), vec![])],
+    )
+    .await
+    else {
+        panic!("duplicate key must fail")
+    };
+    assert_eq!(err.code.as_deref(), Some("23505"));
+    // Conflito de linhas afetadas também desfaz só o lote.
+    let Err(err) = atlas_pg::apply_in_open_transaction(&tx, &[st(format!("UPDATE {name} SET v = 'z' WHERE id = 99"), vec![])]).await else {
+        panic!("0 rows must conflict")
+    };
+    assert_eq!(err.kind, ErrorKind::ConcurrencyConflict);
+
+    // Dentro da transação o lote 1 é visível e o 2 não; fora dela nada foi gravado ainda.
+    let inside = atlas_pg::execute(&tx, &format!("SELECT string_agg(v, ',' ORDER BY id) FROM {name}"), 10).await.unwrap();
+    assert_eq!(inside.statements[0].result.as_ref().unwrap().rows[0][0].as_deref(), Some("x,b"));
+    let outside = atlas_pg::execute(&setup, &format!("SELECT string_agg(v, ',' ORDER BY id) FROM {name}"), 10).await.unwrap();
+    assert_eq!(outside.statements[0].result.as_ref().unwrap().rows[0][0].as_deref(), Some("a,b"));
+
+    atlas_pg::end_manual_transaction(&tx, true).await.unwrap();
+    let after = atlas_pg::execute(&setup, &format!("SELECT string_agg(v, ',' ORDER BY id) FROM {name}"), 10).await.unwrap();
+    assert_eq!(after.statements[0].result.as_ref().unwrap().rows[0][0].as_deref(), Some("x,b"));
+
+    // Rollback desfaz tudo o que foi feito depois.
+    let tx = atlas_pg::connect(&p, None).await.expect("connect");
+    atlas_pg::begin_manual_transaction(&tx).await.unwrap();
+    atlas_pg::apply_in_open_transaction(&tx, &[st(format!("UPDATE {name} SET v = 'gone' WHERE id = 2"), vec![])]).await.unwrap();
+    atlas_pg::end_manual_transaction(&tx, false).await.unwrap();
+    let after = atlas_pg::execute(&setup, &format!("SELECT string_agg(v, ',' ORDER BY id) FROM {name}"), 10).await.unwrap();
+    assert_eq!(after.statements[0].result.as_ref().unwrap().rows[0][0].as_deref(), Some("x,b"));
+    atlas_pg::execute(&setup, &format!("DROP TABLE {name}"), 1).await.unwrap();
+}
+
+#[tokio::test]
 async fn syntax_error_reports_position() {
     let p = require_server!();
     let s = atlas_pg::connect(&p, None).await.expect("connect");

@@ -2,6 +2,7 @@ mod commands;
 mod export;
 mod local;
 mod sessions;
+mod tx;
 
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
@@ -54,6 +55,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(sessions::Sessions::default())
         .manage(export::Exports::default())
+        .manage(tx::Transactions::default())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Info).build())?;
@@ -138,6 +140,11 @@ pub fn run() {
             commands::pg_table_rows,
             commands::pg_table_count,
             commands::pg_apply,
+            tx::pg_tx_begin,
+            tx::pg_tx_apply,
+            tx::pg_tx_table_rows,
+            tx::pg_tx_table_count,
+            tx::pg_tx_end,
             app_ready,
             export::pg_export,
             export::pg_export_cancel,

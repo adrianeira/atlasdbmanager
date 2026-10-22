@@ -23,6 +23,9 @@ export interface TableDataBackend {
   cancel?: () => Promise<void>;
   /** Opcional: total de registros (respeitando o filtro) para a navegação de páginas. */
   count?: (filter: TableFilter | null) => Promise<number>;
+  /** Opcional: transação manual. Depois de `beginTx`, apply/loadRows/count passam a usar a transação aberta. */
+  beginTx?: () => Promise<void>;
+  endTx?: (commit: boolean) => Promise<void>;
 }
 
 interface Props {
@@ -90,6 +93,11 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   const [loadError, setLoadError] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
+  // Transação manual (botão "Iniciar transação"): alterações aplicadas só valem de vez ao confirmar.
+  const [inTx, setInTx] = useState(false);
+  const [txBusy, setTxBusy] = useState(false);
+  const inTxRef = useRef(false);
+  inTxRef.current = inTx;
   const [sqlText, setSqlText] = useState(() => selectSql(schema, tableProp.name, DEFAULT_PAGE_SIZE, 0));
   // Engrenagem do rodapé (como na referência): troca a paginação por "Limitar registros".
   const [limitPanel, setLimitPanel] = useState(false);
@@ -259,7 +267,9 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   }, []);
 
   const dirty = edited.size > 0 || newRows.size > 0 || deleted.size > 0;
-  useEffect(() => onDirty?.(dirty), [dirty, onDirty]);
+  useEffect(() => onDirty?.(dirty || inTx), [dirty, inTx, onDirty]);
+  // Fechar a aba (ou trocar de tabela) com transação aberta desfaz tudo.
+  useEffect(() => () => { if (inTxRef.current) void backend?.endTx?.(false).catch(() => undefined); }, [backend]);
 
   useEffect(() => {
     if (!active) return;
@@ -449,6 +459,36 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
     else void apply();
   };
 
+  const beginTx = async () => {
+    if (!backend?.beginTx || inTx || txBusy) return;
+    setTxBusy(true);
+    try {
+      await backend.beginTx();
+      setInTx(true);
+    } catch (e) {
+      setApplyError(errorText(toAtlasError(e)));
+    } finally {
+      setTxBusy(false);
+    }
+  };
+
+  /** Confirma (COMMIT) ou desfaz (ROLLBACK) a transação e relê a página. */
+  const endTx = async (commit: boolean) => {
+    if (!backend?.endTx || !inTx || txBusy || (commit && dirty)) return;
+    setTxBusy(true);
+    try {
+      await backend.endTx(commit);
+      setInTx(false);
+      setTotalRows(null);
+      await loadPage(page, table, limit);
+    } catch (e) {
+      setInTx(false); // o servidor já encerrou a transação (ex.: COMMIT recusado)
+      setApplyError(errorText(toAtlasError(e)));
+    } finally {
+      setTxBusy(false);
+    }
+  };
+
   const refresh = () => {
     if (dirty) return;
     setTotalRows(null); // relê a contagem na próxima vez que precisar
@@ -572,7 +612,19 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
     <div className="doc">
       <div className="object-toolbar" role="toolbar">
         {tool("table", "data.tableProfile")}
-        {tool("transaction", "data.beginTransaction")}
+        {tool("transaction", "data.beginTransaction", backend?.beginTx && !readOnly && !inTx && !txBusy ? () => void beginTx() : undefined, inTx)}
+        {inTx && (
+          <>
+            <button type="button" className="ot-button" disabled={txBusy || dirty} onClick={() => void endTx(true)} title={dirty ? t("data.commitBlocked") : t("data.commit")}>
+              <SmallIcon name="apply" />
+              <span>{t("data.commit")}</span>
+            </button>
+            <button type="button" className="ot-button" disabled={txBusy} onClick={() => void endTx(false)} title={t("data.rollback")}>
+              <SmallIcon name="discard" />
+              <span>{t("data.rollback")}</span>
+            </button>
+          </>
+        )}
         {tool("cellEditor", "data.cellEditor", () => setCellEditorOpen((v) => !v), cellEditorOpen)}
         {tool("filterSort", "data.filterSort", () => { setFilterColumn(undefined); setFilterOpen(true); })}
         {tool("columns", "data.columns", () => setColumnsOpen(true))}
@@ -720,6 +772,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
         <button type="button" className="icon-button" title={t("data.refresh")} disabled={dirty || loading} onClick={refresh}><SmallIcon name="refresh" /></button>
         <button type="button" className="icon-button" title={t("data.stop")} disabled={!backend?.cancel || (!loading && !applying)} onClick={stop}><SmallIcon name="stopSmall" /></button>
         {(loading || applying) && <span className="spinner" />}
+        {inTx && <span className="data-pending" title={t("data.inTransaction")}>{t("data.inTransaction")}</span>}
         {dirty && <span className="data-pending">{t("data.pending", { n: edited.size + newRows.size + deleted.size })}</span>}
         <span className="spacer" />
         {limitPanel ? (

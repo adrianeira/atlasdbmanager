@@ -14,7 +14,7 @@ use tauri::State;
 const MAX_ROWS_CAP: usize = 100_000;
 
 /// Teto de linhas ao abrir uma tabela, inclusive com "Limitar registros" desmarcado.
-const TABLE_ROWS_CAP: usize = 1_000_000;
+pub(crate) const TABLE_ROWS_CAP: usize = 1_000_000;
 
 /// `profile_id`: usa a senha salva no cofre quando `params.password` vier vazia.
 #[tauri::command]

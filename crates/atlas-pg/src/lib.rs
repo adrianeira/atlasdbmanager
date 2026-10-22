@@ -6,7 +6,7 @@ mod error;
 mod exec;
 mod meta;
 
-pub use apply::{PlannedStatement, apply_in_transaction};
+pub use apply::{PlannedStatement, apply_in_open_transaction, apply_in_transaction, begin_manual_transaction, end_manual_transaction};
 pub use connect::{PgSession, connect};
 pub use error::map_error;
 pub use exec::{
