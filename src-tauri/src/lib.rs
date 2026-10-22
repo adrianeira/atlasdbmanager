@@ -10,6 +10,8 @@ use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
 /// janela principal aparece mesmo que a interface nunca avise que está pronta.
 const SPLASH_MIN: Duration = Duration::from_millis(1500);
 const SPLASH_MAX: Duration = Duration::from_secs(20);
+/// Tempo que a barra completa fica visível antes de a splash fechar.
+const SPLASH_FINISH: Duration = Duration::from_millis(350);
 
 /// Quando o app começou a abrir (para respeitar `SPLASH_MIN`).
 struct StartedAt(Instant);
@@ -31,6 +33,11 @@ fn app_ready(app: AppHandle, started: State<'_, StartedAt>) {
     let wait = SPLASH_MIN.saturating_sub(started.0.elapsed());
     std::thread::spawn(move || {
         std::thread::sleep(wait);
+        // Deixa a barra da splash completar antes de fechá-la.
+        if let Some(splash) = app.get_webview_window("splash") {
+            let _ = splash.eval("window.atlasSplashDone && window.atlasSplashDone()");
+            std::thread::sleep(SPLASH_FINISH);
+        }
         reveal_main(&app);
     });
 }
