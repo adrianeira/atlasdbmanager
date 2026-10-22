@@ -194,7 +194,6 @@ export function QueryDoc({
     setCtx((c) => ({ ...c, schema: pick.name }));
   }, [db, ctx.schema]);
 
-  const loadingCtx = !!conn && (!!connecting?.has(conn.id) || (!!conn.live && !!db && !db.loaded));
 
   const completionSchema = useMemo(() => {
     const out: Record<string, string[]> = {};
@@ -378,7 +377,6 @@ export function QueryDoc({
           disabled={!db}
           onChange={(v) => setCtx({ ...ctx, schema: v })}
         />
-        {loadingCtx && <span className="spinner" aria-label={t("common.loading")} />}
         <div className="split-button">
           <button type="button" className="ot-button run-button" disabled={!conn || running} onClick={() => run(false)} title="Ctrl+R / F5">
             <SmallIcon name="run" />
