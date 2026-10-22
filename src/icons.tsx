@@ -277,6 +277,26 @@ const small: Record<string, ReactElement> = {
       <path d="M5.2 7.2h5.6M5.2 9.6h5.6M5.2 12h5.6M7.9 7.2V12" stroke="#2f9e8f" strokeWidth="1.2" />
     </>
   ),
+  fmtTxt: (
+    <>
+      <path d="M3.5 1.5h6l3 3v10h-9z" fill="#fff" stroke="#6b7785" strokeLinejoin="round" />
+      <path d="M9.5 1.5v3h3" fill="none" stroke="#6b7785" strokeLinejoin="round" />
+      <path d="M5.2 7h5.6M5.2 9h5.6M5.2 11h3.4" stroke="#8a94a0" strokeWidth="1.1" strokeLinecap="round" />
+    </>
+  ),
+  fmtXml: (
+    <>
+      <path d="M3.5 1.5h6l3 3v10h-9z" fill="#fff" stroke="#6b7785" strokeLinejoin="round" />
+      <path d="M9.5 1.5v3h3" fill="none" stroke="#6b7785" strokeLinejoin="round" />
+      <path d="M6.6 7.4L4.9 9.6l1.7 2.2M9.4 7.4l1.7 2.2-1.7 2.2" fill="none" stroke="#8a56c2" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    </>
+  ),
+  fmtHtml: (
+    <>
+      <circle cx="8" cy="8" r="6" fill="#fff" stroke="#e2762c" />
+      <path d="M2 8h12M8 2c-2 1.7-2 10.3 0 12M8 2c2 1.7 2 10.3 0 12" fill="none" stroke="#e2762c" strokeWidth=".9" />
+    </>
+  ),
   fmtJson: (
     <path
       d="M5.6 2c-1.6 0-1.9.9-1.9 2.2v1.6c0 1-.5 1.6-1.4 2.2.9.6 1.4 1.2 1.4 2.2v1.6c0 1.3.3 2.2 1.9 2.2M10.4 2c1.6 0 1.9.9 1.9 2.2v1.6c0 1 .5 1.6 1.4 2.2-.9.6-1.4 1.2-1.4 2.2v1.6c0 1.3-.3 2.2-1.9 2.2"

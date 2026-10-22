@@ -1913,30 +1913,100 @@ select.et-input {
 }
 
 /* ---------- Assistente de exportação ---------- */
-.exp-dialog { width: 600px; }
-.exp-fields { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
-.exp-fields:disabled { opacity: 0.6; }
-.exp-source { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-.exp-kinds { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.exp-kind {
-  display: flex; align-items: center; gap: 8px;
-  padding: 6px 8px; text-align: left; cursor: default;
-  border: 1px solid var(--c-border-strong); background: var(--c-surface); color: var(--c-text);
+.exp-wizard {
+  width: 700px;
+  height: min(620px, calc(100vh - 24px));
 }
-.exp-kind:hover { background: var(--c-hover); border-color: var(--c-hover-border); }
-.exp-kind.is-active { background: var(--c-selected); border-color: var(--c-selected-border); }
-.exp-kind > svg { flex: none; }
-.exp-kind-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.exp-kind-name { font-weight: 600; }
-.exp-kind .muted { margin: 0; font-size: 11px; white-space: nowrap; }
-.exp-options { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--c-border); min-height: 96px; }
+.exp-heading {
+  flex: none;
+  padding: 14px 18px 6px;
+  color: var(--c-accent);
+  font-size: 15px;
+  line-height: 1.35;
+}
+.exp-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 18px 12px;
+  overflow: auto;
+}
+.exp-footer {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--c-border);
+  background: var(--c-surface-alt);
+}
+.exp-footer .btn { min-width: 74px; }
+.exp-menu-wrap { position: relative; display: inline-flex; gap: 6px; }
+.exp-arrow { min-width: 0 !important; padding: 0 6px; }
+.exp-message { margin: 0; }
+.exp-note { font-size: 11px; margin: 0; }
+
+/* Etapa 1: formato */
+.exp-formats { display: flex; flex-direction: column; gap: 2px; padding-top: 6px; }
+.exp-formats-title { margin-bottom: 4px; }
+.exp-format { display: flex; align-items: center; gap: 8px; padding: 4px 6px; cursor: default; border: 1px solid transparent; }
+.exp-format:hover:not(.is-disabled) { background: var(--c-hover); }
+.exp-format.is-active { background: var(--c-selected); border-color: var(--c-selected-border); }
+.exp-format.is-disabled { opacity: 0.5; }
+.exp-format input { margin: 0; }
+
+/* Etapa 2: tabelas e arquivos */
+.exp-files { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--c-border-strong); background: var(--c-surface); }
+.exp-files-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.exp-files-table th {
+  position: sticky; top: 0; z-index: 1; height: 22px; padding: 0 6px; text-align: left; font-weight: 400;
+  background: var(--c-surface-alt); border-right: 1px solid var(--c-grid-line); border-bottom: 1px solid var(--c-border);
+}
+.exp-files-table td { height: 22px; padding: 0 6px; border-right: 1px solid var(--c-grid-line); border-bottom: 1px solid var(--c-grid-line); }
+.exp-files-table th:first-child, .exp-files-table td:first-child { text-align: center; padding: 0 4px; }
+.exp-files-table tr.is-checked td { background: var(--c-grid-alt-row); }
+.exp-files-table input[type="checkbox"] { margin: 0; vertical-align: middle; }
+.exp-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.exp-path-cell { position: relative; padding: 0 !important; }
+.exp-path-input {
+  width: calc(100% - 22px); height: 20px; padding: 0 6px; border: 1px solid transparent; outline: none;
+  background: transparent; color: var(--c-text); font: inherit;
+}
+.exp-path-input:focus { border-color: #0078d7; background: var(--c-surface); }
+.exp-path-browse {
+  position: absolute; top: 1px; right: 1px; bottom: 1px; width: 20px; padding: 0 0 3px; cursor: default;
+  border: 1px solid var(--c-border-strong); background: var(--c-surface); color: var(--c-text); font-weight: 700;
+}
+.exp-path-browse:hover { background: var(--c-hover); border-color: var(--c-selected-border); }
+.exp-files-actions { flex: none; display: flex; align-items: center; gap: 6px; }
+
+/* Etapa 3: campos */
+.exp-field-row { display: grid; grid-template-columns: 130px 1fr; align-items: center; gap: 8px; }
+.exp-field-row .field { width: 100%; }
+.exp-fields-title { margin-top: 2px; }
+.exp-fields-list { flex: 1; min-height: 0; overflow: auto; padding: 4px 8px; border: 1px solid var(--c-border-strong); background: var(--c-surface); }
+.exp-fields-list.is-disabled { color: var(--c-text-muted); }
+.exp-fields-list .check-row { display: flex; align-items: center; gap: 6px; height: 20px; }
+.exp-fields-actions { flex: none; display: flex; align-items: center; gap: 8px; }
+.exp-loading { display: flex; align-items: center; gap: 8px; }
+
+/* Etapa 4: resumo e andamento */
+.exp-summary { display: grid; grid-template-columns: 130px 1fr; gap: 4px 8px; margin: 6px 0 4px; }
+.exp-summary dt { color: var(--c-text); }
+.exp-summary dd { margin: 0; font-variant-numeric: tabular-nums; }
+.exp-log {
+  flex: 1; min-height: 0; overflow: auto; padding: 6px 8px; background: var(--c-surface-alt);
+  border: 1px solid var(--c-border-strong); font: 12px / 1.5 var(--font-mono); white-space: pre-wrap; word-break: break-all;
+}
+.exp-log .is-error { color: var(--c-fail-text); }
+.exp-progress { flex: none; height: 18px; border: 1px solid var(--c-border-strong); background: var(--c-surface); }
+.exp-progress-bar { height: 100%; background: var(--c-ok-text); transition: width 0.15s linear; }
+
+/* Opções avançadas */
+.exp-options-dialog { width: 480px; }
+.exp-options { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; }
 .exp-row { display: grid; grid-template-columns: 150px 1fr; align-items: center; gap: 8px; }
 .exp-row .field { width: 100%; }
 .exp-row .exp-num { width: 90px; }
-.exp-note { font-size: 11px; margin: 0; }
-.exp-file { display: flex; flex-direction: column; gap: 4px; }
-.exp-file-row { display: flex; gap: 6px; }
-.exp-file-row .field { flex: 1; min-width: 0; }
-.exp-status { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 6px 8px; background: var(--c-surface-alt); border: 1px solid var(--c-border); flex-wrap: wrap; }
-.exp-status.is-ok { background: var(--c-ok-bg); border-color: var(--c-ok-text); flex-direction: column; align-items: flex-start; gap: 2px; }
-.exp-path { word-break: break-all; margin: 0; font-size: 11px; }

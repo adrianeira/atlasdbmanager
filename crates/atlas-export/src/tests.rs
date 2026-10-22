@@ -31,7 +31,7 @@ fn col(name: &str, ty: &str) -> ExportColumn {
 
 fn run(format: ExportFormat, columns: &[ExportColumn], rows: &[Vec<Option<&str>>]) -> Buf {
     let buf = Buf::default();
-    let mut w = create_stream(&format, "\"public\".\"t\"", Box::new(buf.clone())).unwrap();
+    let mut w = create_stream(&format, &WriterTarget { sql: "\"public\".\"t\"", title: "t" }, Box::new(buf.clone())).unwrap();
     w.begin(columns).unwrap();
     for r in rows {
         w.row(r).unwrap();
@@ -164,7 +164,7 @@ fn xlsx_file_is_a_valid_zip_with_rollover_names() {
     let path = dir.path().join("saida.xlsx");
     let file = std::fs::File::create(&path).unwrap();
     let fmt = ExportFormat::Xlsx { header: true, sheet_name: "Dados: [2026]".into() };
-    let mut w = create(&fmt, "", file).unwrap();
+    let mut w = create(&fmt, &WriterTarget { sql: "", title: "t" }, file).unwrap();
     w.begin(&[col("id", "int4"), col("nome", "text"), col("ok", "bool"), col("grande", "numeric")]).unwrap();
     w.row(&[Some("1"), Some("Ana"), Some("t"), Some("12345678901234567890")]).unwrap();
     w.row(&[Some("2"), None, Some("f"), None]).unwrap();
@@ -188,4 +188,36 @@ fn format_deserializes_from_the_ui_shape() {
     assert!(matches!(f, ExportFormat::Sql { rows_per_insert: 50 }));
     let f: ExportFormat = serde_json::from_str(r#"{"kind":"xlsx","header":false,"sheetName":"Dados"}"#).unwrap();
     assert!(matches!(f, ExportFormat::Xlsx { header: false, .. }));
+}
+
+#[test]
+fn xml_escapes_values_and_fixes_element_names() {
+    let cols = [col("id", "int4"), col("nome do cliente", "text"), col("1a", "text")];
+    let rows = vec![vec![Some("1"), Some("a < b & \"c\"\u{1}"), None]];
+    let out = run(ExportFormat::Xml, &cols, &rows).text();
+    assert_eq!(
+        out,
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<table name=\"t\">\n  <row>\n    <id>1</id>\n    \
+         <nome_do_cliente name=\"nome do cliente\">a &lt; b &amp; &quot;c&quot;</nome_do_cliente>\n    \
+         <_1a name=\"1a\" null=\"true\"/>\n  </row>\n</table>\n"
+    );
+}
+
+#[test]
+fn html_has_header_numeric_alignment_and_escaping() {
+    let cols = [col("id", "int4"), col("nome", "text")];
+    let rows = vec![vec![Some("1"), Some("<b>x</b> & y")], vec![Some("2"), None]];
+    let out = run(ExportFormat::Html { header: true }, &cols, &rows).text();
+    assert!(out.starts_with("<!DOCTYPE html>"));
+    assert!(out.contains("<th>id</th><th>nome</th>"));
+    assert!(out.contains("<tr><td class=\"num\">1</td><td>&lt;b&gt;x&lt;/b&gt; &amp; y</td></tr>"));
+    assert!(out.contains("<tr><td class=\"num\">2</td><td></td></tr>"));
+    let no_header = run(ExportFormat::Html { header: false }, &cols, &rows).text();
+    assert!(!no_header.contains("<thead>"));
+}
+
+#[test]
+fn xml_and_html_formats_deserialize_from_the_ui_shape() {
+    assert!(matches!(serde_json::from_str::<ExportFormat>(r#"{"kind":"xml"}"#).unwrap(), ExportFormat::Xml));
+    assert!(matches!(serde_json::from_str::<ExportFormat>(r#"{"kind":"html","header":true}"#).unwrap(), ExportFormat::Html { header: true }));
 }

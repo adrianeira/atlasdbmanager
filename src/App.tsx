@@ -3,7 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { errorText, isDesktop, local, pg, toAtlasError, type ConnectionParams, type ProfileRecord } from "./backend";
 import { entries, matchesShortcut, sub, type CommandMap, type MenuDef, type MenuEntry } from "./commands";
 import { ConnectionDialog, type ConnectionForm } from "./components/ConnectionDialog";
-import { ExportDialog, type ExportTarget } from "./components/ExportDialog";
+import { ExportWizard, type ExportTarget } from "./components/export/ExportWizard";
 import { schemaFromServer, sessionPasswords, tableFromServer } from "./live";
 import type { TableDataBackend } from "./documents/TableDataDoc";
 import type { FkLookupSource } from "./components/FkLookup";
@@ -686,12 +686,16 @@ export default function App() {
   };
 
   /** Assistente de exportação de uma tabela/view (todos os registros). Só com conexão real. */
+  const exportTablesOf = (schema: { objects: Partial<Record<Category, DbObject[]>> } | undefined, also?: string) => {
+    const tables = (schema?.objects.table ?? []).map((o) => ({ name: o.name, view: false }));
+    const views = (schema?.objects.view ?? []).map((o) => ({ name: o.name, view: true }));
+    const all = [...tables, ...views];
+    return also && !all.some((x) => x.name === also) ? [...all, { name: also, view: false }] : all;
+  };
+
   const startExport = (c: NodeContext, name: string) => {
     if (!c.connection?.live || !c.database || !c.schema) return;
-    setExportTarget({
-      connId: c.connection.id, database: c.database.name, schema: c.schema.name, table: name,
-      allColumns: [], visibleColumns: [], orderBy: [], filter: null,
-    });
+    setExportTarget({ connId: c.connection.id, database: c.database.name, schema: c.schema.name, tables: exportTablesOf(c.schema, name), initial: name });
   };
 
   const openObjects = (kind: "open" | "design" | "new" | "export", names: string[], cat: Category = category, c = ctx) => {
@@ -1482,9 +1486,14 @@ export default function App() {
           lookup={tab.objectKind === "view" ? undefined : lookupSourceFor(tab, conn)}
           isView={tab.objectKind === "view"}
           onDirty={(d) => setTabDirty(tab.id, d)}
-          onExport={conn?.live && tab.database ? (scope) => setExportTarget({
-            connId: conn.id, database: tab.database ?? "", schema: tab.schema ?? "", table: tab.object ?? base.name, ...scope,
-          }) : undefined}
+          onExport={conn?.live && tab.database ? (scope) => {
+            const table = tab.object ?? base.name;
+            const sc = conn.databases.find((d) => d.name === tab.database)?.schemas.find((x) => x.name === tab.schema);
+            setExportTarget({
+              connId: conn.id, database: tab.database ?? "", schema: tab.schema ?? "", tables: exportTablesOf(sc, table), initial: table,
+              scope: { table, ...scope },
+            });
+          } : undefined}
         />
       );
     }
@@ -1639,7 +1648,7 @@ export default function App() {
         />
       )}
 
-      {exportTarget && <ExportDialog target={exportTarget} onClose={() => setExportTarget(null)} />}
+      {exportTarget && <ExportWizard target={exportTarget} onClose={() => setExportTarget(null)} />}
 
       {dialog?.kind === "connection" && (
         <ConnectionDialog

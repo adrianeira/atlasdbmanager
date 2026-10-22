@@ -34,9 +34,11 @@ de revisar o que vai ser executado.
   `INSERT`/`UPDATE`/TSV, colar, excluir registro.
 
 **Exportação**
-- Assistente de exportação de tabelas e views para **CSV/TXT, JSON, SQL (`INSERT`) e Excel (`.xlsx`)**,
-  respeitando o filtro, a ordenação e as colunas visíveis do grid.
-- Gravação em **streaming** (memória estável mesmo com milhões de linhas), com progresso e cancelamento;
+- Assistente de exportação **em etapas** (formato → tabelas e arquivos → campos → resumo com log e
+  progresso), para **várias tabelas de uma vez**, em **TXT, CSV, JSON, XML, HTML, SQL (`INSERT`) e
+  Excel (`.xlsx`)**; perfis de exportação salvos para reutilizar.
+- Do grid, já vem com o filtro, a ordenação e as colunas visíveis da tabela.
+- Gravação em **streaming** (memória estável mesmo com milhões de linhas), com progresso e **Parar**;
   o arquivo só passa a existir quando a exportação termina com sucesso.
 
 **SQL e estrutura**

@@ -5,7 +5,8 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { save } from "@tauri-apps/plugin-dialog";
+import { desktopDir, homeDir, sep } from "@tauri-apps/api/path";
+import { open, save } from "@tauri-apps/plugin-dialog";
 
 export const isDesktop = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -210,7 +211,9 @@ export type ExportFormat =
   | { kind: "delimited"; delimiter: string; qualifier: string; header: boolean; crlf: boolean; nullText: string; encoding: ExportEncoding }
   | { kind: "json"; pretty: boolean }
   | { kind: "sql"; rowsPerInsert: number }
-  | { kind: "xlsx"; header: boolean; sheetName: string };
+  | { kind: "xlsx"; header: boolean; sheetName: string }
+  | { kind: "xml" }
+  | { kind: "html"; header: boolean };
 
 export interface ExportRequest {
   exportId: string;
@@ -239,3 +242,31 @@ export async function onExportProgress(exportId: string, cb: (rows: number) => v
 export async function chooseExportPath(defaultName: string, extensions: string[]): Promise<string | null> {
   return save({ defaultPath: defaultName, filters: [{ name: extensions.map((x) => `*.${x}`).join(", "), extensions }] });
 }
+
+/** Janela nativa de escolha de pasta. `null` se o usuário cancelar. */
+export async function chooseExportFolder(): Promise<string | null> {
+  const dir = await open({ directory: true, multiple: false });
+  return typeof dir === "string" ? dir : null;
+}
+
+/** Pasta padrão dos arquivos exportados: a Área de Trabalho (ou a pasta do usuário); "" se nenhuma existir. */
+export async function defaultExportDir(): Promise<string> {
+  try {
+    return await desktopDir();
+  } catch {
+    try {
+      return await homeDir();
+    } catch {
+      return "";
+    }
+  }
+}
+
+/** Separador de caminho do sistema (`\` no Windows, `/` nos demais). */
+export const pathSeparator = (): string => {
+  try {
+    return sep();
+  } catch {
+    return "/";
+  }
+};

@@ -34,9 +34,11 @@ is about to run.
   `INSERT`/`UPDATE`/TSV, paste, delete record.
 
 **Export**
-- Export wizard for tables and views to **CSV/TXT, JSON, SQL (`INSERT`) and Excel (`.xlsx`)**,
-  honoring the grid's filter, sort order and visible columns.
-- **Streaming** writes (flat memory even with millions of rows), with progress and cancel;
+- **Step-by-step** export wizard (format → tables and files → fields → summary with log and progress)
+  for **several tables at once**, as **TXT, CSV, JSON, XML, HTML, SQL (`INSERT`) and Excel (`.xlsx`)**;
+  export profiles you can save and reuse.
+- From the grid it starts with that table's filter, sort order and visible columns.
+- **Streaming** writes (flat memory even with millions of rows), with progress and **Stop**;
   the file only appears once the export finishes successfully.
 
 **SQL and structure**

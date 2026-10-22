@@ -2,10 +2,12 @@
 //! tamanho do resultado. Os valores chegam em texto, exatamente como o servidor os formata.
 
 mod delimited;
+mod html;
 mod json;
 mod sql;
 mod text;
 mod xlsx;
+mod xml;
 
 use serde::Deserialize;
 use std::fs::File;
@@ -46,6 +48,19 @@ pub enum ExportFormat {
         header: bool,
         sheet_name: String,
     },
+    /// `<table name="..."><row><coluna>valor</coluna></row></table>`.
+    Xml,
+    /// Página HTML com uma tabela.
+    Html {
+        header: bool,
+    },
+}
+
+/// Como o arquivo se identifica: `sql` é o destino do `INSERT` (`"schema"."tabela"`, já com aspas) e
+/// `title` o nome mostrado no XML e no HTML.
+pub struct WriterTarget<'a> {
+    pub sql: &'a str,
+    pub title: &'a str,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -66,16 +81,16 @@ pub trait RowWriter: Send {
     fn finish(self: Box<Self>) -> io::Result<()>;
 }
 
-/// Cria o gravador do formato. `sql_target` (`"schema"."tabela"`, já com aspas) é usado só no SQL.
-pub fn create(format: &ExportFormat, sql_target: &str, file: File) -> io::Result<Box<dyn RowWriter>> {
+/// Cria o gravador do formato.
+pub fn create(format: &ExportFormat, target: &WriterTarget, file: File) -> io::Result<Box<dyn RowWriter>> {
     Ok(match format {
         ExportFormat::Xlsx { header, sheet_name } => Box::new(xlsx::XlsxWriter::new(file, *header, sheet_name)),
-        other => create_stream(other, sql_target, Box::new(io::BufWriter::with_capacity(256 * 1024, file)))?,
+        other => create_stream(other, target, Box::new(io::BufWriter::with_capacity(256 * 1024, file)))?,
     })
 }
 
 /// Gravador para os formatos de texto sobre qualquer destino (usado também nos testes).
-pub fn create_stream(format: &ExportFormat, sql_target: &str, out: Box<dyn io::Write + Send>) -> io::Result<Box<dyn RowWriter>> {
+pub fn create_stream(format: &ExportFormat, target: &WriterTarget, out: Box<dyn io::Write + Send>) -> io::Result<Box<dyn RowWriter>> {
     Ok(match format {
         ExportFormat::Delimited { delimiter, qualifier, header, crlf, null_text, encoding } => Box::new(delimited::DelimitedWriter::new(
             out,
@@ -87,7 +102,9 @@ pub fn create_stream(format: &ExportFormat, sql_target: &str, out: Box<dyn io::W
             *encoding,
         )),
         ExportFormat::Json { pretty } => Box::new(json::JsonWriter::new(out, *pretty)),
-        ExportFormat::Sql { rows_per_insert } => Box::new(sql::SqlWriter::new(out, sql_target.to_string(), (*rows_per_insert).max(1) as usize)),
+        ExportFormat::Sql { rows_per_insert } => Box::new(sql::SqlWriter::new(out, target.sql.to_string(), (*rows_per_insert).max(1) as usize)),
+        ExportFormat::Xml => Box::new(xml::XmlWriter::new(out, target.title.to_string())),
+        ExportFormat::Html { header } => Box::new(html::HtmlWriter::new(out, target.title.to_string(), *header)),
         ExportFormat::Xlsx { .. } => return Err(io::Error::other("XLSX precisa de um arquivo")),
     })
 }
@@ -99,6 +116,8 @@ pub fn default_extension(format: &ExportFormat) -> &'static str {
         ExportFormat::Json { .. } => "json",
         ExportFormat::Sql { .. } => "sql",
         ExportFormat::Xlsx { .. } => "xlsx",
+        ExportFormat::Xml => "xml",
+        ExportFormat::Html { .. } => "html",
     }
 }
 

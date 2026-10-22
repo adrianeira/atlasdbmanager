@@ -130,7 +130,7 @@ pub async fn pg_export(
     let file = File::create(&part.path).map_err(io_error)?;
     let target = format!("{}.{}", atlas_pg::quote_ident(&req.schema), atlas_pg::quote_ident(&req.table));
     // Os dois callbacks (início e cada linha) usam o mesmo gravador, nunca ao mesmo tempo (Mutex só para ser `Send`).
-    let writer = Mutex::new(atlas_export::create(&req.format, &target, file).map_err(io_error)?);
+    let writer = Mutex::new(atlas_export::create(&req.format, &atlas_export::WriterTarget { sql: &target, title: &req.table }, file).map_err(io_error)?);
 
     let sql = atlas_pg::select_sql(&req.schema, &req.table, &req.columns, &req.order_by, req.filter.as_ref());
     let mut last_emit = Instant::now();

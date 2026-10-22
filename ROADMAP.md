@@ -45,13 +45,20 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [x] Campo de **página editável** (digite e pressione Enter para saltar)
 
 ### Exportação de dados
-- [x] **Assistente de exportação** de tabelas e views — CSV/TXT, JSON, SQL (`INSERT`) e Excel (`.xlsx`);
-      respeita o **filtro, a ordenação e as colunas visíveis** do grid; escolha do arquivo pela janela
-      nativa ou digitando o caminho; progresso em tempo real e **cancelamento** (a consulta é abortada
-      no servidor e nenhum arquivo parcial fica no disco)
-      *(`src/components/ExportDialog.tsx`, `src-tauri/src/export.rs`, `crates/atlas-export`)*
+- [x] **Assistente de exportação em etapas** (formato → tabelas e arquivos → campos → resumo com log e
+      barra de progresso), com **várias tabelas de uma vez** (um arquivo por tabela), seleção em lote
+      (tudo / nada / inverter / só tabelas / só views), pasta de destino para todas, **Avançado**
+      (opções do formato), navegação `<<` `< Voltar` `Avançar >` `>>` e cronômetro
+      *(`src/components/export/`, `src-tauri/src/export.rs`, `crates/atlas-export`)*
+- [x] Formatos: **TXT, CSV, JSON, XML, HTML, SQL (`INSERT`) e Excel (`.xlsx`)**; `.xls`, `.accdb` e
+      `.dbf` aparecem desabilitados ("ainda não disponível")
+- [x] **Perfis de exportação**: Salvar perfil / Abrir... (formato, opções, tabelas, arquivos e campos),
+      guardados no armazenamento local
+- [x] Do grid, o assistente já vem com o **filtro, a ordenação e as colunas visíveis** daquela tabela
+- [x] Progresso em tempo real, **Parar** (a consulta é abortada no servidor) e nenhum arquivo parcial
+      no disco: o arquivo é escrito em `<destino>.part` e só vira o destino ao terminar com sucesso
 - [x] Gravação **em streaming**: 3 milhões de linhas (233 MB de CSV) em ~7,5 s com a memória do app
-      estável; o arquivo é escrito em `<destino>.part` e só vira o destino ao terminar com sucesso
+      estável
 - [x] CSV/TXT com delimitador, qualificador, codificação (UTF-8, UTF-8 com BOM, Windows-1252),
       quebra de linha e texto para NULL; JSON com tipos nativos (número, booleano, `jsonb` embutido);
       SQL com N linhas por `INSERT`; Excel com cabeçalho, números e booleanos nativos
@@ -149,10 +156,10 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 
 ## 7. Importar / Exportar
 - [ ] Import Wizard *(`act.importWizard` sem handler)* — CSV, Excel, JSON, XML, DBF, Access…
-- [x] Export Wizard de tabela/view: CSV/TXT, JSON, SQL e Excel (ver "Exportação de dados")
+- [x] Export Wizard de tabelas/views em etapas, com várias tabelas e perfis (ver "Exportação de dados")
 - [ ] Exportar o **resultado de uma consulta** do editor SQL
-- [ ] Exportar **várias tabelas** de uma vez; mais formatos (XML, HTML, Markdown, DBF…)
-- [ ] Salvar e reutilizar perfis de exportação; exportação agendada
+- [ ] Formatos que faltam: Excel 97-2003 (`.xls`), Access (`.accdb`), dBase (`.dbf`), Markdown
+- [ ] Exportação agendada; exportar também a estrutura (DDL) junto com os dados
 - [ ] Dump SQL completo *(hoje só item de menu)*
 - [ ] Data Transfer entre conexões / bancos
 - [ ] Data Synchronization / Structure Synchronization
