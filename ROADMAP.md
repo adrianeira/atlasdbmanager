@@ -136,6 +136,15 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       padrão, `NOT NULL` e restrições `CHECK`; renomear, dono e comentário; faixa só para leitura
       *(`src/documents/TypeDesignerDoc.tsx`, `src/sql/typedef.ts`, `crates/atlas-pg/src/meta.rs`)*
 
+### Usuários e papéis
+- [x] Botão **Papel/Usuário** da barra: lista os papéis do servidor; duplo clique ou **Editar**; **Novo** e **Excluir**
+      (`DROP ROLE`) pelo menu de contexto
+- [x] **Designer**: nome, senha, login, superusuário, criar bancos/papéis, herança, replicação, `BYPASSRLS` (9.5+),
+      limite de conexões, validade, comentário e **participações** (membro de / membros) com `GRANT`/`REVOKE`;
+      a **senha nunca é lida nem aparece na revisão ou na prévia do SQL** (vai ao servidor; na tela, asteriscos)
+- [x] Aviso ao renomear: o PostgreSQL apaga a senha do papel renomeado
+      *(`src/documents/RoleDesignerDoc.tsx`, `src/sql/role.ts`, `crates/atlas-pg/src/meta.rs`)*
+
 ### Navegação / Árvore
 - [x] **Fechar schema** no menu de contexto (colapsa + marca como não-carregado para rebuscar
       na próxima abertura) *(`src/App.tsx`)*
@@ -244,7 +253,8 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [ ] Extension
 - [ ] Foreign Server / Foreign Table
 - [ ] Publication / Subscription (replicação lógica)
-- [ ] Role / User manager
+- [x] Role / User manager: atributos, senha e participações (ver "Usuários e papéis" em Entregues); o gerenciador de
+      privilégios por objeto segue em aberto
 - [ ] Tablespace
 
 ## 7. Importar / Exportar

@@ -230,7 +230,7 @@ export function RoleDesignerDoc({ roleName, allRoles, serverVersionNum, active, 
       {dialog?.kind === "review" && (
         <MessageDialog
           title={t("des.reviewTitle")}
-          message={t("des.reviewMessage")}
+          message={original && !isNew && d.name.trim() !== original.name ? `${t("des.reviewMessage")} ${t("role.renameNote")}` : t("des.reviewMessage")}
           sql={shown.join("\n\n")}
           confirmText={production && !isNew ? name : undefined}
           okLabel={t("des.save")}
