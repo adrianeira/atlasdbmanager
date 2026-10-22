@@ -392,7 +392,8 @@ input {
   align-items: flex-end;
   height: var(--h-tab);
   background: var(--c-surface);
-  border-bottom: 1px solid var(--c-border);
+  /* Linha inferior pintada atrás das abas: a aba ativa a cobre e se funde com a barra abaixo. */
+  box-shadow: inset 0 -1px 0 var(--c-border);
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
@@ -422,6 +423,7 @@ input {
 .tab.is-active {
   color: var(--c-text);
   background: var(--c-surface-alt);
+  border-left-color: var(--c-border);
 }
 
 .tab-title {
