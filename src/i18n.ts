@@ -522,6 +522,7 @@ const en = {
   "msg.deleteConnection": "Delete the connection \"{name}\"? Saved queries and settings of this connection stay on disk.",
   "msg.unsavedTitle": "Unsaved Changes",
   "msg.unsavedQuery": "This query has unsaved changes. Close it and discard them?",
+  "msg.unsavedData": "This table has changes not saved to the database. Close it and discard them?",
   "msg.discard": "Discard",
   "msg.about": "Atlas DB Manager 0.1.0 — M0 prototype (mock data). Open source, MIT. Built with Rust, Tauri and React.",
 
@@ -1111,6 +1112,7 @@ const pt: Record<MessageKey, string> = {
   "msg.deleteConnection": "Excluir a conexão \"{name}\"? Consultas salvas e configurações desta conexão continuam no disco.",
   "msg.unsavedTitle": "Alterações não salvas",
   "msg.unsavedQuery": "Esta consulta tem alterações não salvas. Fechar e descartá-las?",
+  "msg.unsavedData": "Esta tabela tem alterações não gravadas no banco. Fechar e descartá-las?",
   "msg.discard": "Descartar",
   "msg.about": "Atlas DB Manager 0.1.0 — protótipo M0 (dados fictícios). Código aberto, MIT. Feito com Rust, Tauri e React.",
 

@@ -29,6 +29,8 @@ interface Props {
   lookup?: FkLookupSource;
   /** View: sempre somente leitura. */
   isView?: boolean;
+  /** Há alterações não gravadas (a aba pergunta antes de fechar). */
+  onDirty?: (dirty: boolean) => void;
 }
 
 const DEFAULT_PAGE_SIZE = 1000;
@@ -38,7 +40,7 @@ function literal(v: CellValue): string {
   return v === null ? "NULL" : `'${v.replace(/'/g, "''")}'`;
 }
 
-export function TableDataDoc({ schema, table: tableProp, active, production, onStatus, backend, lookup, isView }: Props) {
+export function TableDataDoc({ schema, table: tableProp, active, production, onStatus, backend, lookup, isView, onDirty }: Props) {
   const t = useT();
   const [table, setTable] = useState<DbObject>(tableProp);
   const cols = useMemo(() => table.columns ?? [], [table]);
@@ -94,7 +96,8 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
     setDeleted(new Set());
   };
 
-  const loadPage = useCallback(async (p: number, structure: DbObject, lim: number | null) => {
+  /** `keepRow`: linha a manter selecionada após reler (ex.: depois de gravar um registro novo). */
+  const loadPage = useCallback(async (p: number, structure: DbObject, lim: number | null, keepRow?: number) => {
     if (!backend) return;
     setLoading(true);
     setLoadError(null);
@@ -107,7 +110,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
       setTruncated(res.truncated);
       resetEdits();
       setPage(p);
-      setActiveRow(0);
+      setActiveRow(Math.max(0, Math.min(keepRow ?? 0, res.rows.length - 1)));
       setRefreshedAt(new Date());
     } catch (e) {
       setLoadError(errorText(toAtlasError(e)));
@@ -140,6 +143,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   }, []);
 
   const dirty = edited.size > 0 || newRows.size > 0 || deleted.size > 0;
+  useEffect(() => onDirty?.(dirty), [dirty, onDirty]);
 
   useEffect(() => {
     if (!active) return;
@@ -248,6 +252,76 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
     setRefreshedAt(new Date());
     setActiveRow((r) => Math.min(r, Math.max(0, kept.length - 1)));
   };
+
+  /* ----- Gravação automática ao mudar de registro (como a referência) ----- */
+  // Produção continua só pelo Aplicar (com revisão); exclusões também só pelo Aplicar.
+  const autoSave = !production && !readOnly;
+  const rowPending = (r: number) => newRows.has(r) || [...edited].some((k) => k.startsWith(`${r}:`));
+  const savingRow = useRef(false);
+
+  /** Grava só as alterações da linha `r`. Devolve false se o banco recusar (erro fica na tela). */
+  const saveRow = async (r: number, nextRow: number): Promise<boolean> => {
+    const rowEdited = new Set([...edited].filter((k) => k.startsWith(`${r}:`)));
+    const isNew = newRows.has(r);
+    if ((!rowEdited.size && !isNew) || deleted.has(r)) return true;
+    if (backend) {
+      setApplying(true);
+      try {
+        await backend.apply(plannedStatements({
+          schema, table: table.name, columns: cols, original, current: rows,
+          edited: rowEdited, newRows: new Set(isNew ? [r] : []), deleted: new Set(),
+        }));
+      } catch (e) {
+        setApplyError(errorText(toAtlasError(e)));
+        setApplying(false);
+        return false;
+      }
+      setApplying(false);
+      // Registro novo: relê a página para trazer os valores do servidor (DEFAULT, serial...),
+      // desde que não haja outras alterações pendentes que a releitura descartaria.
+      const othersPending = deleted.size > 0 || [...newRows].some((x) => x !== r) || [...edited].some((k) => !k.startsWith(`${r}:`));
+      if (isNew && !othersPending) {
+        await loadPage(page, table, limit, nextRow);
+        return true;
+      }
+    }
+    // A linha gravada passa a ser a base das próximas comparações.
+    setOriginal((o) => {
+      const copy = [...o];
+      copy[r] = rows[r];
+      return copy;
+    });
+    setEdited((s) => new Set([...s].filter((k) => !k.startsWith(`${r}:`))));
+    setNewRows((s) => new Set([...s].filter((x) => x !== r)));
+    setRefreshedAt(new Date());
+    return true;
+  };
+
+  // Mudou de linha com a anterior alterada: grava a anterior; se o banco recusar, volta para ela.
+  const prevRow = useRef(activeRow);
+  useEffect(() => {
+    const prev = prevRow.current;
+    prevRow.current = activeRow;
+    if (!autoSave || prev === activeRow || savingRow.current || !rowPending(prev)) return;
+    savingRow.current = true;
+    void saveRow(prev, activeRow).then((ok) => {
+      savingRow.current = false;
+      if (!ok) {
+        prevRow.current = prev;
+        setActiveRow(prev);
+      }
+    });
+    // Reage só à troca de linha; as demais dependências são lidas no momento.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRow]);
+
+  // Saiu da aba (outra aba ativa): grava a linha em edição.
+  useEffect(() => {
+    if (active || !autoSave || savingRow.current || !rowPending(activeRow)) return;
+    savingRow.current = true;
+    void saveRow(activeRow, activeRow).finally(() => { savingRow.current = false; });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
 
   /**
    * Aplicar: grava direto, como a referência. Só pede confirmação (com o SQL) quando há

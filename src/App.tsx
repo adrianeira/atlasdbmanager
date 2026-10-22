@@ -1441,6 +1441,7 @@ export default function App() {
           backend={conn?.live ? tableBackendFor(tab, base) : undefined}
           lookup={tab.objectKind === "view" ? undefined : lookupSourceFor(tab, conn)}
           isView={tab.objectKind === "view"}
+          onDirty={(d) => setTabDirty(tab.id, d)}
         />
       );
     }
@@ -1622,7 +1623,7 @@ export default function App() {
       {dialog?.kind === "closeDirty" && (
         <MessageDialog
           title={t("msg.unsavedTitle")}
-          message={t("msg.unsavedQuery")}
+          message={t(tabs.find((x) => x.id === dialog.tabId)?.kind === "data" ? "msg.unsavedData" : "msg.unsavedQuery")}
           okLabel={t("msg.discard")}
           onOk={() => { doCloseTab(dialog.tabId); setDialog(null); }}
           onCancel={() => setDialog(null)}
