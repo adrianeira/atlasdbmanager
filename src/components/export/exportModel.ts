@@ -47,7 +47,8 @@ export interface Options {
   csv: DelimitedOptions;
   json: { pretty: boolean };
   html: { header: boolean };
-  sql: { rowsPerInsert: number };
+  /** `tableName`: nome da tabela no `INSERT` ao exportar uma consulta (vazio = o nome da consulta). */
+  sql: { rowsPerInsert: number; tableName: string };
   xlsx: { header: boolean; sheetName: string };
 }
 
@@ -59,7 +60,7 @@ export function defaultOptions(): Options {
     csv: { delimiter: pt ? ";" : ",", qualifier: '"', header: true, crlf: true, nullText: "", encoding: pt ? "utf8Bom" : "utf8" },
     json: { pretty: true },
     html: { header: true },
-    sql: { rowsPerInsert: 1 },
+    sql: { rowsPerInsert: 1, tableName: "" },
     xlsx: { header: true, sheetName: "" },
   };
 }
@@ -133,9 +134,11 @@ export interface ExportTarget {
   connId: string;
   database: string;
   schema: string;
-  tables: { name: string; view: boolean }[];
+  tables: { name: string; view: boolean; query?: boolean }[];
   /** Tabela marcada ao abrir o assistente. */
   initial?: string;
+  /** Resultado de uma consulta do editor SQL: a origem é o texto da consulta (reexecutado em streaming). */
+  query?: { sql: string; schema?: string; columns: string[]; name: string };
   scope?: { table: string; orderBy: OrderBy[]; filter: TableFilter | null; visibleColumns: string[]; allColumns: string[] };
 }
 

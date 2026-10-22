@@ -28,6 +28,15 @@ struct Active {
     session: Arc<PgSession>,
 }
 
+/// Consulta do editor SQL usada como origem (em vez de uma tabela).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuerySource {
+    pub sql: String,
+    /// Schema escolhido no editor: onde os nomes sem schema da consulta são procurados.
+    pub schema: Option<String>,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportRequest {
@@ -42,6 +51,9 @@ pub struct ExportRequest {
     #[serde(default)]
     pub order_by: Vec<OrderBy>,
     pub filter: Option<TableFilter>,
+    /// Com consulta, `table` é só o nome usado no XML/HTML e no destino do `INSERT`.
+    #[serde(default)]
+    pub query: Option<QuerySource>,
     pub format: ExportFormat,
     pub path: String,
 }
@@ -112,8 +124,22 @@ pub async fn pg_export(
 ) -> Result<ExportResult, DatabaseError> {
     let started = Instant::now();
     let dest = validate_path(&req.path)?;
+    // O texto a executar. Consulta do editor: precisa ser um único comando (não separamos comandos no cliente).
+    let sql = match &req.query {
+        Some(q) => {
+            if q.sql.trim().is_empty() || !atlas_pg::is_single_statement(&q.sql) {
+                return Err(DatabaseError::new(ErrorKind::InvalidInput, "a exportação aceita uma única consulta (um SELECT): selecione só o comando desejado"));
+            }
+            atlas_pg::wrap_query(&q.sql, &req.columns)
+        }
+        None => atlas_pg::select_sql(&req.schema, &req.table, &req.columns, &req.order_by, req.filter.as_ref()),
+    };
     // Uma conexão exclusiva: a consulta longa não trava as abas abertas, e cancelar não as atinge.
     let session = Arc::new(sessions.dedicated(&req.session_id, &req.database).await?);
+    // Nomes sem schema da consulta valem no schema escolhido no editor (a conexão é só da exportação).
+    if let Some(schema) = req.query.as_ref().and_then(|q| q.schema.as_deref()).filter(|x| !x.is_empty()) {
+        let _ = session.client.simple_query(&format!("SET search_path TO {}", atlas_pg::search_path_for(schema))).await;
+    }
 
     let cancel = Arc::new(AtomicBool::new(false));
     exports.active.lock().unwrap().insert(req.export_id.clone(), Active { cancel: cancel.clone(), session: session.clone() });
@@ -132,7 +158,7 @@ pub async fn pg_export(
     // Os dois callbacks (início e cada linha) usam o mesmo gravador, nunca ao mesmo tempo (Mutex só para ser `Send`).
     let writer = Mutex::new(atlas_export::create(&req.format, &atlas_export::WriterTarget { sql: &target, title: &req.table }, file).map_err(io_error)?);
 
-    let sql = atlas_pg::select_sql(&req.schema, &req.table, &req.columns, &req.order_by, req.filter.as_ref());
+    let began = AtomicBool::new(false);
     let mut last_emit = Instant::now();
     let mut rows = 0u64;
     let export_id = req.export_id.clone();
@@ -142,6 +168,7 @@ pub async fn pg_export(
         &sql,
         |cols| {
             let cols: Vec<ExportColumn> = cols.iter().map(|c| ExportColumn { name: c.name.clone(), type_name: c.type_name.clone() }).collect();
+            began.store(true, Ordering::Relaxed);
             writer.lock().unwrap().begin(&cols).map_err(io_error)
         },
         |values| {
@@ -164,6 +191,10 @@ pub async fn pg_export(
         return Err(DatabaseError::new(ErrorKind::Canceled, "export canceled"));
     }
     streamed?;
+    // Um comando que não devolve linhas (UPDATE, DDL...) não tem o que exportar.
+    if !began.load(Ordering::Relaxed) {
+        return Err(DatabaseError::new(ErrorKind::InvalidInput, "o comando não retorna linhas para exportar"));
+    }
     writer.into_inner().unwrap().finish().map_err(io_error)?;
     fs::rename(&part.path, &dest).map_err(io_error)?;
     part.keep = true;

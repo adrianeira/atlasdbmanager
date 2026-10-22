@@ -365,3 +365,34 @@ async fn execute_reports_types_and_never_breaks_an_open_transaction() {
     assert_eq!(err.code.as_deref(), Some("42P01"));
     atlas_pg::execute(&s, "ROLLBACK", 1).await.unwrap();
 }
+
+#[tokio::test]
+async fn stream_rows_exports_a_query_with_column_subset() {
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    // O texto é uma consulta qualquer do editor, com `;` final: só as colunas pedidas, em streaming.
+    let sql = atlas_pg::wrap_query("select g as id, g * 2 as dbl, 'x' as txt from generate_series(1, 5) g order by 1;", &["dbl".into(), "id".into()]);
+    let mut cols = Vec::new();
+    let mut last = None;
+    let n = atlas_pg::stream_rows(
+        &s,
+        &sql,
+        |c| {
+            cols = c.iter().map(|x| x.name.clone()).collect();
+            Ok(())
+        },
+        |row| {
+            last = Some(row.iter().map(|v| v.map(str::to_string)).collect::<Vec<_>>());
+            Ok(true)
+        },
+    )
+    .await
+    .expect("stream query");
+    assert_eq!(n, 5);
+    assert_eq!(cols, vec!["dbl".to_string(), "id".to_string()]);
+    assert_eq!(last.unwrap(), vec![Some("10".into()), Some("5".into())]);
+    // Um comando que não devolve linhas não chama on_begin (o app recusa a exportação).
+    let mut began = false;
+    let n = atlas_pg::stream_rows(&s, "SET search_path TO public", |_| { began = true; Ok(()) }, |_| Ok(true)).await.expect("no rows");
+    assert!(n == 0 && !began);
+}

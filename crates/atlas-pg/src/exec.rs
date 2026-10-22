@@ -75,7 +75,7 @@ pub async fn execute(s: &PgSession, sql: &str, max_rows: usize) -> Result<QueryO
 /// `true` se o texto tem no máximo um comando, isto é, nenhum `;` seguido de mais código fora de aspas,
 /// `$tag$...$tag$` e comentários. Não separa comandos (ADR-016): só decide se vale descrever o texto antes de
 /// executá-lo. Na dúvida erra para o lado seguro (não descrever).
-pub(crate) fn is_single_statement(sql: &str) -> bool {
+pub fn is_single_statement(sql: &str) -> bool {
     let b = sql.as_bytes();
     let is_ident = |c: u8| c.is_ascii_alphanumeric() || c == b'_' || c >= 0x80;
     let mut i = 0;
@@ -162,6 +162,18 @@ pub(crate) fn is_single_statement(sql: &str) -> bool {
         }
     }
     true
+}
+
+/// Consulta do editor pronta para a exportação em streaming: sem o `;` final e, quando só algumas colunas foram
+/// pedidas, embrulhada num `SELECT colunas FROM (...)`. O texto da consulta vai numa linha própria para que um
+/// comentário `--` no fim não engula o parêntese de fechamento.
+pub fn wrap_query(sql: &str, columns: &[String]) -> String {
+    let body = sql.trim().trim_end_matches(';').trim_end();
+    if columns.is_empty() {
+        return body.to_string();
+    }
+    let list = columns.iter().map(|c| quote_ident(c)).collect::<Vec<_>>().join(", ");
+    format!("SELECT {list} FROM (\n{body}\n) AS atlas_export")
 }
 
 /// `search_path` para o schema escolhido no editor: o schema primeiro e `public` depois (o padrão do
@@ -323,6 +335,17 @@ pub async fn table_count(
 #[cfg(test)]
 mod tests {
     use super::{is_single_statement, quote_ident};
+
+    #[test]
+    fn wrap_query_strips_the_trailing_semicolon_and_selects_columns() {
+        use super::wrap_query;
+        assert_eq!(wrap_query("  select 1 as a ;\n", &[]), "select 1 as a");
+        assert_eq!(wrap_query("select 1;;", &[]), "select 1");
+        assert_eq!(
+            wrap_query("select 1 as a, 2 as \"B c\" -- fim", &["a".into(), "B c".into()]),
+            "SELECT \"a\", \"B c\" FROM (\nselect 1 as a, 2 as \"B c\" -- fim\n) AS atlas_export"
+        );
+    }
 
     #[test]
     fn single_statement_detection() {

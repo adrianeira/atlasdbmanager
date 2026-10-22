@@ -1472,6 +1472,11 @@ export default function App() {
           connecting={connecting}
           onOpenConnection={connect}
           onLoadSchemas={(connId, dbName) => { void loadDatabase(connId, dbName).catch((e) => showError(dbName, e)); }}
+          onExport={(info) => setExportTarget({
+            connId: info.connectionId, database: info.database, schema: info.schema ?? "public",
+            tables: [{ name: t("exp.queryName"), view: false, query: true }], initial: t("exp.queryName"),
+            query: { sql: info.sql, schema: info.schema, columns: info.columns, name: t("exp.queryName") },
+          })}
         />
       );
     }

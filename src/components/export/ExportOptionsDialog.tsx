@@ -4,6 +4,8 @@ import { useT } from "../../i18n";
 import type { DelimitedOptions, Kind, Options } from "./exportModel";
 
 interface Props {
+  /** Exportando o resultado de uma consulta: o SQL pede o nome da tabela de destino. */
+  isQuery?: boolean;
   kind: Kind;
   options: Options;
   onChange: (next: Options) => void;
@@ -11,7 +13,7 @@ interface Props {
 }
 
 /** Botão "Avançado" da etapa de destino: opções do formato escolhido. */
-export function ExportOptionsDialog({ kind, options, onChange, onClose }: Props) {
+export function ExportOptionsDialog({ isQuery, kind, options, onChange, onClose }: Props) {
   const t = useT();
 
   const select = <T extends string>(value: T, items: [T, string][], set: (v: T) => void) => (
@@ -54,13 +56,14 @@ export function ExportOptionsDialog({ kind, options, onChange, onClose }: Props)
       case "sql":
         return (
           <>
+            {isQuery && row(t("exp.sqlTableName"), <input className="field" value={options.sql.tableName} placeholder={t("exp.sqlTableName.auto")} onChange={(e) => onChange({ ...options, sql: { ...options.sql, tableName: e.target.value } })} spellCheck={false} />)}
             {row(t("exp.rowsPerInsert"), (
               <input
                 className="field exp-num"
                 inputMode="numeric"
                 value={options.sql.rowsPerInsert}
-                onChange={(e) => onChange({ ...options, sql: { rowsPerInsert: Number(e.target.value.replace(/\D/g, "")) || 0 } })}
-                onBlur={() => onChange({ ...options, sql: { rowsPerInsert: Math.max(1, Math.min(1000, options.sql.rowsPerInsert || 1)) } })}
+                onChange={(e) => onChange({ ...options, sql: { ...options.sql, rowsPerInsert: Number(e.target.value.replace(/\D/g, "")) || 0 } })}
+                onBlur={() => onChange({ ...options, sql: { ...options.sql, rowsPerInsert: Math.max(1, Math.min(1000, options.sql.rowsPerInsert || 1)) } })}
               />
             ))}
             <div className="muted exp-note">{t("exp.sqlNote")}</div>

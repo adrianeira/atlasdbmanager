@@ -62,6 +62,10 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [x] CSV/TXT com delimitador, qualificador, codificação (UTF-8, UTF-8 com BOM, Windows-1252),
       quebra de linha e texto para NULL; JSON com tipos nativos (número, booleano, `jsonb` embutido);
       SQL com N linhas por `INSERT`; Excel com cabeçalho, números e booleanos nativos
+- [x] **Exportar o resultado de uma consulta** do editor SQL: botão **Exportar** ao lado das abas de
+      resultado e "Salvar dados como..." no menu da célula; a consulta é executada de novo em streaming
+      (sem o limite de linhas da tela), no schema escolhido, com escolha de campos e, no SQL, o nome da
+      tabela de destino; precisa ser um único comando que devolva linhas
 - [x] Pontos de entrada: botão **Exportar** do grid, **Salvar dados como...** (menu da célula),
       **Assistente de exportação** no menu da árvore e na barra da lista de objetos
 
@@ -157,7 +161,6 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 ## 7. Importar / Exportar
 - [ ] Import Wizard *(`act.importWizard` sem handler)* — CSV, Excel, JSON, XML, DBF, Access…
 - [x] Export Wizard de tabelas/views em etapas, com várias tabelas e perfis (ver "Exportação de dados")
-- [ ] Exportar o **resultado de uma consulta** do editor SQL
 - [ ] Formatos que faltam: Excel 97-2003 (`.xls`), Access (`.accdb`), dBase (`.dbf`), Markdown
 - [ ] Exportação agendada; exportar também a estrutura (DDL) junto com os dados
 - [ ] Dump SQL completo *(hoje só item de menu)*

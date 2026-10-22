@@ -171,8 +171,14 @@ export function ExportWizard({ target, onClose }: Props) {
   };
 
   /* ---------- Campos ---------- */
+  const queryColumns = target.query?.columns;
   const loadColumns = useCallback(async (table: string) => {
     if (columnsRef.current[table]) return;
+    // Resultado de consulta: as colunas já são conhecidas (as do resultado).
+    if (queryColumns && table === target.query?.name) {
+      setColumns((c) => ({ ...c, [table]: queryColumns }));
+      return;
+    }
     setColumns((c) => ({ ...c, [table]: "loading" }));
     try {
       const d = await pg.tableDetail(target.connId, target.database, target.schema, table);
@@ -180,7 +186,7 @@ export function ExportWizard({ target, onClose }: Props) {
     } catch (e) {
       setColumns((c) => ({ ...c, [table]: { error: errorText(toAtlasError(e)) } }));
     }
-  }, [target.connId, target.database, target.schema]);
+  }, [target.connId, target.database, target.schema, queryColumns, target.query?.name]);
 
   useEffect(() => {
     if (step !== 2) return;
@@ -190,10 +196,12 @@ export function ExportWizard({ target, onClose }: Props) {
     if (table) void loadColumns(table);
   }, [step, selected, fieldTable, loadColumns]);
 
+  // Consulta com colunas de mesmo nome (ex.: um JOIN com `id` duas vezes): não dá para escolher por nome.
+  const forceAll = !!queryColumns && new Set(queryColumns).size !== queryColumns.length;
   const colsState = columns[fieldTable];
   const tableColumns: string[] | null = Array.isArray(colsState) ? colsState : null;
   const columnsError = colsState && typeof colsState === "object" && !Array.isArray(colsState) ? colsState.error : null;
-  const allFields = fields[fieldTable] == null;
+  const allFields = forceAll || fields[fieldTable] == null;
   const setTableFields = (v: string[] | null) => setFields((f) => ({ ...f, [fieldTable]: v }));
 
   /* ---------- Navegação ---------- */
@@ -254,6 +262,9 @@ export function ExportWizard({ target, onClose }: Props) {
   };
 
   /* ---------- Execução ---------- */
+  /** Consulta com colunas repetidas: sempre todos os campos. */
+  const forceAllFor = (table: string) => !!queryColumns && table === target.query?.name && new Set(queryColumns).size !== queryColumns.length;
+
   const start = async () => {
     if (running) return;
     const problem = firstProblem(STEPS);
@@ -277,19 +288,25 @@ export function ExportWizard({ target, onClose }: Props) {
       if (stopRef.current) break;
       const path = rows[tb.name].path.trim();
       const tableScope = scope?.table === tb.name ? scope : null;
+      const isQuery = !!target.query && tb.name === target.query.name;
       setCurrent({ table: tb.name, total: null, processed: 0 });
       add(t("exp.log.table", { table: tb.name }));
       add(t("exp.log.to", { path }));
-      void pg.tableCount(target.connId, target.database, target.schema, tb.name, tableScope?.filter ?? null)
-        .then((n) => setCurrent((c) => (c && c.table === tb.name ? { ...c, total: n } : c)))
-        .catch(() => undefined);
+      // Consulta: contar exigiria executá-la duas vezes, então o total fica em branco.
+      if (!isQuery) {
+        void pg.tableCount(target.connId, target.database, target.schema, tb.name, tableScope?.filter ?? null)
+          .then((n) => setCurrent((c) => (c && c.table === tb.name ? { ...c, total: n } : c)))
+          .catch(() => undefined);
+      }
       const id = crypto.randomUUID();
       exportId.current = id;
       const unlisten = await onExportProgress(id, (n) => setCurrent((c) => (c && c.table === tb.name ? { ...c, processed: n } : c)));
       try {
         const result = await pg.export({
-          exportId: id, sessionId: target.connId, database: target.database, schema: target.schema, table: tb.name,
-          columns: fields[tb.name] ?? [], orderBy: tableScope?.orderBy ?? [], filter: tableScope?.filter ?? null,
+          exportId: id, sessionId: target.connId, database: target.database, schema: target.schema,
+          table: isQuery && kind === "sql" && opts.sql.tableName.trim() ? opts.sql.tableName.trim() : tb.name,
+          columns: forceAllFor(tb.name) ? [] : fields[tb.name] ?? [], orderBy: tableScope?.orderBy ?? [], filter: tableScope?.filter ?? null,
+          query: isQuery && target.query ? { sql: target.query.sql, schema: target.query.schema ?? null } : undefined,
           format: buildFormat(kind, opts, tb.name), path,
         });
         setCurrent({ table: tb.name, total: result.rows, processed: result.rows });
@@ -390,7 +407,7 @@ export function ExportWizard({ target, onClose }: Props) {
               return (
                 <tr key={tb.name} className={row.checked ? "is-checked" : undefined} onDoubleClick={() => row.checked && void browseFile(tb.name)}>
                   <td><input type="checkbox" checked={row.checked} onChange={(e) => toggleRow(tb.name, e.target.checked)} aria-label={tb.name} /></td>
-                  <td><SmallIcon name={tb.view ? "view" : "table"} /></td>
+                  <td><SmallIcon name={tb.query ? "query" : tb.view ? "view" : "table"} /></td>
                   <td className="exp-name" title={tb.name}>{tb.name}</td>
                   <td className="exp-path-cell">
                     {row.checked && (
@@ -425,6 +442,7 @@ export function ExportWizard({ target, onClose }: Props) {
         <button type="button" className="btn" onClick={() => setAdvancedOpen(true)}>{t("exp.advanced")}</button>
       </div>
       {scopeActive && scope && <div className="muted exp-note">{t("exp.scopeNote", { table: scope.table })}</div>}
+      {target.query && <div className="muted exp-note">{t("exp.queryNote")}</div>}
     </>
   );
 
@@ -467,10 +485,11 @@ export function ExportWizard({ target, onClose }: Props) {
         <button type="button" className="btn" disabled={allFields || !tableColumns} onClick={() => setTableFields(tableColumns)}>{t("exp.selectAll")}</button>
         <button type="button" className="btn" disabled={allFields || !tableColumns} onClick={() => setTableFields([])}>{t("exp.unselectAll")}</button>
         <label className="check-row">
-          <input type="checkbox" checked={allFields} onChange={(e) => setTableFields(e.target.checked ? null : tableColumns ?? [])} />
+          <input type="checkbox" checked={allFields} disabled={forceAll} onChange={(e) => setTableFields(e.target.checked ? null : tableColumns ?? [])} />
           <span>{t("exp.allFields")}</span>
         </label>
       </div>
+      {forceAll && <div className="muted exp-note">{t("exp.dupColumns")}</div>}
     </>
   );
 
@@ -526,7 +545,7 @@ export function ExportWizard({ target, onClose }: Props) {
         </div>
       </div>
 
-      {advancedOpen && <ExportOptionsDialog kind={kind} options={opts} onChange={setOpts} onClose={() => setAdvancedOpen(false)} />}
+      {advancedOpen && <ExportOptionsDialog isQuery={!!target.query} kind={kind} options={opts} onChange={setOpts} onClose={() => setAdvancedOpen(false)} />}
       {namePrompt && (
         <MessageDialog
           title={t("exp.saveProfile")}

@@ -226,6 +226,8 @@ export interface ExportRequest {
   columns: string[];
   orderBy: OrderBy[];
   filter: TableFilter | null;
+  /** Consulta do editor como origem; `table` vira só o nome do XML/HTML e do destino do `INSERT`. */
+  query?: { sql: string; schema?: string | null };
   format: ExportFormat;
   path: string;
 }

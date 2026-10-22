@@ -2010,3 +2010,12 @@ select.et-input {
 .exp-row { display: grid; grid-template-columns: 150px 1fr; align-items: center; gap: 8px; }
 .exp-row .field { width: 100%; }
 .exp-row .exp-num { width: 90px; }
+
+/* Botão Exportar na barra de abas do resultado da consulta. */
+.result-export {
+  display: inline-flex; align-items: center; gap: 4px; margin: 0 4px; padding: 0 8px; border: 0;
+  background: none; color: var(--c-text); cursor: default;
+}
+.result-export:hover:not(:disabled) { background: var(--c-hover); }
+.result-export:disabled { color: var(--c-text-disabled); }
+.result-export:disabled svg { opacity: 0.45; }

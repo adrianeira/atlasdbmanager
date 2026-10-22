@@ -35,6 +35,8 @@ interface Props {
   onOpenConnection?: (connectionId: string) => void;
   /** Escolheu um banco ainda sem schemas lidos: busca no servidor. */
   onLoadSchemas?: (connectionId: string, database: string) => void;
+  /** Exportar o resultado: reexecuta a consulta em streaming (sem o limite de linhas da tela). Só com banco real. */
+  onExport?: (info: { sql: string; schema?: string; columns: string[]; connectionId: string; database: string }) => void;
 }
 
 export interface QueryBackend {
@@ -129,7 +131,7 @@ function mockExecute(sqlText: string, conn: ConnectionMock | undefined, database
 }
 
 export function QueryDoc({
-  connections, openConnections, initial, initialSql, active, onStatus, onDirty, registerActions, backend: backendProp, connecting, onOpenConnection, onLoadSchemas,
+  connections, openConnections, initial, initialSql, active, onStatus, onDirty, registerActions, backend: backendProp, connecting, onOpenConnection, onLoadSchemas, onExport,
 }: Props) {
   const t = useT();
   const editor = useRef<SqlEditorHandle | null>(null);
@@ -311,6 +313,17 @@ export function QueryDoc({
     onStatus(cells);
   }, [active, outcome, current, activeRow, cursor, t, onStatus]);
 
+  // Exportar o resultado: só com banco real e um resultado na tela; reexecuta a consulta em streaming.
+  const exportable = current ?? outcome?.results[0];
+  const canExport = !!onExport && !!backend && !!conn && !!outcome && !outcome.error && !!exportable && !running;
+  const exportResult = () => {
+    if (!canExport || !onExport || !conn || !outcome || !exportable) return;
+    onExport({
+      sql: outcome.sql, schema: ctx.schema, columns: exportable.columns.map((c) => c.name),
+      connectionId: conn.id, database: ctx.database ?? conn.initialDatabase,
+    });
+  };
+
   const startSplit = (e: ReactMouseEvent) => {
     e.preventDefault();
     const rect = bodyRef.current?.getBoundingClientRect();
@@ -423,6 +436,11 @@ export function QueryDoc({
                     {t("query.result", { n: i + 1 })}
                   </button>
                 ))}
+                <span className="spacer" />
+                <button type="button" className="result-export" disabled={!canExport} title={t("query.exportResult")} onClick={exportResult}>
+                  <SmallIcon name="export" />
+                  <span>{t("data.export")}</span>
+                </button>
               </div>
               <div className="result-body">
                 {resultTab === 0 || !current ? (
@@ -431,7 +449,7 @@ export function QueryDoc({
                     {"\n> "}{t("query.time", { s: (outcome.ms / 1000).toFixed(3) })}
                   </pre>
                 ) : (
-                  <DataGrid columns={current.columns} rows={current.rows} readOnly activeRow={activeRow} onActiveRow={setActiveRow} />
+                  <DataGrid columns={current.columns} rows={current.rows} readOnly activeRow={activeRow} onActiveRow={setActiveRow} onSaveAs={canExport ? exportResult : undefined} />
                 )}
               </div>
             </div>
