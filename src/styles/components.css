@@ -949,6 +949,11 @@ textarea.field.remarks {
   justify-content: flex-end;
 }
 
+/* Booleano: checkbox centralizado na célula. */
+.dg-td.is-bool {
+  justify-content: center;
+}
+
 .dg-td.is-edited {
   background: var(--c-edited);
 }

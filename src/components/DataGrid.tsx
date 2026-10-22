@@ -438,7 +438,7 @@ export function DataGrid({
                 // Obrigatório em branco: no editor enquanto digita, ou num registro novo ainda sem valor.
                 const editorInvalid = isEditing && !!c.required && editing.value === "";
                 const missing = !isEditing && !!c.required && !c.hasDefault && v === null && !!newRows?.has(ri);
-                const cellCls = `dg-td${c.kind === "number" ? " is-num" : ""}${isActive && ci === activeCol ? " is-focus" : ""}${edited?.has(`${ri}:${ci}`) ? " is-edited" : ""}${missing || editorInvalid ? " is-required" : ""}`;
+                const cellCls = `dg-td${c.kind === "number" ? " is-num" : c.kind === "bool" ? " is-bool" : ""}${isActive && ci === activeCol ? " is-focus" : ""}${edited?.has(`${ri}:${ci}`) ? " is-edited" : ""}${missing || editorInvalid ? " is-required" : ""}`;
                 return (
                   <div
                     key={ci}
