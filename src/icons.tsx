@@ -273,6 +273,12 @@ const small: Record<string, ReactElement> = {
     </>
   ),
   queryBuilder: <path d="M3 3h10M8 3v11M5.5 14h5" stroke="#d98a1c" strokeWidth="1.6" strokeLinecap="round" />,
+  preview: (
+    <>
+      <path d="M1.5 8C3 5.2 5.3 3.8 8 3.8s5 1.4 6.5 4.2C13 10.8 10.7 12.2 8 12.2S3 10.8 1.5 8z" fill="none" stroke="#2f7fd0" strokeLinejoin="round" />
+      <circle cx="8" cy="8" r="2" fill="#2f7fd0" />
+    </>
+  ),
   beautify: (
     <>
       <path d="M3 13l7-7" stroke="#56606b" strokeWidth="1.4" strokeLinecap="round" />

@@ -166,6 +166,40 @@ async fn syntax_error_reports_position() {
 }
 
 #[tokio::test]
+async fn view_detail_reads_definition_and_options() {
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    let barrier = if s.server.version_num >= 90200 { " WITH (security_barrier = true)" } else { "" };
+    let check = if s.server.version_num >= 90400 { " WITH LOCAL CHECK OPTION" } else { "" };
+    atlas_pg::execute(
+        &s,
+        &format!(
+            "CREATE TEMP TABLE atlas_vt (id int, status text); \
+             CREATE TEMP VIEW atlas_v{barrier} AS SELECT id FROM atlas_vt WHERE status = 'open'{check}; \
+             COMMENT ON VIEW atlas_v IS 'só abertos'"
+        ),
+        1,
+    )
+    .await
+    .expect("temp view");
+    // Objetos temporários ficam no schema pg_temp_N da sessão.
+    let out = atlas_pg::execute(&s, "SELECT nspname::text FROM pg_namespace WHERE oid = pg_my_temp_schema()", 1).await.expect("ns");
+    let ns = out.statements[0].result.as_ref().unwrap().rows[0][0].clone().unwrap();
+
+    let v = atlas_pg::view_detail(&s, &ns, "atlas_v").await.expect("view detail");
+    assert!(v.definition.starts_with("SELECT"), "{}", v.definition);
+    assert!(v.definition.contains("'open'::text"), "{}", v.definition);
+    assert!(!v.definition.ends_with(';'));
+    assert_eq!(v.comment.as_deref(), Some("só abertos"));
+    assert_eq!(v.security_barrier, s.server.version_num >= 90200);
+    assert_eq!(v.check_option.as_deref(), (s.server.version_num >= 90400).then_some("local"));
+    assert!(v.rules.is_empty());
+
+    let err = atlas_pg::view_detail(&s, &ns, "atlas_vt").await.expect_err("table is not a view");
+    assert_eq!(err.code.as_deref(), Some("42P01"));
+}
+
+#[tokio::test]
 async fn table_rows_pages_and_reads_all() {
     let p = require_server!();
     let s = atlas_pg::connect(&p, None).await.expect("connect");

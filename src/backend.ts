@@ -101,6 +101,16 @@ export interface TableDetail {
 
 export interface RoleInfo { name: string; canLogin: boolean; superuser: boolean }
 
+export interface ViewDetail {
+  /** Só o SELECT, sem `;` final. */
+  definition: string;
+  owner: string | null;
+  comment: string | null;
+  checkOption: "local" | "cascaded" | null;
+  securityBarrier: boolean;
+  rules: { name: string; definition: string }[];
+}
+
 export interface ResultSet {
   columns: { name: string; typeName: string | null }[];
   rows: (string | null)[][];
@@ -165,6 +175,8 @@ export const pg = {
   listObjects: (sessionId: string, database: string, schema: string) => call<SchemaObjects>("pg_list_objects", { sessionId, database, schema }),
   tableDetail: (sessionId: string, database: string, schema: string, table: string) =>
     call<TableDetail>("pg_table_detail", { sessionId, database, schema, table }),
+  viewDetail: (sessionId: string, database: string, schema: string, view: string) =>
+    call<ViewDetail>("pg_view_detail", { sessionId, database, schema, view }),
   listRoles: (sessionId: string) => call<RoleInfo[]>("pg_list_roles", { sessionId }),
   execute: (sessionId: string, database: string, sql: string, maxRows: number) =>
     call<QueryOutcome>("pg_execute", { sessionId, database, sql, maxRows }),

@@ -3,7 +3,9 @@ import { SmallIcon, type SmallIconName } from "../icons";
 
 export interface DocTab {
   id: string;
-  kind: "objects" | "query" | "data" | "designer" | "placeholder";
+  kind: "objects" | "query" | "data" | "designer" | "viewDesigner" | "placeholder";
+  /** Aba "data": tabela ou view (view abre só leitura). */
+  objectKind?: "table" | "view";
   title: string;
   /** Título longo para a barra da janela (ex.: "audit_log @atlas_demo.public (PostgreSQL 9.6) - Table"). */
   windowTitle?: string;

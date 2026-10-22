@@ -19,6 +19,7 @@ import { TabBar, type DocTab } from "./components/TabBar";
 import { QueryDoc, type QueryActions } from "./documents/QueryDoc";
 import { TableDataDoc } from "./documents/TableDataDoc";
 import { TableDesignerDoc } from "./documents/TableDesignerDoc";
+import { ViewDesignerDoc, type ViewBackend } from "./documents/ViewDesignerDoc";
 import { detectLang, I18nContext, makeTranslator, type Lang, type MessageKey } from "./i18n";
 import { ProviderIcon, SmallIcon } from "./icons";
 import {
@@ -676,10 +677,17 @@ export default function App() {
     openTab({ kind: "designer", title, windowTitle: title, icon: "tableDesign", connectionId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name });
   };
 
+  const newView = () => {
+    if (!ctx.connection || !ctx.database || !ctx.schema) return;
+    const title = objectTitle(t("des.untitled"), "tb.view");
+    openTab({ kind: "viewDesigner", title, windowTitle: title, icon: "view", connectionId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name });
+  };
+
   const openObjects = (kind: "open" | "design" | "new", names: string[], cat: Category = category, c = ctx) => {
     if (kind === "new") {
       if (cat === "query") return newQuery();
       if (cat === "table") return newTable();
+      if (cat === "view") return newView();
       return openTab({ kind: "placeholder", title: `${t("act.new")} ${t(CATEGORY_LABEL[cat])}`, icon: cat, note: t("placeholder.designer") });
     }
     for (const name of names) {
@@ -690,6 +698,12 @@ export default function App() {
       } else if (cat === "table" && kind === "design") {
         const title = objectTitle(name, "tb.table", c);
         openTab({ ...base, kind: "designer", title, windowTitle: title, icon: "tableDesign" }, `${t("act.designTable")} - ${name}`);
+      } else if (cat === "view" && kind === "open") {
+        const title = objectTitle(name, "tb.view", c);
+        openTab({ ...base, kind: "data", objectKind: "view", title, windowTitle: title, icon: "view" }, `${t("act.openView")} - ${name}`);
+      } else if (cat === "view" && kind === "design") {
+        const title = objectTitle(name, "tb.view", c);
+        openTab({ ...base, kind: "viewDesigner", title, windowTitle: title, icon: "view" }, `${t("act.designView")} - ${name}`);
       } else {
         const title = objectTitle(name, CATEGORY_LABEL[cat], c);
         openTab({ ...base, kind: "placeholder", title, windowTitle: title, icon: cat, note: kind === "open" && (cat === "view" || cat === "matview") ? t("placeholder.viewData") : t("placeholder.designer") });
@@ -760,6 +774,30 @@ export default function App() {
     const c = resolveNode(`schema:${seg(tab.connectionId ?? "")}/${seg(tab.database ?? "")}/${seg(tab.schema ?? "")}`, connections);
     const title = objectTitle(obj.name, "tb.table", c);
     setTabs((ts) => ts.map((x) => (x.id === tab.id ? { ...x, object: obj.name, title, windowTitle: title } : x)));
+  };
+
+  /** View salva no designer: atualiza a árvore (demonstração) e o título da aba. */
+  const saveView = (tab: DocTab, name: string, definition: string, comment: string, owner: string) => {
+    setConnections((list) => list.map((c) => {
+      if (c.id !== tab.connectionId) return c;
+      return {
+        ...c,
+        databases: c.databases.map((d) => d.name !== tab.database ? d : {
+          ...d,
+          schemas: d.schemas.map((s) => {
+            if (s.name !== tab.schema) return s;
+            const views = s.objects.view ?? [];
+            const prev = views.find((x) => x.name === name);
+            const merged: DbObject = { ...prev, name, definition, comment, owner: owner || prev?.owner };
+            const next = prev ? views.map((x) => (x.name === name ? merged : x)) : [...views, merged];
+            return { ...s, objects: { ...s.objects, view: next.sort((a, b) => a.name.localeCompare(b.name)) } };
+          }),
+        }),
+      };
+    }));
+    const c = resolveNode(`schema:${seg(tab.connectionId ?? "")}/${seg(tab.database ?? "")}/${seg(tab.schema ?? "")}`, connections);
+    const title = objectTitle(name, "tb.view", c);
+    setTabs((ts) => ts.map((x) => (x.id === tab.id ? { ...x, object: name, title, windowTitle: title } : x)));
   };
 
   /* ---------- Conexões: salvar/excluir ---------- */
@@ -985,6 +1023,41 @@ export default function App() {
         item("cmd.objectInfo", () => patchLayout({ infoVisible: true })),
       );
     }
+    if (node.kind === "folder" && node.category === "view") {
+      items.push(
+        item("act.newView", newView),
+        item("cmd.newQuery", () => newQuery()),
+        sep,
+        item("cmd.refresh", live ? () => refreshNode(node) : undefined),
+      );
+    }
+
+    if (node.kind === "object" && node.category === "view" && c.connection && c.database && c.schema && c.objectName) {
+      const scName = c.schema.name;
+      const name = c.objectName;
+      const target = `${quoteIdent(scName)}.${quoteIdent(name)}`;
+      const scope = { connId: c.connection.id, database: c.database.name, schema: scName, refresh: "schema" as const };
+      items.push(
+        item("act.openView", () => openObjects("open", [name], "view", c)),
+        item("act.designView", () => openObjects("design", [name], "view", c)),
+        item("act.newView", newView),
+        item("act.deleteView", live ? () => askDdl({
+          ...scope, title: t("act.deleteView"), statements: [`DROP VIEW ${target};`], danger: true, confirmText: prod ? name : undefined,
+        }) : undefined),
+        sep,
+        item("act.exportWizard"),
+        sep,
+        item("cmd.copyName", () => { void navigator.clipboard?.writeText(name).catch(() => undefined); }),
+        item("cmd.renameView", live ? () => askName(t("cmd.renameView"), t("msg.newName"), name, (newName) => askDdl({
+          ...scope, title: t("cmd.renameView"), statements: [`ALTER VIEW ${target} RENAME TO ${quoteIdent(newName)};`],
+        })) : undefined),
+        sep,
+        item("cmd.newQuery", () => newQuery(`SELECT * FROM ${target} LIMIT 100;`)),
+        sep,
+        item("cmd.refresh", live ? () => refreshNode(node) : undefined),
+        item("cmd.objectInfo", () => patchLayout({ infoVisible: true })),
+      );
+    }
     if (items.length) setCtxMenu({ x, y, items });
   };
 
@@ -1016,7 +1089,7 @@ export default function App() {
     newConnection: { id: "newConnection", label: "cmd.newConnection", run: () => setDialog({ kind: "connection" }) },
     newTableNormal: { id: "newTableNormal", label: "cmd.newTableNormal", run: hasSchema ? newTable : undefined },
     newTableForeign: { id: "newTableForeign", label: "cmd.newTableForeign" },
-    newView: { id: "newView", label: "cmd.newView" },
+    newView: { id: "newView", label: "cmd.newView", run: hasSchema ? newView : undefined },
     newMatview: { id: "newMatview", label: "cmd.newMatview" },
     newFunction: { id: "newFunction", label: "cmd.newFunction" },
     newRole: { id: "newRole", label: "cmd.newRole" },
@@ -1211,7 +1284,9 @@ export default function App() {
   const selectedObject = selectedObjects.length === 1 ? objects?.find((o) => o.name === selectedObjects[0]) ?? null : null;
 
   const tabsForBar = tabs.map((x) => (x.kind === "objects" ? { ...x, title: t("tab.objects") } : x));
-  const highlight: Category = active.kind === "query" ? "query" : active.kind === "data" || active.kind === "designer" ? "table" : category;
+  const highlight: Category = active.kind === "query" ? "query"
+    : active.kind === "viewDesigner" || (active.kind === "data" && active.objectKind === "view") ? "view"
+    : active.kind === "data" || active.kind === "designer" ? "table" : category;
   const toolbarProvider = ctx.connection?.provider ?? connections.find((c) => c.id === active.connectionId)?.provider;
 
   /* ---------- Backends reais por documento (estáveis por aba) ---------- */
@@ -1284,7 +1359,20 @@ export default function App() {
     const conn = connections.find((c) => c.id === tab.connectionId);
     const sc = conn?.databases.find((d) => d.name === tab.database)?.schemas.find((s) => s.name === tab.schema);
     const tables = sc?.objects.table ?? [];
-    return { conn, table: tables.find((x) => x.name === tab.object), tables };
+    const own = tab.objectKind === "view" || tab.kind === "viewDesigner" ? sc?.objects.view ?? [] : tables;
+    return { conn, table: own.find((x) => x.name === tab.object), tables };
+  };
+
+  const viewBackends = useRef<Record<string, ViewBackend>>({});
+  const viewBackendFor = (tab: DocTab, conn: ConnectionMock): ViewBackend => {
+    const db = tab.database ?? "";
+    return (viewBackends.current[tab.id] ??= {
+      loadDetail: () => pg.viewDetail(conn.id, db, tab.schema ?? "", tab.object ?? ""),
+      execute: (sqlText, maxRows) => pg.execute(conn.id, db, sqlText, maxRows),
+      apply: async (statements) => {
+        await pg.apply(conn.id, db, statements.map((sql) => ({ sql, params: [], expectOneRow: false })));
+      },
+    });
   };
 
   const renderDoc = (tab: DocTab) => {
@@ -1316,7 +1404,32 @@ export default function App() {
           production={conn?.environment === "production"}
           onStatus={statusFor(tab.id)}
           backend={conn?.live ? tableBackendFor(tab, base) : undefined}
-          lookup={lookupSourceFor(tab, conn)}
+          lookup={tab.objectKind === "view" ? undefined : lookupSourceFor(tab, conn)}
+          isView={tab.objectKind === "view"}
+        />
+      );
+    }
+    if (tab.kind === "viewDesigner") {
+      const { conn, table: view, tables } = lookupTable(tab);
+      const completion: Record<string, string[]> = {};
+      for (const tb of tables) completion[tb.name] = (tb.columns ?? []).map((c) => c.name);
+      return (
+        <ViewDesignerDoc
+          schema={tab.schema ?? "public"}
+          viewName={tab.object}
+          mock={view ? { definition: view.definition ?? "", comment: view.comment ?? "", owner: view.owner ?? "" } : undefined}
+          owners={conn?.roles.map((r) => r.name) ?? []}
+          serverVersionNum={conn?.serverVersionNum ?? 0}
+          active={isActive}
+          production={conn?.environment === "production"}
+          completionSchema={completion}
+          onStatus={statusFor(tab.id)}
+          onDirty={(dirty) => setTabDirty(tab.id, dirty)}
+          onSaved={(name, s) => {
+            saveView(tab, name, s.definition, s.comment, s.owner);
+            if (conn?.live && tab.database && tab.schema) void loadSchema(conn.id, tab.database, tab.schema, true).catch(() => undefined);
+          }}
+          backend={conn?.live ? viewBackendFor(tab, conn) : undefined}
         />
       );
     }

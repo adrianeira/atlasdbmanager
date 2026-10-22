@@ -501,6 +501,14 @@ input {
   opacity: 0.6;
 }
 
+.ot-sep {
+  flex: none;
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: var(--c-border);
+}
+
 .ot-spacer {
   flex: 1;
 }

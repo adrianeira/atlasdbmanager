@@ -4,8 +4,8 @@
 use crate::connect::PgSession;
 use crate::error::map_error;
 use atlas_core::{
-    ColumnInfo, ConstraintInfo, DatabaseError, DatabaseList, IndexInfo, ObjectInfo, RoleInfo, SchemaObjects, TableDetail,
-    TriggerInfo,
+    ColumnInfo, ConstraintInfo, DatabaseError, DatabaseList, ErrorKind, IndexInfo, ObjectInfo, RoleInfo, RuleInfo,
+    SchemaObjects, TableDetail, TriggerInfo, ViewDetail,
 };
 
 pub async fn list_databases(s: &PgSession) -> Result<DatabaseList, DatabaseError> {
@@ -251,6 +251,58 @@ pub async fn table_detail(s: &PgSession, schema: &str, table: &str) -> Result<Ta
     let (owner, comment) = orow.map(|r| (r.get(0), r.get(1))).unwrap_or((None, None));
 
     Ok(TableDetail { columns, indexes, constraints, triggers, owner, comment })
+}
+
+/// Definição da view para o designer. Erro 42P01 (como o servidor) se não existir ou não for view.
+pub async fn view_detail(s: &PgSession, schema: &str, view: &str) -> Result<ViewDetail, DatabaseError> {
+    let row = s
+        .client
+        .query_opt(
+            "SELECT c.oid, pg_get_viewdef(c.oid, true), pg_get_userbyid(c.relowner)::text, \
+                    obj_description(c.oid, 'pg_class'), array_to_string(c.reloptions, E'\\n') \
+               FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+              WHERE n.nspname = $1 AND c.relname = $2 AND c.relkind = 'v'",
+            &[&schema, &view],
+        )
+        .await
+        .map_err(|e| map_error(&e))?;
+    let Some(row) = row else {
+        let mut err = DatabaseError::new(ErrorKind::Server, format!("view \"{schema}\".\"{view}\" does not exist"));
+        err.code = Some("42P01".into());
+        return Err(err);
+    };
+    let oid: u32 = row.get(0);
+    let definition: String = row.get(1);
+    let options: Option<String> = row.get(4);
+    let mut check_option = None;
+    let mut security_barrier = false;
+    for opt in options.as_deref().unwrap_or("").lines() {
+        match opt.split_once('=') {
+            Some(("check_option", v)) => check_option = Some(v.to_string()),
+            Some(("security_barrier", v)) => security_barrier = matches!(v, "true" | "on" | "1" | "yes"),
+            _ => {}
+        }
+    }
+
+    let rrows = s
+        .client
+        .query(
+            "SELECT rulename::text, pg_get_ruledef(oid, true) FROM pg_catalog.pg_rewrite \
+              WHERE ev_class = $1 AND rulename <> '_RETURN' ORDER BY rulename",
+            &[&oid],
+        )
+        .await
+        .map_err(|e| map_error(&e))?;
+    let rules = rrows.iter().map(|r| RuleInfo { name: r.get(0), definition: r.get(1) }).collect();
+
+    Ok(ViewDetail {
+        definition: definition.trim().trim_end_matches(';').trim_end().to_string(),
+        owner: row.get(2),
+        comment: row.get(3),
+        check_option,
+        security_barrier,
+        rules,
+    })
 }
 
 pub async fn list_roles(s: &PgSession) -> Result<Vec<RoleInfo>, DatabaseError> {

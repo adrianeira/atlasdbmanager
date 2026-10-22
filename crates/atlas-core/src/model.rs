@@ -149,6 +149,28 @@ pub struct TableDetail {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RuleInfo {
+    pub name: String,
+    pub definition: String,
+}
+
+/// Definição de uma view (`pg_get_viewdef`) e suas opções.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ViewDetail {
+    /// Só o SELECT, sem `;` final.
+    pub definition: String,
+    pub owner: Option<String>,
+    pub comment: Option<String>,
+    /// "local" | "cascaded" (PostgreSQL 9.4+).
+    pub check_option: Option<String>,
+    pub security_barrier: bool,
+    /// Regras além da `_RETURN` implícita da view.
+    pub rules: Vec<RuleInfo>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RoleInfo {
     pub name: String,
     pub can_login: bool,

@@ -27,6 +27,8 @@ interface Props {
   backend?: TableDataBackend;
   /** Leitura das tabelas referenciadas pelas FKs (botão "…" na célula). */
   lookup?: FkLookupSource;
+  /** View: sempre somente leitura. */
+  isView?: boolean;
 }
 
 const DEFAULT_PAGE_SIZE = 1000;
@@ -36,12 +38,12 @@ function literal(v: CellValue): string {
   return v === null ? "NULL" : `'${v.replace(/'/g, "''")}'`;
 }
 
-export function TableDataDoc({ schema, table: tableProp, active, production, onStatus, backend, lookup }: Props) {
+export function TableDataDoc({ schema, table: tableProp, active, production, onStatus, backend, lookup, isView }: Props) {
   const t = useT();
   const [table, setTable] = useState<DbObject>(tableProp);
   const cols = useMemo(() => table.columns ?? [], [table]);
   const keyCols = cols.map((c, i) => ({ c, i })).filter((x) => x.c.key).sort((a, b) => (a.c.key ?? 0) - (b.c.key ?? 0));
-  const readOnly = keyCols.length === 0;
+  const readOnly = isView || keyCols.length === 0;
 
   const columns: GridColumn[] = useMemo(
     () => cols.map((c) => ({ name: c.name, type: columnType(c), kind: typeKind(c.type), isKey: !!c.key })),
@@ -290,7 +292,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
 
       {loadError && <div className="doc-banner is-warn">{loadError}</div>}
       {!loadError && truncated && <div className="doc-banner is-warn">{t("data.truncatedAll", { n: rows.length.toLocaleString() })}</div>}
-      {!loadError && !loading && readOnly && <div className="doc-banner">{t("data.readOnlyNoKey")}</div>}
+      {!loadError && !loading && readOnly && !isView && <div className="doc-banner">{t("data.readOnlyNoKey")}</div>}
       {!readOnly && production && <div className="doc-banner is-warn">{t("data.productionBanner")}</div>}
 
       <div className="doc-body">

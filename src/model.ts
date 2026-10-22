@@ -58,6 +58,8 @@ export interface DbObject {
   uniques?: UniqueDef[];
   checks?: CheckDef[];
   triggers?: TriggerDef[];
+  /** View: o SELECT (dados de demonstração e após salvar no designer). */
+  definition?: string;
 }
 
 /** `loaded` = false indica nível ainda não lido do servidor (carga preguiçosa). */
@@ -163,7 +165,11 @@ const publicSchema = (): SchemaMock => ({
   name: "public",
   objects: {
     table: fixtureTables(),
-    view: [{ name: "v_open_orders", owner: "atlas_test" }],
+    view: [{
+      name: "v_open_orders", owner: "atlas_test",
+      definition: "SELECT o.id AS order_id,\n    o.client_id,\n    o.amount\n   FROM orders o\n  WHERE o.status = 'open'::text",
+      columns: [col("order_id", "int8", 64, 0, false), col("client_id", "uuid", 0, 0, false), col("amount", "numeric", 12, 2, false)],
+    }],
     matview: [],
     function: [
       { name: "fn_audit_trigger", args: "", returnType: "trigger", language: "plpgsql", owner: "atlas_test" },
@@ -246,6 +252,7 @@ export function mockRows(table: DbObject): CellValue[][] {
       ["2", uuid(2), "89.90", "paid"],
       ["3", uuid(1), "42.00", "open"],
     ],
+    v_open_orders: [["1", uuid(1), "150.00"], ["3", uuid(1), "42.00"]],
     "Mixed Case": [["1", "ação"]],
   };
   if (special[table.name]) return special[table.name];
