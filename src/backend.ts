@@ -163,6 +163,9 @@ export interface ProfileRecord {
   hasPassword: boolean;
 }
 
+/** A interface terminou de carregar: o núcleo troca a tela de abertura pela janela principal. */
+export const appReady = () => call<void>("app_ready");
+
 export const local = {
   status: () => call<{ path: string; schemaVersion: number | null; error: string | null }>("local_status"),
   profiles: () => call<ProfileRecord[]>("profiles_list"),

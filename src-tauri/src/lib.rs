@@ -3,7 +3,37 @@ mod export;
 mod local;
 mod sessions;
 
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use std::time::{Duration, Instant};
+use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
+
+/// Tempo mínimo da tela de abertura (para não piscar quando o app carrega rápido) e o máximo, depois do qual a
+/// janela principal aparece mesmo que a interface nunca avise que está pronta.
+const SPLASH_MIN: Duration = Duration::from_millis(1500);
+const SPLASH_MAX: Duration = Duration::from_secs(20);
+
+/// Quando o app começou a abrir (para respeitar `SPLASH_MIN`).
+struct StartedAt(Instant);
+
+/// Fecha a tela de abertura e mostra a janela principal. Só age se a splash ainda existe, então chamadas
+/// repetidas (aviso da interface + limite de segurança) não roubam o foco depois.
+fn reveal_main(app: &AppHandle) {
+    let Some(splash) = app.get_webview_window("splash") else { return };
+    let _ = splash.close();
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.show();
+        let _ = main.set_focus();
+    }
+}
+
+/// A interface carregou o que precisa (perfis de conexão lidos): troca a splash pela janela principal.
+#[tauri::command]
+fn app_ready(app: AppHandle, started: State<'_, StartedAt>) {
+    let wait = SPLASH_MIN.saturating_sub(started.0.elapsed());
+    std::thread::spawn(move || {
+        std::thread::sleep(wait);
+        reveal_main(&app);
+    });
+}
 
 /// Argumentos padrão que o Tauri usa no WebView2 do Windows.
 const DEFAULT_WEBVIEW2_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection";
@@ -38,13 +68,36 @@ pub fn run() {
                 args.push_str(&format!(" --remote-debugging-port={port}"));
             }
 
+            // Tela de abertura: pequena, sem bordas, mostrada enquanto o app carrega. Usa os mesmos argumentos do
+            // WebView2 da janela principal (as duas compartilham o mesmo ambiente).
+            WebviewWindowBuilder::new(app, "splash", WebviewUrl::App("splash.html".into()))
+                .title("Atlas DB Manager")
+                .inner_size(836.0, 470.0)
+                .decorations(false)
+                .resizable(false)
+                .maximizable(false)
+                .minimizable(false)
+                .always_on_top(true)
+                .center()
+                .additional_browser_args(&args)
+                .build()?;
+
+            // A janela principal nasce oculta; `app_ready` (ou o limite de segurança) a mostra.
             WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
                 .title("Atlas DB Manager")
                 .inner_size(1440.0, 900.0)
                 .min_inner_size(1024.0, 650.0)
                 .center()
+                .visible(false)
                 .additional_browser_args(&args)
                 .build()?;
+
+            app.manage(StartedAt(Instant::now()));
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(SPLASH_MAX);
+                reveal_main(&handle);
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -63,6 +116,7 @@ pub fn run() {
             commands::pg_table_rows,
             commands::pg_table_count,
             commands::pg_apply,
+            app_ready,
             export::pg_export,
             export::pg_export_cancel,
             local::local_status,

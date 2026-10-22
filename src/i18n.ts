@@ -658,7 +658,7 @@ const en = {
   "msg.unsavedQuery": "This query has unsaved changes. Close it and discard them?",
   "msg.unsavedData": "This table has changes not saved to the database. Close it and discard them?",
   "msg.discard": "Discard",
-  "msg.about": "Atlas DB Manager 0.1.0 — M0 prototype (mock data). Open source, MIT. Built with Rust, Tauri and React.",
+  "msg.about": "Atlas DB Manager 0.1.0 — pre-alpha. Open source, MIT. Built with Rust, Tauri and React.",
 
   "common.loading": "Loading...",
   "sub.dumpSql": "Dump SQL File",
@@ -1383,7 +1383,7 @@ const pt: Record<MessageKey, string> = {
   "msg.unsavedQuery": "Esta consulta tem alterações não salvas. Fechar e descartá-las?",
   "msg.unsavedData": "Esta tabela tem alterações não gravadas no banco. Fechar e descartá-las?",
   "msg.discard": "Descartar",
-  "msg.about": "Atlas DB Manager 0.1.0 — protótipo M0 (dados fictícios). Código aberto, MIT. Feito com Rust, Tauri e React.",
+  "msg.about": "Atlas DB Manager 0.1.0 — pré-alfa. Código aberto, MIT. Feito com Rust, Tauri e React.",
 
   "common.loading": "Carregando...",
   "sub.dumpSql": "Despejar arquivo SQL",

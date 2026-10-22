@@ -2019,3 +2019,7 @@ select.et-input {
 .result-export:hover:not(:disabled) { background: var(--c-hover); }
 .result-export:disabled { color: var(--c-text-disabled); }
 .result-export:disabled svg { opacity: 0.45; }
+
+/* Janela Sobre: logo ao lado do texto. */
+.about-box { display: flex; align-items: center; gap: 14px; }
+.about-logo { flex: none; }

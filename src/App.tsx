@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { errorText, isDesktop, local, pg, toAtlasError, type ConnectionParams, type ProfileRecord } from "./backend";
+import { appReady, errorText, isDesktop, local, pg, toAtlasError, type ConnectionParams, type ProfileRecord } from "./backend";
 import { entries, matchesShortcut, sub, type CommandMap, type MenuDef, type MenuEntry } from "./commands";
 import { ConnectionDialog, type ConnectionForm } from "./components/ConnectionDialog";
 import { ExportWizard, type ExportTarget } from "./components/export/ExportWizard";
@@ -236,6 +236,12 @@ export default function App() {
   const [connections, setConnections] = useState<ConnectionMock[]>(loadConnections);
   /* ---------- Perfis no atlas.db (app desktop) ---------- */
   const [profilesLoaded, setProfilesLoaded] = useState(!isDesktop);
+  // Conexões lidas: avisa o núcleo para trocar a tela de abertura pela janela principal (depois de pintar).
+  useEffect(() => {
+    if (!isDesktop || !profilesLoaded) return;
+    const id = requestAnimationFrame(() => requestAnimationFrame(() => void appReady().catch(() => undefined)));
+    return () => cancelAnimationFrame(id);
+  }, [profilesLoaded]);
   const persistedProfiles = useRef(new Map<string, string>());
 
   useEffect(() => {
@@ -1790,7 +1796,17 @@ export default function App() {
         onChange={(e) => void onSqlFilePicked(e.target.files?.[0])}
       />
       {dialog?.kind === "about" && (
-        <MessageDialog title={t("cmd.about")} message={t("msg.about")} onOk={() => setDialog(null)} onCancel={() => setDialog(null)} />
+        <MessageDialog
+          title={t("cmd.about")}
+          message={(
+            <div className="about-box">
+              <img className="about-logo" src="/logo.png" alt="Atlas DB Manager" width={72} height={72} draggable={false} />
+              <div>{t("msg.about")}</div>
+            </div>
+          )}
+          onOk={() => setDialog(null)}
+          onCancel={() => setDialog(null)}
+        />
       )}
     </I18nContext.Provider>
   );

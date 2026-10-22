@@ -1,22 +1,34 @@
 # Identidade visual do Atlas
 
-Coloque aqui os arquivos de marca do projeto. Esta pasta **é versionada** (diferente de `capturas/`),
-então só ponha o que for seu ou de uso livre.
+Arquivos de marca do projeto. Esta pasta **é versionada** (diferente de `capturas/`), então só entra
+aqui o que for nosso ou de uso livre.
 
-## O que colocar
+## Arquivos
 
-| Arquivo | Para quê | Formato recomendado |
-|---|---|---|
-| `logo.png` (ou `logo.svg`) | Ícone do aplicativo: janela, barra de tarefas, instalador, atalho | PNG quadrado de **1024×1024**, fundo **transparente**; ou SVG |
-| `splash.png` | Tela de abertura (aparece enquanto o app carrega) | PNG, por exemplo **800×500**; qualquer proporção serve |
-| `logo-escuro.png` *(opcional)* | Variante para fundo escuro, se o logo principal sumir nele | mesmo formato do `logo.png` |
+| Arquivo | O que é |
+|---|---|
+| `logo-mini.png` | Logo original (PNG com fundo transparente). **É a fonte.** |
+| `splachscreen.png` | Imagem original da tela de abertura. **É a fonte.** |
+| `logo-1024.png` | *Gerado.* Logo quadrado 1024×1024, transparente, com respiro; base de todos os ícones |
 
-Outros nomes funcionam; me diga quais usou.
+Para trocar o logo ou a splash, substitua os arquivos de origem (mesmos nomes) e rode a geração abaixo.
 
-## O que acontece com eles
+## Onde cada um é usado
 
-- `logo.png` → o comando `npm run tauri icon branding/logo.png` gera todos os tamanhos e formatos em
-  `src-tauri/icons/` (`.ico` do Windows, `.icns` do macOS, PNGs do Linux e do instalador).
-- `splash.png` → entra na janela de abertura do app.
+- **Ícone do app** (janela, barra de tarefas, instalador, atalho): `src-tauri/icons/`, gerado de `logo-1024.png`.
+- **Tela de abertura:** `public/splash.jpg` + `public/splash.html`; é mostrada enquanto o app carrega e some
+  quando as conexões foram lidas (no mínimo 1,5 s, no máximo 20 s).
+- **Janela "Sobre" e favicon:** `public/logo.png` (256×256).
 
-Deixe um respiro de uns 10% nas bordas do logo: alguns sistemas (macOS, Android) recortam os cantos.
+## Regerar
+
+```bash
+pip install pillow
+python scripts/brand-assets.py .                       # logo-1024.png, public/logo.png, public/splash.jpg
+npx tauri icon branding/logo-1024.png -o <pasta-temporaria>
+```
+
+Copie os **arquivos** da pasta temporária para `src-tauri/icons/` (as pastas `android/` e `ios/` não são usadas).
+O `build.rs` observa `icons/`, então o executável regrava o ícone na próxima compilação.
+
+Dica: deixe um respiro de uns 10% nas bordas do logo; alguns sistemas (macOS, Android) recortam os cantos.
