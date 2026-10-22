@@ -1110,6 +1110,26 @@ textarea.field.remarks {
   text-align: center;
 }
 
+.data-limit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 4px;
+  white-space: nowrap;
+}
+
+.data-limit .check-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.data-limit-size {
+  width: 64px;
+  height: 19px;
+  text-align: right;
+}
+
 .form-view {
   flex: 1;
   overflow: auto;

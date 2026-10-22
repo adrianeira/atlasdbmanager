@@ -1237,7 +1237,8 @@ export default function App() {
       loadDetail: async () => tableFromServer(base, await pg.tableDetail(connId, db, schema, tab.object ?? base.name)),
       loadRows: async (orderBy, limit, offset) => {
         const r = await pg.tableRows(connId, db, schema, tab.object ?? base.name, orderBy, limit, offset);
-        return { sql: r.sql, rows: r.outcome.statements[0]?.result?.rows ?? [] };
+        const rs = r.outcome.statements[0]?.result;
+        return { sql: r.sql, rows: rs?.rows ?? [], truncated: !!rs?.truncated };
       },
       apply: async (statements) => {
         await pg.apply(connId, db, statements);

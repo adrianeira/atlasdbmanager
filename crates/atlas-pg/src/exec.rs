@@ -67,21 +67,31 @@ pub async fn execute(s: &PgSession, sql: &str, max_rows: usize) -> Result<QueryO
 
 /// Página de uma tabela. A ordenação pela chave primária torna a paginação determinística
 /// (spec §31.2); sem chave, a ordem do servidor não é garantida.
+///
+/// `limit = None` lê a tabela inteira ("Limitar registros" desmarcado); ainda assim a
+/// memória fica limitada a `max_rows` linhas e o excedente é sinalizado como `truncated`.
 pub async fn table_rows(
     s: &PgSession,
     schema: &str,
     table: &str,
     order_by: &[String],
-    limit: u32,
+    limit: Option<u32>,
     offset: u64,
+    max_rows: usize,
 ) -> Result<(String, QueryOutcome), DatabaseError> {
     let mut sql = format!("SELECT * FROM {}.{}", quote_ident(schema), quote_ident(table));
     if !order_by.is_empty() {
         let cols: Vec<String> = order_by.iter().map(|c| quote_ident(c)).collect();
         sql.push_str(&format!(" ORDER BY {}", cols.join(", ")));
     }
-    sql.push_str(&format!(" LIMIT {limit} OFFSET {offset}"));
-    let out = execute(s, &sql, limit as usize).await?;
+    let keep = match limit {
+        Some(limit) => {
+            sql.push_str(&format!(" LIMIT {limit} OFFSET {offset}"));
+            (limit as usize).min(max_rows)
+        }
+        None => max_rows,
+    };
+    let out = execute(s, &sql, keep).await?;
     Ok((sql, out))
 }
 

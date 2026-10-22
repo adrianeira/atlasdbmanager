@@ -169,7 +169,8 @@ export const pg = {
   execute: (sessionId: string, database: string, sql: string, maxRows: number) =>
     call<QueryOutcome>("pg_execute", { sessionId, database, sql, maxRows }),
   cancel: (sessionId: string, database: string) => call<void>("pg_cancel", { sessionId, database }),
-  tableRows: (sessionId: string, database: string, schema: string, table: string, orderBy: string[], limit: number, offset: number) =>
+  /** `limit = null`: tabela inteira (até o teto do backend; o excedente vem como `truncated`). */
+  tableRows: (sessionId: string, database: string, schema: string, table: string, orderBy: string[], limit: number | null, offset: number) =>
     call<{ sql: string; outcome: QueryOutcome }>("pg_table_rows", { sessionId, database, schema, table, orderBy, limit, offset }),
   apply: (sessionId: string, database: string, statements: PlannedStatement[]) =>
     call<number[]>("pg_apply", { sessionId, database, statements }),

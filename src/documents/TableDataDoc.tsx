@@ -13,7 +13,8 @@ import { columnType, selectSql } from "../sql/ddl";
 /** Acesso ao banco real; ausente = modo de demonstração com dados fictícios. */
 export interface TableDataBackend {
   loadDetail: () => Promise<DbObject>;
-  loadRows: (orderBy: string[], limit: number, offset: number) => Promise<{ sql: string; rows: CellValue[][] }>;
+  /** `limit = null`: sem LIMIT ("Limitar registros" desmarcado). */
+  loadRows: (orderBy: string[], limit: number | null, offset: number) => Promise<{ sql: string; rows: CellValue[][]; truncated: boolean }>;
   apply: (statements: PlannedStatement[]) => Promise<void>;
 }
 
@@ -28,7 +29,8 @@ interface Props {
   lookup?: FkLookupSource;
 }
 
-const PAGE_SIZE = 1000;
+const DEFAULT_PAGE_SIZE = 1000;
+const MAX_PAGE_SIZE = 1_000_000;
 
 function literal(v: CellValue): string {
   return v === null ? "NULL" : `'${v.replace(/'/g, "''")}'`;
@@ -60,7 +62,14 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   const [loadError, setLoadError] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
-  const [sqlText, setSqlText] = useState(() => selectSql(schema, tableProp.name, PAGE_SIZE, 0));
+  const [sqlText, setSqlText] = useState(() => selectSql(schema, tableProp.name, DEFAULT_PAGE_SIZE, 0));
+  // Engrenagem do rodapé (como na referência): troca a paginação por "Limitar registros".
+  const [limitPanel, setLimitPanel] = useState(false);
+  const [limitOn, setLimitOn] = useState(true);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [sizeText, setSizeText] = useState(String(DEFAULT_PAGE_SIZE));
+  const [truncated, setTruncated] = useState(false);
+  const limit = limitOn ? pageSize : null;
   const [fkOpen, setFkOpen] = useState<{ row: number; fk: ForeignKeyDef; anchor: DOMRect } | null>(null);
 
   // Coluna → FK a que pertence (para o botão "…" de lookup).
@@ -83,16 +92,17 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
     setDeleted(new Set());
   };
 
-  const loadPage = useCallback(async (p: number, structure: DbObject) => {
+  const loadPage = useCallback(async (p: number, structure: DbObject, lim: number | null) => {
     if (!backend) return;
     setLoading(true);
     setLoadError(null);
     try {
       const pk = (structure.columns ?? []).filter((c) => c.key).sort((a, b) => (a.key ?? 0) - (b.key ?? 0)).map((c) => c.name);
-      const res = await backend.loadRows(pk, PAGE_SIZE, p * PAGE_SIZE);
+      const res = await backend.loadRows(pk, lim, lim === null ? 0 : p * lim);
       setOriginal(res.rows);
       setRows(res.rows);
       setSqlText(res.sql);
+      setTruncated(res.truncated);
       resetEdits();
       setPage(p);
       setActiveRow(0);
@@ -113,7 +123,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
       .then((obj) => {
         if (!alive) return;
         setTable(obj);
-        return loadPage(0, obj);
+        return loadPage(0, obj, limit);
       })
       .catch((e) => {
         if (!alive) return;
@@ -217,7 +227,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
       }
       setApplying(false);
       setReview(null);
-      await loadPage(page, table);
+      await loadPage(page, table, limit);
       return;
     }
     // Demonstração: aplica só em memória.
@@ -232,8 +242,22 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
 
   const refresh = () => {
     if (dirty) return;
-    if (backend) void loadPage(page, table);
+    if (backend) void loadPage(page, table, limit);
     else setRefreshedAt(new Date());
+  };
+
+  /** Novo limite: volta para a primeira página (na referência a mudança vale ao confirmar). */
+  const applyLimit = (on: boolean, size: number) => {
+    setLimitOn(on);
+    setPageSize(size);
+    setSizeText(String(size));
+    if (on !== limitOn || size !== pageSize) void loadPage(0, table, on ? size : null);
+  };
+
+  const commitSize = () => {
+    const n = Number(sizeText.trim());
+    if (Number.isInteger(n) && n >= 1 && n <= MAX_PAGE_SIZE) applyLimit(limitOn, n);
+    else setSizeText(String(pageSize));
   };
 
   const tool = (icon: SmallIconName, label: MessageKey, onClick?: () => void) => (
@@ -244,7 +268,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   );
 
   const record = rows[activeRow];
-  const hasNext = !!backend && original.length === PAGE_SIZE;
+  const hasNext = !!backend && limit !== null && original.length === limit;
   const canPage = !dirty && !loading;
 
   return (
@@ -265,6 +289,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
       </div>
 
       {loadError && <div className="doc-banner is-warn">{loadError}</div>}
+      {!loadError && truncated && <div className="doc-banner is-warn">{t("data.truncatedAll", { n: rows.length.toLocaleString() })}</div>}
       {!loadError && !loading && readOnly && <div className="doc-banner">{t("data.readOnlyNoKey")}</div>}
       {!readOnly && production && <div className="doc-banner is-warn">{t("data.productionBanner")}</div>}
 
@@ -317,12 +342,46 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
         {loading && <span className="spinner" />}
         {dirty && <span className="data-pending">{t("data.pending", { n: edited.size + newRows.size + deleted.size })}</span>}
         <span className="spacer" />
-        <button type="button" className="icon-button" disabled={!canPage || page === 0} title={t("data.firstPage")} onClick={() => void loadPage(0, table)}><SmallIcon name="first" /></button>
-        <button type="button" className="icon-button" disabled={!canPage || page === 0} title={t("data.prevPage")} onClick={() => void loadPage(page - 1, table)}><SmallIcon name="prev" /></button>
-        <input className="field page-input" value={page + 1} readOnly aria-label={t("data.page")} />
-        <button type="button" className="icon-button" disabled={!canPage || !hasNext} title={t("data.nextPage")} onClick={() => void loadPage(page + 1, table)}><SmallIcon name="next" /></button>
-        <button type="button" className="icon-button" disabled title={t("data.lastPage")}><SmallIcon name="last" /></button>
-        <button type="button" className="icon-button" disabled title={t("notImplemented")}><SmallIcon name="settings" /></button>
+        {limitPanel ? (
+          <div className="data-limit">
+            <label className="check-row">
+              <input type="checkbox" checked={limitOn} disabled={!canPage} onChange={(e) => applyLimit(e.target.checked, pageSize)} />
+              <span>{t("data.limitRecords")}</span>
+            </label>
+            <input
+              className="field data-limit-size"
+              value={sizeText}
+              disabled={!canPage || !limitOn}
+              inputMode="numeric"
+              aria-label={t("data.recordsPerPage")}
+              onChange={(e) => setSizeText(e.target.value.replace(/\D/g, ""))}
+              onFocus={(e) => e.target.select()}
+              onBlur={commitSize}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitSize();
+                if (e.key === "Escape") setSizeText(String(pageSize));
+              }}
+            />
+            <span>{t("data.recordsPerPage")}</span>
+          </div>
+        ) : (
+          <>
+            <button type="button" className="icon-button" disabled={!canPage || page === 0} title={t("data.firstPage")} onClick={() => void loadPage(0, table, limit)}><SmallIcon name="first" /></button>
+            <button type="button" className="icon-button" disabled={!canPage || page === 0} title={t("data.prevPage")} onClick={() => void loadPage(page - 1, table, limit)}><SmallIcon name="prev" /></button>
+            <input className="field page-input" value={page + 1} readOnly aria-label={t("data.page")} />
+            <button type="button" className="icon-button" disabled={!canPage || !hasNext} title={t("data.nextPage")} onClick={() => void loadPage(page + 1, table, limit)}><SmallIcon name="next" /></button>
+            <button type="button" className="icon-button" disabled title={t("data.lastPage")}><SmallIcon name="last" /></button>
+          </>
+        )}
+        <button
+          type="button"
+          className={`icon-button${limitPanel ? " is-active" : ""}`}
+          title={t("data.limitSettings")}
+          aria-pressed={limitPanel}
+          onClick={() => setLimitPanel((v) => !v)}
+        >
+          <SmallIcon name="settings" />
+        </button>
         <span className="data-gap" />
         <button type="button" className={`sb-button${view === "grid" ? " is-active" : ""}`} title={t("data.gridView")} onClick={() => setView("grid")}><SmallIcon name="gridView" /></button>
         <button type="button" className={`sb-button${view === "form" ? " is-active" : ""}`} title={t("data.formView")} onClick={() => setView("form")}><SmallIcon name="formView" /></button>

@@ -12,6 +12,9 @@ use tauri::State;
 /// Limite de linhas por result set no editor (o resto é descartado e sinalizado como truncado).
 const MAX_ROWS_CAP: usize = 100_000;
 
+/// Teto de linhas ao abrir uma tabela, inclusive com "Limitar registros" desmarcado.
+const TABLE_ROWS_CAP: usize = 1_000_000;
+
 /// `profile_id`: usa a senha salva no cofre quando `params.password` vier vazia.
 #[tauri::command]
 pub async fn pg_test_connection(
@@ -136,10 +139,11 @@ pub async fn pg_table_rows(
     schema: String,
     table: String,
     order_by: Vec<String>,
-    limit: u32,
+    limit: Option<u32>,
     offset: u64,
 ) -> Result<TableRows, DatabaseError> {
     let s = sessions.get(&session_id, Some(&database)).await?;
-    let (sql, outcome) = atlas_pg::table_rows(&s, &schema, &table, &order_by, limit.clamp(1, 10_000), offset).await?;
+    let limit = limit.map(|l| l.clamp(1, TABLE_ROWS_CAP as u32));
+    let (sql, outcome) = atlas_pg::table_rows(&s, &schema, &table, &order_by, limit, offset, TABLE_ROWS_CAP).await?;
     Ok(TableRows { sql, outcome })
 }

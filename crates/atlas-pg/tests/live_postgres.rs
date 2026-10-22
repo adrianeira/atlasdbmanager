@@ -164,3 +164,32 @@ async fn syntax_error_reports_position() {
     assert_eq!(err.code.as_deref(), Some("42601"));
     assert_eq!(err.position, Some(1));
 }
+
+#[tokio::test]
+async fn table_rows_pages_and_reads_all() {
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    atlas_pg::execute(&s, "CREATE TEMP TABLE atlas_pages AS SELECT g AS id FROM generate_series(1, 25) g", 1)
+        .await
+        .expect("temp table");
+    let order = vec!["id".to_string()];
+    let rows = |o: &atlas_core::QueryOutcome| o.statements[0].result.as_ref().unwrap().rows.clone();
+
+    // Página 2 com 10 por página.
+    let (sql, out) = atlas_pg::table_rows(&s, "pg_temp", "atlas_pages", &order, Some(10), 10, 1_000).await.expect("page");
+    assert!(sql.ends_with("LIMIT 10 OFFSET 10"), "{sql}");
+    let r = rows(&out);
+    assert_eq!(r.len(), 10);
+    assert_eq!(r[0][0].as_deref(), Some("11"));
+
+    // "Limitar registros" desmarcado: sem LIMIT, tabela inteira.
+    let (sql, out) = atlas_pg::table_rows(&s, "pg_temp", "atlas_pages", &order, None, 0, 1_000).await.expect("all");
+    assert!(!sql.contains("LIMIT"), "{sql}");
+    assert_eq!(rows(&out).len(), 25);
+    assert!(!out.statements[0].result.as_ref().unwrap().truncated);
+
+    // Teto de segurança: guarda só `max_rows` e sinaliza o corte.
+    let (_, out) = atlas_pg::table_rows(&s, "pg_temp", "atlas_pages", &order, None, 0, 20).await.expect("cap");
+    assert_eq!(rows(&out).len(), 20);
+    assert!(out.statements[0].result.as_ref().unwrap().truncated);
+}
