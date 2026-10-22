@@ -163,17 +163,17 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
     setActiveRow(idx);
   };
 
-  const deleteRow = () => {
+  const deleteRow = (row = activeRow) => {
     if (readOnly || !rows.length) return;
-    if (newRows.has(activeRow)) {
-      setRows((rs) => rs.filter((_, i) => i !== activeRow));
-      setNewRows((s) => new Set([...s].filter((i) => i !== activeRow).map((i) => (i > activeRow ? i - 1 : i))));
+    if (newRows.has(row)) {
+      setRows((rs) => rs.filter((_, i) => i !== row));
+      setNewRows((s) => new Set([...s].filter((i) => i !== row).map((i) => (i > row ? i - 1 : i))));
       return;
     }
     setDeleted((s) => {
       const n = new Set(s);
-      if (n.has(activeRow)) n.delete(activeRow);
-      else n.add(activeRow);
+      if (n.has(row)) n.delete(row);
+      else n.add(row);
       return n;
     });
   };
@@ -309,6 +309,9 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
             activeRow={activeRow}
             onActiveRow={setActiveRow}
             onEdit={onEdit}
+            sqlTarget={`${quoteIdent(schema)}.${quoteIdent(table.name)}`}
+            onDeleteRow={readOnly ? undefined : (r) => { setActiveRow(r); deleteRow(r); }}
+            onRefresh={dirty || loading ? undefined : refresh}
             lookupCols={lookup ? lookupCols : undefined}
             onLookup={(row, col, anchor) => {
               const fk = fkByCol.get(col);
@@ -336,7 +339,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
 
       <div className="data-footer">
         <button type="button" className="icon-button" title={t("data.addRecord")} disabled={readOnly || loading} onClick={addRow}><SmallIcon name="addRow" /></button>
-        <button type="button" className="icon-button" title={t("data.deleteRecord")} disabled={readOnly || !rows.length} onClick={deleteRow}><SmallIcon name="removeRow" /></button>
+        <button type="button" className="icon-button" title={t("data.deleteRecord")} disabled={readOnly || !rows.length} onClick={() => deleteRow()}><SmallIcon name="removeRow" /></button>
         <button type="button" className="icon-button" title={t("data.apply")} disabled={!dirty} onClick={() => setReview(buildPreview())}><SmallIcon name="apply" /></button>
         <button type="button" className="icon-button" title={t("data.discard")} disabled={!dirty} onClick={discard}><SmallIcon name="discard" /></button>
         <button type="button" className="icon-button" title={t("data.refresh")} disabled={dirty || loading} onClick={refresh}><SmallIcon name="refresh" /></button>

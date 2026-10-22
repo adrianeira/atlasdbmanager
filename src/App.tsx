@@ -1061,6 +1061,18 @@ export default function App() {
     if (items.length) setCtxMenu({ x, y, items });
   };
 
+  // Sem o menu padrão do navegador (Voltar/Atualizar/Imprimir/Inspecionar): só os menus do Atlas.
+  // Campos de texto e o editor SQL mantêm o menu nativo de recortar/copiar/colar.
+  useEffect(() => {
+    const block = (e: MouseEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el?.closest?.("input, textarea, [contenteditable='true'], .cm-editor")) return;
+      e.preventDefault();
+    };
+    window.addEventListener("contextmenu", block);
+    return () => window.removeEventListener("contextmenu", block);
+  }, []);
+
   useEffect(() => {
     if (!ctxMenu) return;
     const close = (e: Event) => {

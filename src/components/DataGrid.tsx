@@ -1,5 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactElement } from "react";
-import type { CellValue } from "../model";
+import { createPortal } from "react-dom";
+import { copyToClipboard, readClipboard } from "../clipboard";
+import type { MenuEntry } from "../commands";
+import { useT } from "../i18n";
+import { quoteIdent, type CellValue } from "../model";
+import { PopupMenu } from "./PopupMenu";
 
 /*
  * Grid de dados virtualizado do Atlas (ADR-011, alternativa própria).
@@ -93,6 +98,29 @@ function display(v: string, kind: TypeKind): string {
   return v;
 }
 
+/** Literal SQL para "Copiar como": números sem aspas, texto com aspas simples duplicadas. */
+function sqlLiteral(v: CellValue, kind: TypeKind): string {
+  if (v === null) return "NULL";
+  if (kind === "number" && /^-?\d+(\.\d+)?(e[-+]?\d+)?$/i.test(v)) return v;
+  return `'${v.replace(/'/g, "''")}'`;
+}
+
+/** UUID v7 (RFC 9562): 48 bits de milissegundos + aleatório; ordena por tempo de criação. */
+function uuidV7(): string {
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  let ms = Date.now();
+  for (let i = 5; i >= 0; i--) {
+    b[i] = ms % 256;
+    ms = Math.floor(ms / 256);
+  }
+  b[6] = (b[6] & 0x0f) | 0x70;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+const copyText = (text: string) => void copyToClipboard(text).catch(() => undefined);
+
 interface Props {
   columns: GridColumn[];
   rows: CellValue[][];
@@ -110,12 +138,19 @@ interface Props {
   /** Colunas com lookup de chave estrangeira: a célula ativa mostra o botão "…". */
   lookupCols?: Set<number>;
   onLookup?: (row: number, col: number, cell: DOMRect) => void;
+  /** `"schema"."tabela"` para "Copiar como INSERT/UPDATE"; ausente (ex.: resultado de consulta) desabilita. */
+  sqlTarget?: string;
+  onDeleteRow?: (row: number) => void;
+  onRefresh?: () => void;
 }
 
 export function DataGrid({
   columns, rows, readOnly, edited, deletedRows, newRows, activeRow, onActiveRow, onEdit, rowHeight = 23, simpleHeader, lookupCols, onLookup,
+  sqlTarget, onDeleteRow, onRefresh,
 }: Props) {
+  const t = useT();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; row: number; col: number } | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewport, setViewport] = useState(400);
   const [activeCol, setActiveCol] = useState(0);
@@ -210,6 +245,100 @@ export function DataGrid({
     window.addEventListener("mouseup", onUp);
   };
 
+  /* ----- Menu de contexto da célula (itens e ordem da referência) ----- */
+  useEffect(() => {
+    if (!menu) return;
+    const close = (e: Event) => {
+      if (e instanceof KeyboardEvent && e.key !== "Escape") return;
+      if (e instanceof MouseEvent && (e.target as HTMLElement).closest?.(".dg-menu")) return;
+      setMenu(null);
+    };
+    window.addEventListener("mousedown", close);
+    window.addEventListener("keydown", close);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", close);
+      window.removeEventListener("resize", close);
+    };
+  }, [menu]);
+
+  const canEdit = (row: number, col: number) => !readOnly && !!onEdit && !deletedRows?.has(row) && columns[col]?.kind !== "binary";
+  const setCell = (row: number, col: number, v: CellValue) => {
+    if (rows[row]?.[col] !== v) onEdit?.(row, col, v);
+  };
+
+  const insertSql = (row: number) =>
+    `INSERT INTO ${sqlTarget} (${columns.map((c) => quoteIdent(c.name)).join(", ")}) VALUES (${columns.map((c, i) => sqlLiteral(rows[row][i], c.kind)).join(", ")});`;
+  const updateSql = (row: number) => {
+    const keys = columns.map((c, i) => ({ c, i })).filter((x) => x.c.isKey);
+    const where = (keys.length ? keys : columns.map((c, i) => ({ c, i })))
+      .map(({ c, i }) => (rows[row][i] === null ? `${quoteIdent(c.name)} IS NULL` : `${quoteIdent(c.name)} = ${sqlLiteral(rows[row][i], c.kind)}`))
+      .join(" AND ");
+    const set = columns.map((c, i) => ({ c, i })).filter((x) => !x.c.isKey)
+      .map(({ c, i }) => `${quoteIdent(c.name)} = ${sqlLiteral(rows[row][i], c.kind)}`).join(", ");
+    return `UPDATE ${sqlTarget} SET ${set} WHERE ${where};`;
+  };
+  const tsv = (row: number, names: boolean, data: boolean) =>
+    [names ? columns.map((c) => c.name).join("\t") : null, data ? rows[row].map((v) => v ?? "").join("\t") : null].filter((x) => x !== null).join("\r\n");
+
+  const menuItems = (row: number, col: number): MenuEntry[] => {
+    const editable = canEdit(row, col);
+    const kind = columns[col]?.kind;
+    const item = (key: Parameters<typeof t>[0], run?: () => void): MenuEntry => ({ kind: "item", text: t(key), run });
+    const sep: MenuEntry = { kind: "sep" };
+    const uuidOk = editable && (kind === "uuid" || kind === "text" || kind === "other");
+    return [
+      item("grid.setEmpty", editable && kind !== "number" && kind !== "uuid" ? () => setCell(row, col, "") : undefined),
+      item("grid.setNull", editable ? () => setCell(row, col, null) : undefined),
+      {
+        kind: "sub", label: "grid.generateUuid",
+        items: [
+          item("grid.uuidV4", uuidOk ? () => setCell(row, col, crypto.randomUUID()) : undefined),
+          item("grid.uuidV7", uuidOk ? () => setCell(row, col, uuidV7()) : undefined),
+        ],
+      },
+      item("grid.cellEditor"),
+      sep,
+      item("grid.deleteRecord", !readOnly && onDeleteRow ? () => onDeleteRow(row) : undefined),
+      sep,
+      item("grid.copy", () => copyText(rows[row][col] ?? "")),
+      item("grid.copyFieldName", () => copyText(columns[col].name)),
+      {
+        kind: "sub", label: "grid.copyAs",
+        items: [
+          item("grid.copyInsert", sqlTarget ? () => copyText(insertSql(row)) : undefined),
+          item("grid.copyUpdate", sqlTarget ? () => copyText(updateSql(row)) : undefined),
+          sep,
+          item("grid.copyTsvData", () => copyText(tsv(row, false, true))),
+          item("grid.copyTsvNames", () => copyText(tsv(row, true, false))),
+          item("grid.copyTsvBoth", () => copyText(tsv(row, true, true))),
+        ],
+      },
+      item("grid.paste", editable ? () => {
+        void readClipboard()
+          .then((text) => setCell(row, col, text.replace(/\r?\n$/, "")))
+          .catch(() => undefined);
+      } : undefined),
+      item("grid.saveDataAs"),
+      sep,
+      item("grid.toggleFilter"),
+      { kind: "sub", label: "grid.filter", items: [item("grid.filter")] },
+      { kind: "sub", label: "grid.sort", items: [item("grid.sortAsc"), item("grid.sortDesc")] },
+      item("grid.removeFilters"),
+      sep,
+      item("grid.refresh", onRefresh),
+    ];
+  };
+
+  const openMenu = (e: ReactMouseEvent, row: number, col: number) => {
+    e.preventDefault();
+    if (editing) commitEdit();
+    onActiveRow(row);
+    setActiveCol(col);
+    setMenu({ x: e.clientX, y: e.clientY, row, col });
+  };
+
   // Duplo clique na borda do cabeçalho ajusta a coluna ao conteúdo visível.
   const fitColumn = (i: number) => {
     const c = columns[i];
@@ -273,6 +402,7 @@ export function DataGrid({
                     role="gridcell"
                     onMouseDown={() => { onActiveRow(ri); setActiveCol(ci); if (editing && !isEditing) commitEdit(); }}
                     onDoubleClick={() => startEdit(ri, ci)}
+                    onContextMenu={isEditing ? undefined : (e) => openMenu(e, ri, ci)}
                   >
                     {isEditing ? (
                       <input
@@ -315,6 +445,16 @@ export function DataGrid({
           );
         })}
       </div>
+      {menu && rows[menu.row] && createPortal(
+        <PopupMenu
+          items={menuItems(menu.row, menu.col)}
+          commands={{}}
+          onClose={() => { setMenu(null); scrollRef.current?.focus(); }}
+          className="ctx-menu dg-menu"
+          style={{ position: "fixed", left: Math.min(menu.x, window.innerWidth - 300), top: Math.min(menu.y, window.innerHeight - 470) }}
+        />,
+        document.body,
+      )}
     </div>
   );
 }

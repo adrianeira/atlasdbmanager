@@ -10,6 +10,8 @@ const DEFAULT_WEBVIEW2_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSm
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Área de transferência do sistema (copiar/colar no grid sem o pedido de permissão do WebView).
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(sessions::Sessions::default())
         .setup(|app| {
             if cfg!(debug_assertions) {
