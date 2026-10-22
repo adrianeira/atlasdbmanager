@@ -35,7 +35,7 @@ is about to run.
 
 **Export**
 - **Step-by-step** export wizard (format → tables and files → fields → summary with log and progress)
-  for **several tables at once**, as **TXT, CSV, JSON, XML, HTML, SQL (`INSERT`) and Excel (`.xlsx`)**;
+  for **several tables at once**, as **TXT, CSV, JSON, XML, HTML, SQL (`INSERT`), Excel (`.xlsx` and `.xls`) and dBase (`.dbf`)**;
   export profiles you can save and reuse.
 - From the grid it starts with that table's filter, sort order and visible columns; in the SQL editor it
   exports the **complete result** of the query (without the on-screen row limit).

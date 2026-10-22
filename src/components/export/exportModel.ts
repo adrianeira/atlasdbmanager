@@ -3,7 +3,7 @@ import type { MessageKey } from "../../i18n";
 import type { SmallIconName } from "../../icons";
 
 /** Formatos que o assistente sabe gravar. */
-export type Kind = "txt" | "csv" | "json" | "xml" | "html" | "sql" | "xlsx";
+export type Kind = "txt" | "csv" | "json" | "xml" | "html" | "sql" | "xlsx" | "xls" | "dbf";
 
 export interface FormatDef {
   kind: Kind;
@@ -21,13 +21,13 @@ export const FORMATS: FormatDef[] = [
   { kind: "html", label: "exp.kind.html", ext: ["html", "htm"], icon: "fmtHtml" },
   { kind: "sql", label: "exp.kind.sql", ext: ["sql"], icon: "fmtSql" },
   { kind: "xlsx", label: "exp.kind.xlsx", ext: ["xlsx"], icon: "fmtXlsx" },
+  { kind: "xls", label: "exp.kind.xls", ext: ["xls"], icon: "fmtXlsx" },
+  { kind: "dbf", label: "exp.kind.dbf", ext: ["dbf"], icon: "fmtTxt" },
 ];
 
 /** Formatos da lista que ainda não existem: aparecem desabilitados. */
 export const UNAVAILABLE_FORMATS: { label: MessageKey; icon: SmallIconName }[] = [
-  { label: "exp.kind.xls", icon: "fmtXlsx" },
   { label: "exp.kind.accdb", icon: "fmtTxt" },
-  { label: "exp.kind.dbf", icon: "fmtTxt" },
 ];
 
 export const formatOf = (kind: Kind): FormatDef => FORMATS.find((f) => f.kind === kind) ?? FORMATS[0];
@@ -50,6 +50,9 @@ export interface Options {
   /** `tableName`: nome da tabela no `INSERT` ao exportar uma consulta (vazio = o nome da consulta). */
   sql: { rowsPerInsert: number; tableName: string };
   xlsx: { header: boolean; sheetName: string };
+  xls: { header: boolean; sheetName: string };
+  /** `decimals`: casas dos campos numéricos; `textLength`: largura dos campos de texto (1 a 254). */
+  dbf: { decimals: number; textLength: number };
 }
 
 export function defaultOptions(): Options {
@@ -62,6 +65,8 @@ export function defaultOptions(): Options {
     html: { header: true },
     sql: { rowsPerInsert: 1, tableName: "" },
     xlsx: { header: true, sheetName: "" },
+    xls: { header: true, sheetName: "" },
+    dbf: { decimals: 4, textLength: 254 },
   };
 }
 
@@ -76,6 +81,8 @@ export function mergeOptions(saved: Partial<Options> | null | undefined): Option
     html: { ...base.html, ...saved.html },
     sql: { ...base.sql, ...saved.sql },
     xlsx: { ...base.xlsx, ...saved.xlsx },
+    xls: { ...base.xls, ...saved.xls },
+    dbf: { ...base.dbf, ...saved.dbf },
   };
 }
 
@@ -89,6 +96,12 @@ export function buildFormat(kind: Kind, o: Options, table: string): ExportFormat
     case "html": return { kind: "html", ...o.html };
     case "sql": return { kind: "sql", rowsPerInsert: Math.max(1, Math.min(1000, Math.floor(o.sql.rowsPerInsert) || 1)) };
     case "xlsx": return { kind: "xlsx", header: o.xlsx.header, sheetName: o.xlsx.sheetName.trim() || table };
+    case "xls": return { kind: "xls", header: o.xls.header, sheetName: o.xls.sheetName.trim() || table };
+    case "dbf": return {
+      kind: "dbf",
+      decimals: Math.max(0, Math.min(14, Math.floor(o.dbf.decimals) || 0)),
+      textLength: Math.max(1, Math.min(254, Math.floor(o.dbf.textLength) || 254)),
+    };
   }
 }
 

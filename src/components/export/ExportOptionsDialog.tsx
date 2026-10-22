@@ -77,6 +77,32 @@ export function ExportOptionsDialog({ isQuery, kind, options, onChange, onClose 
             <div className="muted exp-note">{t("exp.xlsxNote")}</div>
           </>
         );
+      case "xls":
+        return (
+          <>
+            {row(t("exp.sheetName"), <input className="field" value={options.xls.sheetName} placeholder={t("exp.sheetName.auto")} onChange={(e) => onChange({ ...options, xls: { ...options.xls, sheetName: e.target.value } })} spellCheck={false} />)}
+            <label className="check-row"><input type="checkbox" checked={options.xls.header} onChange={(e) => onChange({ ...options, xls: { ...options.xls, header: e.target.checked } })} /><span>{t("exp.header")}</span></label>
+            <div className="muted exp-note">{t("exp.xlsNote")}</div>
+          </>
+        );
+      case "dbf": {
+        const num = (key: "decimals" | "textLength", min: number, max: number) => (
+          <input
+            className="field exp-num"
+            inputMode="numeric"
+            value={options.dbf[key]}
+            onChange={(e) => onChange({ ...options, dbf: { ...options.dbf, [key]: Number(e.target.value.replace(/\D/g, "")) || 0 } })}
+            onBlur={() => onChange({ ...options, dbf: { ...options.dbf, [key]: Math.max(min, Math.min(max, options.dbf[key] || max)) } })}
+          />
+        );
+        return (
+          <>
+            {row(t("exp.dbfDecimals"), num("decimals", 0, 14))}
+            {row(t("exp.dbfTextLength"), num("textLength", 1, 254))}
+            <div className="muted exp-note">{t("exp.dbfNote")}</div>
+          </>
+        );
+      }
       case "xml":
         return <div className="muted exp-note">{t("exp.noOptions")}</div>;
     }

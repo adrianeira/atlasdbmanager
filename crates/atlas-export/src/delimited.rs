@@ -69,7 +69,7 @@ impl DelimitedWriter {
 }
 
 /// Windows-1252; o que não existe na tabela vira `?` (em vez de referências numéricas).
-fn encode_windows_1252(s: &str) -> Vec<u8> {
+pub(crate) fn encode_windows_1252(s: &str) -> Vec<u8> {
     let (bytes, _, had_errors) = encoding_rs::WINDOWS_1252.encode(s);
     if !had_errors {
         return bytes.into_owned();

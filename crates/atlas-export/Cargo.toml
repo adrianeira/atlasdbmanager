@@ -1,6 +1,6 @@
 [package]
 name = "atlas-export"
-description = "Atlas DB Manager — gravação de resultados em CSV, JSON, SQL e Excel (streaming)"
+description = "Atlas DB Manager — gravação de resultados em CSV, JSON, SQL, Excel (.xlsx e .xls) e dBase (streaming)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,11 +8,13 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
+cfb = "0.15"
 encoding_rs = "0.8.42"
 # constant_memory: cada linha vai para um arquivo temporário ao ser escrita (planilhas enormes sem estourar a RAM).
 rust_xlsxwriter = { version = "0.101.0", features = ["constant_memory"] }
 serde.workspace = true
 serde_json.workspace = true
+tempfile = "3.27"
 
 [dev-dependencies]
-tempfile = "3.27.0"
+calamine = "0.37.0"

@@ -221,3 +221,170 @@ fn xml_and_html_formats_deserialize_from_the_ui_shape() {
     assert!(matches!(serde_json::from_str::<ExportFormat>(r#"{"kind":"xml"}"#).unwrap(), ExportFormat::Xml));
     assert!(matches!(serde_json::from_str::<ExportFormat>(r#"{"kind":"html","header":true}"#).unwrap(), ExportFormat::Html { header: true }));
 }
+
+fn write_file(format: ExportFormat, columns: &[ExportColumn], rows: &[Vec<Option<&str>>], name: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(name);
+    let mut w = create(&format, &WriterTarget { sql: "\"public\".\"t\"", title: "t" }, File::create(&path).unwrap()).unwrap();
+    w.begin(columns).unwrap();
+    for r in rows {
+        w.row(r).unwrap();
+    }
+    w.finish().unwrap();
+    (dir, path)
+}
+
+#[test]
+fn xls_round_trips_text_numbers_booleans_and_nulls() {
+    use calamine::{Data, Reader, open_workbook_auto};
+    let cols = [col("id", "int4"), col("nome", "text"), col("ativo", "bool"), col("valor", "numeric")];
+    let rows = vec![
+        vec![Some("1"), Some("ação"), Some("t"), Some("1500.5")],
+        vec![Some("2"), Some("emoji ✓ e 日本 😀"), Some("f"), None],
+        vec![Some("3"), None, None, Some("12345678901234567890")],
+    ];
+    let (_dir, path) = write_file(ExportFormat::Xls { header: true, sheet_name: "Clientes".into() }, &cols, &rows, "t.xls");
+    let mut wb = open_workbook_auto(&path).expect("opens as xls");
+    assert_eq!(wb.sheet_names(), vec!["Clientes".to_string()]);
+    let range = wb.worksheet_range("Clientes").unwrap();
+    assert_eq!(range.height(), 4);
+    assert_eq!(range.width(), 4);
+    let cell = |r: usize, c: usize| range.get((r, c)).cloned().unwrap_or(Data::Empty);
+    assert_eq!(cell(0, 1), Data::String("nome".into()));
+    assert_eq!(cell(1, 0), Data::Float(1.0));
+    assert_eq!(cell(1, 1), Data::String("ação".into()));
+    assert_eq!(cell(1, 2), Data::Bool(true));
+    assert_eq!(cell(1, 3), Data::Float(1500.5));
+    assert_eq!(cell(2, 1), Data::String("emoji ✓ e 日本 😀".into()));
+    assert_eq!(cell(2, 2), Data::Bool(false));
+    assert_eq!(cell(2, 3), Data::Empty);
+    assert_eq!(cell(3, 1), Data::Empty);
+    // Acima de 15 dígitos vai como texto para não perder precisão.
+    assert_eq!(cell(3, 3), Data::String("12345678901234567890".into()));
+}
+
+#[test]
+fn xls_without_header_and_with_many_rows_spans_blocks() {
+    use calamine::{Data, Reader, open_workbook_auto};
+    let cols = [col("n", "int4")];
+    let texts: Vec<String> = (0..100).map(|i| i.to_string()).collect();
+    let rows: Vec<Vec<Option<&str>>> = texts.iter().map(|t| vec![Some(t.as_str())]).collect();
+    let (_dir, path) = write_file(ExportFormat::Xls { header: false, sheet_name: "x".into() }, &cols, &rows, "t.xls");
+    let mut wb = open_workbook_auto(&path).unwrap();
+    let range = wb.worksheet_range("x").unwrap();
+    assert_eq!(range.height(), 100);
+    assert_eq!(range.get((99, 0)), Some(&Data::Float(99.0)));
+}
+
+#[test]
+fn xls_refuses_what_the_format_cannot_hold() {
+    let dir = tempfile::tempdir().unwrap();
+    let make = |name: &str| {
+        create(&ExportFormat::Xls { header: false, sheet_name: "x".into() }, &WriterTarget { sql: "", title: "t" }, File::create(dir.path().join(name)).unwrap()).unwrap()
+    };
+    let wide: Vec<ExportColumn> = (0..257).map(|i| col(&format!("c{i}"), "text")).collect();
+    assert!(make("a.xls").begin(&wide).is_err());
+    let mut w = make("b.xls");
+    w.begin(&[col("a", "text")]).unwrap();
+    for _ in 0..65_536 {
+        w.row(&[Some("x")]).unwrap();
+    }
+    let err = w.row(&[Some("x")]).expect_err("65537th row");
+    assert!(err.to_string().contains("65536"), "{err}");
+}
+
+/// Leitor mínimo de dBase III para conferir o que foi gravado.
+struct Dbf {
+    count: u32,
+    fields: Vec<(String, u8, usize, usize)>,
+    records: Vec<Vec<String>>,
+}
+
+fn read_dbf(path: &std::path::Path) -> Dbf {
+    let b = std::fs::read(path).unwrap();
+    assert_eq!(b[0], 0x03);
+    let count = u32::from_le_bytes(b[4..8].try_into().unwrap());
+    let header_len = u16::from_le_bytes(b[8..10].try_into().unwrap()) as usize;
+    let record_len = u16::from_le_bytes(b[10..12].try_into().unwrap()) as usize;
+    assert_eq!(b[header_len - 1], 0x0D);
+    let mut fields = Vec::new();
+    let mut at = 32;
+    while b[at] != 0x0D {
+        let name = String::from_utf8_lossy(&b[at..at + 11]).trim_end_matches('\0').to_string();
+        fields.push((name, b[at + 11], b[at + 16] as usize, b[at + 17] as usize));
+        at += 32;
+    }
+    assert_eq!(1 + fields.iter().map(|f| f.2).sum::<usize>(), record_len);
+    assert_eq!(b.len(), header_len + count as usize * record_len + 1);
+    assert_eq!(*b.last().unwrap(), 0x1A);
+    let mut records = Vec::new();
+    for r in 0..count as usize {
+        let rec = &b[header_len + r * record_len..header_len + (r + 1) * record_len];
+        assert_eq!(rec[0], b' ');
+        let mut off = 1;
+        let mut vals = Vec::new();
+        for f in &fields {
+            // Windows-1252 coincide com Latin-1 para o que o teste usa.
+            vals.push(rec[off..off + f.2].iter().map(|c| *c as char).collect::<String>());
+            off += f.2;
+        }
+        records.push(vals);
+    }
+    Dbf { count, fields, records }
+}
+
+#[test]
+fn dbf_writes_fixed_width_typed_fields() {
+    let cols = [
+        col("id", "int4"),
+        col("Nome do cliente", "text"),
+        col("ativo", "bool"),
+        col("valor", "numeric"),
+        col("nasc", "date"),
+        col("criado", "timestamptz"),
+        col("id_externo", "uuid"),
+    ];
+    let long = "x".repeat(300);
+    let rows = vec![
+        vec![Some("7"), Some("João ação"), Some("t"), Some("1500.5"), Some("2026-01-15"), Some("2026-01-15 07:30:00-03"), Some("11111111-1111-4111-8111-111111111111")],
+        vec![Some("-12"), None, Some("f"), Some("-0.005"), None, None, None],
+        vec![None, Some(long.as_str()), None, None, Some("infinity"), None, None],
+    ];
+    let (_dir, path) = write_file(ExportFormat::Dbf { decimals: 2, text_length: 20 }, &cols, &rows, "t.dbf");
+    let d = read_dbf(&path);
+    assert_eq!(d.count, 3);
+    let names: Vec<&str> = d.fields.iter().map(|f| f.0.as_str()).collect();
+    assert_eq!(names, ["ID", "NOME_DO_CL", "ATIVO", "VALOR", "NASC", "CRIADO", "ID_EXTERNO"]);
+    let kinds: Vec<u8> = d.fields.iter().map(|f| f.1).collect();
+    assert_eq!(kinds, b"NCLNDCC".to_vec());
+    assert_eq!(d.fields[3], ("VALOR".into(), b'N', 20, 2));
+    assert_eq!(d.fields[1].2, 20);
+    let r0 = &d.records[0];
+    assert_eq!(r0[0], "          7");
+    assert_eq!(r0[1].trim_end(), "João ação");
+    assert_eq!(r0[2], "T");
+    assert_eq!(r0[3].trim(), "1500.50");
+    assert_eq!(r0[4], "20260115");
+    let r1 = &d.records[1];
+    assert_eq!(r1[0].trim(), "-12");
+    assert_eq!(r1[1].trim(), "");
+    assert_eq!(r1[2], "F");
+    assert_eq!(r1[3].trim(), "-0.01");
+    assert_eq!(r1[4], "        ");
+    let r2 = &d.records[2];
+    assert_eq!(r2[0].trim(), "");
+    assert_eq!(r2[1], "x".repeat(20));
+    assert_eq!(r2[2], "?");
+    assert_eq!(r2[4], "        ");
+}
+
+#[test]
+fn dbf_rejects_numbers_that_do_not_fit() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut w = create(&ExportFormat::Dbf { decimals: 4, text_length: 50 }, &WriterTarget { sql: "", title: "t" }, File::create(dir.path().join("a.dbf")).unwrap()).unwrap();
+    w.begin(&[col("v", "numeric")]).unwrap();
+    let err = w.row(&[Some("123456789012345678.12345")]).expect_err("too wide");
+    assert!(err.to_string().contains("\"v\""), "{err}");
+    // Casa decimal arredondada que ainda cabe é aceita.
+    w.row(&[Some("123456789012345.12345")]).unwrap();
+}

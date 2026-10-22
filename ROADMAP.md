@@ -60,8 +60,12 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       (tudo / nada / inverter / só tabelas / só views), pasta de destino para todas, **Avançado**
       (opções do formato), navegação `<<` `< Voltar` `Avançar >` `>>` e cronômetro
       *(`src/components/export/`, `src-tauri/src/export.rs`, `crates/atlas-export`)*
-- [x] Formatos: **TXT, CSV, JSON, XML, HTML, SQL (`INSERT`) e Excel (`.xlsx`)**; `.xls`, `.accdb` e
-      `.dbf` aparecem desabilitados ("ainda não disponível")
+- [x] Formatos: **TXT, CSV, JSON, XML, HTML, SQL (`INSERT`), Excel (`.xlsx`), Excel 97-2003 (`.xls`) e dBase
+      (`.dbf`)**; só `.accdb` aparece desabilitado ("ainda não disponível")
+- [x] `.xls` (BIFF8 em arquivo composto OLE2) em streaming, com os limites do formato (65.536 linhas, 256 colunas:
+      acima disso a exportação é recusada sem deixar arquivo parcial); `.dbf` (dBase III) com campos tipados de
+      largura fixa (inteiros, decimais com N casas, lógico, data, texto em Windows-1252 de 1 a 254 bytes)
+      *(`crates/atlas-export/src/xls.rs`, `dbf.rs`)*
 - [x] **Perfis de exportação**: Salvar perfil / Abrir... (formato, opções, tabelas, arquivos e campos),
       guardados no armazenamento local
 - [x] Do grid, o assistente já vem com o **filtro, a ordenação e as colunas visíveis** daquela tabela
@@ -214,7 +218,7 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 ## 7. Importar / Exportar
 - [ ] Import Wizard *(`act.importWizard` sem handler)* — CSV, Excel, JSON, XML, DBF, Access…
 - [x] Export Wizard de tabelas/views em etapas, com várias tabelas e perfis (ver "Exportação de dados")
-- [ ] Formatos que faltam: Excel 97-2003 (`.xls`), Access (`.accdb`), dBase (`.dbf`), Markdown
+- [ ] Formatos que faltam: Access (`.accdb`; não há biblioteca livre que o grave, depende do driver do Windows), Markdown
 - [ ] Exportação agendada; exportar também a estrutura (DDL) junto com os dados
 - [ ] Dump SQL completo *(hoje só item de menu)*
 - [ ] Data Transfer entre conexões / bancos

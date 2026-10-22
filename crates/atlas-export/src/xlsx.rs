@@ -26,7 +26,7 @@ fn io_err(e: rust_xlsxwriter::XlsxError) -> io::Error {
 }
 
 /// Nome de planilha válido: até 31 caracteres, sem `[ ] : * ? / \`.
-fn sheet_name(base: &str, index: usize) -> String {
+pub(crate) fn sheet_name(base: &str, index: usize) -> String {
     let mut name: String = base.chars().filter(|c| !"[]:*?/\\".contains(*c)).collect();
     name = name.trim().trim_matches('\'').to_string();
     if name.is_empty() {

@@ -251,6 +251,8 @@ export type ExportFormat =
   | { kind: "json"; pretty: boolean }
   | { kind: "sql"; rowsPerInsert: number }
   | { kind: "xlsx"; header: boolean; sheetName: string }
+  | { kind: "xls"; header: boolean; sheetName: string }
+  | { kind: "dbf"; decimals: number; textLength: number }
   | { kind: "xml" }
   | { kind: "html"; header: boolean };
 

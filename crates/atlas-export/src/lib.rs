@@ -1,11 +1,13 @@
 //! Gravação de resultados em arquivo, linha a linha (streaming): a memória não cresce com o
 //! tamanho do resultado. Os valores chegam em texto, exatamente como o servidor os formata.
 
+mod dbf;
 mod delimited;
 mod html;
 mod json;
 mod sql;
 mod text;
+mod xls;
 mod xlsx;
 mod xml;
 
@@ -48,7 +50,19 @@ pub enum ExportFormat {
         header: bool,
         sheet_name: String,
     },
-    /// `<table name="..."><row><coluna>valor</coluna></row></table>`.
+    /// Excel 97-2003 (BIFF8): até 65.536 linhas e 256 colunas.
+    Xls {
+        header: bool,
+        sheet_name: String,
+    },
+    /// dBase III: campos de largura fixa (texto em Windows-1252).
+    Dbf {
+        /// Casas decimais dos campos numéricos (`numeric`, `float`).
+        decimals: u32,
+        /// Largura dos campos de texto (1 a 254 bytes; o excedente é cortado).
+        text_length: u32,
+    },
+    /// `<table name="...<row><coluna>valor</coluna></row></table>`.
     Xml,
     /// Página HTML com uma tabela.
     Html {
@@ -85,6 +99,8 @@ pub trait RowWriter: Send {
 pub fn create(format: &ExportFormat, target: &WriterTarget, file: File) -> io::Result<Box<dyn RowWriter>> {
     Ok(match format {
         ExportFormat::Xlsx { header, sheet_name } => Box::new(xlsx::XlsxWriter::new(file, *header, sheet_name)),
+        ExportFormat::Xls { header, sheet_name } => Box::new(xls::XlsWriter::new(file, *header, sheet_name)?),
+        ExportFormat::Dbf { decimals, text_length } => Box::new(dbf::DbfWriter::new(file, *decimals, *text_length)),
         other => create_stream(other, target, Box::new(io::BufWriter::with_capacity(256 * 1024, file)))?,
     })
 }
@@ -105,7 +121,9 @@ pub fn create_stream(format: &ExportFormat, target: &WriterTarget, out: Box<dyn 
         ExportFormat::Sql { rows_per_insert } => Box::new(sql::SqlWriter::new(out, target.sql.to_string(), (*rows_per_insert).max(1) as usize)),
         ExportFormat::Xml => Box::new(xml::XmlWriter::new(out, target.title.to_string())),
         ExportFormat::Html { header } => Box::new(html::HtmlWriter::new(out, target.title.to_string(), *header)),
-        ExportFormat::Xlsx { .. } => return Err(io::Error::other("XLSX precisa de um arquivo")),
+        ExportFormat::Xlsx { .. } | ExportFormat::Xls { .. } | ExportFormat::Dbf { .. } => {
+            return Err(io::Error::other("este formato precisa de um arquivo"));
+        }
     })
 }
 
@@ -116,6 +134,8 @@ pub fn default_extension(format: &ExportFormat) -> &'static str {
         ExportFormat::Json { .. } => "json",
         ExportFormat::Sql { .. } => "sql",
         ExportFormat::Xlsx { .. } => "xlsx",
+        ExportFormat::Xls { .. } => "xls",
+        ExportFormat::Dbf { .. } => "dbf",
         ExportFormat::Xml => "xml",
         ExportFormat::Html { .. } => "html",
     }

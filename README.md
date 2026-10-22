@@ -36,7 +36,7 @@ de revisar o que vai ser executado.
 **Exportação**
 - Assistente de exportação **em etapas** (formato → tabelas e arquivos → campos → resumo com log e
   progresso), para **várias tabelas de uma vez**, em **TXT, CSV, JSON, XML, HTML, SQL (`INSERT`) e
-  Excel (`.xlsx`)**; perfis de exportação salvos para reutilizar.
+  Excel (`.xlsx` e `.xls`) e dBase (`.dbf`)**; perfis de exportação salvos para reutilizar.
 - Do grid, já vem com o filtro, a ordenação e as colunas visíveis da tabela; no editor SQL, exporta o
   **resultado completo** da consulta (sem o limite de linhas da tela).
 - Gravação em **streaming** (memória estável mesmo com milhões de linhas), com progresso e **Parar**;
