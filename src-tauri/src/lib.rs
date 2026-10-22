@@ -74,6 +74,13 @@ pub fn run() {
             {
                 args.push_str(&format!(" --remote-debugging-port={port}"));
             }
+            // Idioma forçado para testar a interface/splash (ex.: en-US); só em build de debug.
+            if cfg!(debug_assertions)
+                && let Ok(lang) = std::env::var("ATLAS_LANG")
+                && lang.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+            {
+                args.push_str(&format!(" --lang={lang}"));
+            }
 
             // Tela de abertura: pequena, sem bordas, mostrada enquanto o app carrega. Usa os mesmos argumentos do
             // WebView2 da janela principal (as duas compartilham o mesmo ambiente).
