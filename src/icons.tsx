@@ -343,11 +343,13 @@ const small: Record<string, ReactElement> = {
   prev: <path d="M13 8H3.5M7 4.5L3.5 8 7 11.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />,
   next: <path d="M3 8h9.5M9 4.5l3.5 3.5L9 11.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />,
   last: <path d="M12 3.5v9M4 3.5L9.5 8 4 12.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />,
+  // Engrenagem: 8 dentes, furo central (evenodd).
   settings: (
-    <>
-      <circle cx="8" cy="8" r="2.2" fill="none" stroke="currentColor" />
-      <path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" stroke="currentColor" strokeLinecap="round" />
-    </>
+    <path
+      fillRule="evenodd"
+      fill="currentColor"
+      d="M13.24 6.70L15.13 6.99L15.13 9.01L13.24 9.30L12.63 10.79L13.76 12.32L12.32 13.76L10.79 12.63L9.30 13.24L9.01 15.13L6.99 15.13L6.70 13.24L5.21 12.63L3.68 13.76L2.24 12.32L3.37 10.79L2.76 9.30L0.87 9.01L0.87 6.99L2.76 6.70L3.37 5.21L2.24 3.68L3.68 2.24L5.21 3.37L6.70 2.76L6.99 0.87L9.01 0.87L9.30 2.76L10.79 3.37L12.32 2.24L13.76 3.68L12.63 5.21Z M8 5.6A2.4 2.4 0 1 0 8 10.4A2.4 2.4 0 1 0 8 5.6Z"
+    />
   ),
   gridView: (
     <>
