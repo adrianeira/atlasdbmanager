@@ -91,6 +91,8 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 
 - [x] Os seletores de conexão, banco e schema do editor se filtram em cascata (trocar o servidor recarrega
       os bancos) sem piscar o indicador de carregamento
+- [x] O seletor de schema **relê a lista do servidor ao abrir** (pega schemas criados fora do app), sem
+      indicador de carregamento e sem perder o que a árvore já leu
 - [x] O **schema escolhido é aplicado à execução** (`search_path`), então tabelas sem prefixo são
       encontradas; a execução descreve os tipos das colunas só depois de executar, sem derrubar
       transações do usuário
@@ -112,8 +114,6 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [x] Novas chaves `data.find.*`, `dtp.*`, `grid.generated`, `cmd.closeSchema` (pt + en)
 
 ## Limitações conhecidas
-- A lista de schemas fica em cache até atualizar a árvore: um schema criado fora do app não aparece nos
-  seletores do editor.
 - Exportar o resultado de uma consulta exige um único comando que devolva linhas.
 - Exportação de tabela sem filtro/ordenação usa a ordem natural do servidor.
 

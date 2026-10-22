@@ -422,11 +422,14 @@ export default function App() {
     setOpenDatabases((s) => new Set([...s].filter((x) => !x.startsWith(prefix))));
   };
 
-  const loadDatabase = async (connId: string, dbName: string, force = false) => {
+  /** `refresh`: relê só a lista de schemas, sem indicador de carregamento e mantendo o que já foi lido de cada um. */
+  const loadDatabase = async (connId: string, dbName: string, force = false, refresh = false) => {
     const conn = connectionsRef.current.find((c) => c.id === connId);
     const db = conn?.databases.find((d) => d.name === dbName);
-    if (!conn?.live || !db || (db.loaded && !force)) return;
-    const names = await withLoading(`db:${seg(connId)}/${seg(dbName)}`, () => pg.listSchemas(connId, dbName));
+    if (!conn?.live || !db || (db.loaded && !force && !refresh)) return;
+    const names = refresh
+      ? await pg.listSchemas(connId, dbName)
+      : await withLoading(`db:${seg(connId)}/${seg(dbName)}`, () => pg.listSchemas(connId, dbName));
     updateConn(connId, (c) => ({
       ...c,
       databases: c.databases.map((d) => (d.name !== dbName ? d : {
@@ -1483,6 +1486,7 @@ export default function App() {
           connecting={connecting}
           onOpenConnection={connect}
           onLoadSchemas={(connId, dbName) => { void loadDatabase(connId, dbName).catch((e) => showError(dbName, e)); }}
+          onRefreshSchemas={(connId, dbName) => { void loadDatabase(connId, dbName, false, true).catch(() => undefined); }}
           onExport={(info) => setExportTarget({
             connId: info.connectionId, database: info.database, schema: info.schema ?? "public",
             tables: [{ name: t("exp.queryName"), view: false, query: true }], initial: t("exp.queryName"),

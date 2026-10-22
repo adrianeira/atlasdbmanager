@@ -18,13 +18,15 @@ interface Props {
   leftIcon?: ReactNode;
   /** Placeholder quando o valor atual não bate com nenhum item. */
   placeholder?: string;
+  /** Chamado quando a lista abre (ex.: para reler os itens do servidor). */
+  onOpen?: () => void;
 }
 
 /**
  * Dropdown próprio: substitui o <select> nativo porque o popup do Chromium ignora CSS
  * no hover do item (sempre fica cinza escuro). Com DOM próprio seguimos os tokens do tema.
  */
-export function Dropdown({ value, items, onChange, disabled, className, ariaLabel, leftIcon, placeholder }: Props) {
+export function Dropdown({ value, items, onChange, disabled, className, ariaLabel, leftIcon, placeholder, onOpen }: Props) {
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -51,7 +53,7 @@ export function Dropdown({ value, items, onChange, disabled, className, ariaLabe
   const onKey = (e: React.KeyboardEvent) => {
     if (disabled) return;
     if (!open) {
-      if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(true); }
+      if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(true); onOpen?.(); }
       return;
     }
     if (e.key === "Escape") { e.preventDefault(); setOpen(false); btnRef.current?.focus(); }
@@ -74,7 +76,7 @@ export function Dropdown({ value, items, onChange, disabled, className, ariaLabe
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={ariaLabel}
-        onClick={() => !disabled && setOpen((o) => !o)}
+        onClick={() => { if (disabled) return; if (!open) onOpen?.(); setOpen((o) => !o); }}
         onKeyDown={onKey}
       >
         {leftIcon && <span className="dd-left">{leftIcon}</span>}

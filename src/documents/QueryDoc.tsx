@@ -35,6 +35,8 @@ interface Props {
   onOpenConnection?: (connectionId: string) => void;
   /** Escolheu um banco ainda sem schemas lidos: busca no servidor. */
   onLoadSchemas?: (connectionId: string, database: string) => void;
+  /** Abriu a lista de schemas: relê do servidor (pega schemas criados fora do app), sem indicador de carregamento. */
+  onRefreshSchemas?: (connectionId: string, database: string) => void;
   /** Exportar o resultado: reexecuta a consulta em streaming (sem o limite de linhas da tela). Só com banco real. */
   onExport?: (info: { sql: string; schema?: string; columns: string[]; connectionId: string; database: string }) => void;
 }
@@ -131,7 +133,7 @@ function mockExecute(sqlText: string, conn: ConnectionMock | undefined, database
 }
 
 export function QueryDoc({
-  connections, openConnections, initial, initialSql, active, onStatus, onDirty, registerActions, backend: backendProp, connecting, onOpenConnection, onLoadSchemas, onExport,
+  connections, openConnections, initial, initialSql, active, onStatus, onDirty, registerActions, backend: backendProp, connecting, onOpenConnection, onLoadSchemas, onRefreshSchemas, onExport,
 }: Props) {
   const t = useT();
   const editor = useRef<SqlEditorHandle | null>(null);
@@ -388,6 +390,7 @@ export function QueryDoc({
           value={ctx.schema ?? ""}
           items={(db?.schemas ?? []).map((s) => ({ value: s.name, label: s.name }))}
           disabled={!db}
+          onOpen={() => { if (conn?.live && db) onRefreshSchemas?.(conn.id, db.name); }}
           onChange={(v) => setCtx({ ...ctx, schema: v })}
         />
         <div className="split-button">
