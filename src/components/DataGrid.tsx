@@ -523,7 +523,7 @@ export function DataGrid({
                 <button
                   type="button"
                   className="dg-th-menu"
-                  title="…"
+                  aria-label={t("grid.columnMenu")}
                   onMouseDown={(e) => e.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -621,7 +621,7 @@ export function DataGrid({
                       <button
                         type="button"
                         className="dg-lookup"
-                        title="…"
+                        aria-label={t("grid.fkLookup")}
                         onMouseDown={(e) => e.stopPropagation()}
                         onClick={(e) => onLookup(ri, ci, (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect())}
                       >
