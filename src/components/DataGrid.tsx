@@ -30,6 +30,8 @@ export interface GridColumn {
   generated?: boolean;
   /** Oculta a coluna do grid (botão "Columns" da toolbar); os dados continuam no array de linhas. */
   hidden?: boolean;
+  /** Comentário da coluna no banco (dica do cabeçalho). */
+  comment?: string;
 }
 
 /** Valor que a célula receberia: fora de colunas de texto, vazio significa NULL. */
@@ -510,7 +512,7 @@ export function DataGrid({
               className={`dg-th${i === activeCol && rows.length ? " is-active-col" : ""}`}
               style={{ width: widths[i] }}
               role="columnheader"
-              title={c.type ? `${c.name} (${c.type})` : c.name}
+              title={`${c.type ? `${c.name} (${c.type})` : c.name}${c.comment ? `\n${c.comment}` : ""}`}
               onMouseDown={() => setActiveCol(i)}
             >
               <div className="dg-th-name">{c.name}</div>

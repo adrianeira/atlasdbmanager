@@ -65,6 +65,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
       kind: typeKind(c.type),
       isKey: !!c.key,
       required: c.notNull,
+      comment: c.comment || undefined,
       hasDefault: !!c.default,
       // Bloqueia edição em colunas geradas pelo banco: GENERATED ALWAYS AS IDENTITY ou STORED.
       generated: c.identity === "a" || c.generated === "s",

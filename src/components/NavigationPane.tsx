@@ -102,6 +102,13 @@ export function NavigationPane(p: Props) {
     }
   };
 
+  /** Dica do nó: papel da coluna (PK/FK) e o comentário do banco, quando houver. */
+  const treeTitle = (n: TreeNode): string | undefined => {
+    const role = n.columnRole === "pk" ? t("des.primaryKey") : n.columnRole === "fk" ? t("nav.foreignKey") : undefined;
+    const lines = [role, n.comment].filter(Boolean);
+    return lines.length ? lines.join("\n") : undefined;
+  };
+
   return (
     <aside className="nav-pane" aria-label={t("nav.myConnections")}>
       <div
@@ -152,7 +159,7 @@ export function NavigationPane(p: Props) {
                 </span>
               )}
               <span className="tree-icon">{icon(n)}</span>
-              <span className="tree-label" title={n.columnRole === "pk" ? t("des.primaryKey") : n.columnRole === "fk" ? t("nav.foreignKey") : undefined}>{n.label}</span>
+              <span className="tree-label" title={treeTitle(n)}>{n.label}</span>
               {n.starred && <span className="tree-star" aria-label="★"><SmallIcon name="starFilled" size={12} /></span>}
               {busy && n.kind === "connection" && <span className="tree-busy">{t("nav.connecting")}</span>}
             </div>

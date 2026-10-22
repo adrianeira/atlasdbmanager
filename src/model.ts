@@ -133,7 +133,7 @@ const fixtureTables = (): DbObject[] => [
     columns: [
       col("id", "uuid", 0, 0, true, { key: 1 }),
       col("name", "varchar", 150, 0, true, { collation: TEXT_COLLATION }),
-      col("total", "numeric", 19, 4, false),
+      col("total", "numeric", 19, 4, false, { comment: "Saldo acumulado do cliente" }),
       col("created", "timestamptz", 6, 0, true, { default: "now()" }),
       col("metadata", "jsonb", 0, 0, false),
     ],
@@ -296,6 +296,8 @@ export interface TreeNode {
   starred?: boolean;
   /** Coluna: parte da chave primária ou de uma chave estrangeira (ícone próprio na árvore). */
   columnRole?: "pk" | "fk";
+  /** Comentário do objeto/coluna no banco (dica ao passar o mouse). */
+  comment?: string;
 }
 
 /** Pastas exibidas sob um schema PostgreSQL, na ordem da referência. */
@@ -386,14 +388,14 @@ export function buildVisibleTree(
             const oId = `obj:${scPath}/${cat}/${seg(o.name)}`;
             // Colunas ainda não lidas (conexão real) também deixam a tabela expansível.
             const hasCols = cat === "table" && (o.columns === undefined || o.columns.length > 0);
-            out.push({ id: oId, kind: "object", label: cat === "function" ? functionLabel(o) : o.name, depth: 4, expandable: hasCols, category: cat });
+            out.push({ id: oId, kind: "object", label: cat === "function" ? functionLabel(o) : o.name, depth: 4, expandable: hasCols, category: cat, comment: o.comment || undefined });
             if (!hasCols || !state.expanded.has(oId)) continue;
             // DECISÃO_ATLAS: tabela expandida mostra suas colunas com o tipo.
             // Colunas de FK (inclusive compostas: "a, b"); a PK tem prioridade no ícone.
             const fkCols = new Set((o.foreignKeys ?? []).flatMap((fk) => fk.fields.split(",").map((f) => f.trim())));
             for (const c of o.columns ?? []) {
               const columnRole = c.key ? "pk" : fkCols.has(c.name) ? "fk" : undefined;
-              out.push({ id: `col:${scPath}/table/${seg(o.name)}/${seg(c.name)}`, kind: "column", label: `${c.name} (${c.type})`, depth: 5, expandable: false, columnRole });
+              out.push({ id: `col:${scPath}/table/${seg(o.name)}/${seg(c.name)}`, kind: "column", label: `${c.name} (${c.type})`, depth: 5, expandable: false, columnRole, comment: c.comment || undefined });
             }
           }
         }
