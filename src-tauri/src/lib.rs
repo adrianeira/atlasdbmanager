@@ -1,4 +1,5 @@
 mod commands;
+mod export;
 mod local;
 mod sessions;
 
@@ -12,7 +13,10 @@ pub fn run() {
     tauri::Builder::default()
         // Área de transferência do sistema (copiar/colar no grid sem o pedido de permissão do WebView).
         .plugin(tauri_plugin_clipboard_manager::init())
+        // Janela "Salvar como" nativa para escolher o arquivo da exportação.
+        .plugin(tauri_plugin_dialog::init())
         .manage(sessions::Sessions::default())
+        .manage(export::Exports::default())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Info).build())?;
@@ -59,6 +63,8 @@ pub fn run() {
             commands::pg_table_rows,
             commands::pg_table_count,
             commands::pg_apply,
+            export::pg_export,
+            export::pg_export_cancel,
             local::local_status,
             local::profiles_list,
             local::profile_save,

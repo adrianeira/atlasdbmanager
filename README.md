@@ -33,6 +33,12 @@ de revisar o que vai ser executado.
 - Menu de contexto da célula: definir NULL/vazio, gerar UUID (v4/v7), copiar, copiar como
   `INSERT`/`UPDATE`/TSV, colar, excluir registro.
 
+**Exportação**
+- Assistente de exportação de tabelas e views para **CSV/TXT, JSON, SQL (`INSERT`) e Excel (`.xlsx`)**,
+  respeitando o filtro, a ordenação e as colunas visíveis do grid.
+- Gravação em **streaming** (memória estável mesmo com milhões de linhas), com progresso e cancelamento;
+  o arquivo só passa a existir quando a exportação termina com sucesso.
+
 **SQL e estrutura**
 - Editor SQL (CodeMirror) com destaque do dialeto PostgreSQL, autocomplete, executar,
   `EXPLAIN`, formatar e cancelar consulta no servidor.
@@ -100,6 +106,7 @@ crates/
   atlas-core/    domínio e contratos (tipos, erros, segredo que não vaza em log)
   atlas-pg/      provedor PostgreSQL (tokio-postgres): conexão, catálogo, execução, gravação
   atlas-local/   armazenamento local (SQLite) e cofre de credenciais do sistema
+  atlas-export/  gravação de resultados em CSV, JSON, SQL e Excel (streaming)
 src-tauri/       aplicativo desktop (comandos Tauri, sessões, janela)
 src/             interface React + TypeScript
 scripts/         utilitários (ex.: geração da lista de licenças de terceiros)

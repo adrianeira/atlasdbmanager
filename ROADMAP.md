@@ -1,7 +1,7 @@
 # Roadmap
 
 Este documento lista o que **ainda falta** no Atlas DB Manager para atingir **paridade de recursos
-com a referência Premium 17**, que é o alvo de produto. O levantamento foi feito percorrendo o
+com o produto de referência do projeto**, que é o alvo de produto. O levantamento foi feito percorrendo o
 código em busca de botões `disabled`, handlers `notImplemented`, itens de menu sem destino e
 toolbars de categoria vazias.
 
@@ -10,7 +10,7 @@ entrada" no código (botão/ação existente, só falta implementar o comportame
 
 > **Fora da prioridade atual:** as seções **9 (Automação)**, **11 (BI)** e
 > **12 (Features cross-cutting)** não serão trabalhadas no ciclo atual. Ficam listadas aqui
-> apenas como referência de paridade futura com a referência Premium 17.
+> apenas como referência de paridade futura com o produto de referência.
 
 ## Entregues neste ciclo (2026-10-22)
 
@@ -32,7 +32,7 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       contexto da célula ("Edit in Cell Editor"); sincroniza em tempo real com a célula ativa
       *(`src/components/CellEditorPanel.tsx`)*
 - [x] Barra **"Localizar dados"** (Ctrl+F) com navegação, "Highlight All" e **Substituir / Substituir tudo**
-      — igual referência *(`src/documents/TableDataDoc.tsx`, `src/components/DataGrid.tsx`)*
+      *(`src/documents/TableDataDoc.tsx`, `src/components/DataGrid.tsx`)*
 - [x] **Picker de data/hora próprio** (DateTimePopup): calendário mensal + relógio compactos, sem
       o widget nativo do Chromium *(`src/components/DateTimePopup.tsx`)*
 - [x] **Ícone discreto** de calendário / relógio à direita das células date/time/timestamp
@@ -44,9 +44,23 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [x] Botão **▶| Última página** funcional (`SELECT COUNT(*)` cacheado, calcula a última página)
 - [x] Campo de **página editável** (digite e pressione Enter para saltar)
 
+### Exportação de dados
+- [x] **Assistente de exportação** de tabelas e views — CSV/TXT, JSON, SQL (`INSERT`) e Excel (`.xlsx`);
+      respeita o **filtro, a ordenação e as colunas visíveis** do grid; escolha do arquivo pela janela
+      nativa ou digitando o caminho; progresso em tempo real e **cancelamento** (a consulta é abortada
+      no servidor e nenhum arquivo parcial fica no disco)
+      *(`src/components/ExportDialog.tsx`, `src-tauri/src/export.rs`, `crates/atlas-export`)*
+- [x] Gravação **em streaming**: 3 milhões de linhas (233 MB de CSV) em ~7,5 s com a memória do app
+      estável; o arquivo é escrito em `<destino>.part` e só vira o destino ao terminar com sucesso
+- [x] CSV/TXT com delimitador, qualificador, codificação (UTF-8, UTF-8 com BOM, Windows-1252),
+      quebra de linha e texto para NULL; JSON com tipos nativos (número, booleano, `jsonb` embutido);
+      SQL com N linhas por `INSERT`; Excel com cabeçalho, números e booleanos nativos
+- [x] Pontos de entrada: botão **Exportar** do grid, **Salvar dados como...** (menu da célula),
+      **Assistente de exportação** no menu da árvore e na barra da lista de objetos
+
 ### Navegação / Árvore
 - [x] **Fechar schema** no menu de contexto (colapsa + marca como não-carregado para rebuscar
-      na próxima abertura, igual referência) *(`src/App.tsx`)*
+      na próxima abertura) *(`src/App.tsx`)*
 - [x] Ícone do schema fica **cinza** quando fechado *(`src/components/NavigationPane.tsx`,
       `src/icons.tsx`)*
 
@@ -67,7 +81,7 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [x] Novas chaves `data.find.*`, `dtp.*`, `grid.generated`, `cmd.closeSchema` (pt + en)
 
 ## 1. Conexões
-- [ ] Importar/exportar conexões (`.ncx`), compartilhamento via referência Cloud
+- [ ] Importar/exportar conexões (arquivo de perfil), compartilhamento via nuvem
 - [ ] Importar conexão a partir de URI *(`src/components/ConnectionDialog.tsx:547,556`)*
 - [ ] Adicionar/remover banco manualmente no diálogo *(`src/components/ConnectionDialog.tsx:431-432`)*
 - [ ] SSH tunnel
@@ -135,7 +149,10 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 
 ## 7. Importar / Exportar
 - [ ] Import Wizard *(`act.importWizard` sem handler)* — CSV, Excel, JSON, XML, DBF, Access…
-- [ ] Export Wizard *(`act.exportWizard` sem handler)* — múltiplos formatos
+- [x] Export Wizard de tabela/view: CSV/TXT, JSON, SQL e Excel (ver "Exportação de dados")
+- [ ] Exportar o **resultado de uma consulta** do editor SQL
+- [ ] Exportar **várias tabelas** de uma vez; mais formatos (XML, HTML, Markdown, DBF…)
+- [ ] Salvar e reutilizar perfis de exportação; exportação agendada
 - [ ] Dump SQL completo *(hoje só item de menu)*
 - [ ] Data Transfer entre conexões / bancos
 - [ ] Data Synchronization / Structure Synchronization
@@ -160,7 +177,7 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 
 ## 12. Features cross-cutting *(fora de prioridade neste ciclo)*
 - [ ] AI integrado (chat, geração de SQL, explicação, refactor)
-- [ ] referência Cloud (sync de conexões, consultas, snippets, modelos)
+- [ ] Sincronização em nuvem (conexões, consultas, snippets, modelos)
 - [ ] Colaboração: comentários, histórico de versões
 - [ ] Compare Database (schema diff)
 - [ ] Server Monitor (métricas, locks, slow queries)
@@ -173,6 +190,6 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [ ] Fullscreen por painel *(vários botões `fullscreen` desabilitados)*
 
 ## 13. Toolbar / rodapé — itens menores
-- [ ] Account (login referência Cloud) *(`src/components/MainToolbar.tsx:100`)*
+- [ ] Conta (login do serviço em nuvem) *(`src/components/MainToolbar.tsx:100`)*
 - [ ] Beautify de célula
 - [ ] Hex / Binary editor próprio

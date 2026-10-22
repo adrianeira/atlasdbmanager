@@ -999,7 +999,7 @@ textarea.field.remarks {
   cursor: not-allowed;
 }
 
-/* Barra "Localizar dados": ocorrência destacada e a atual (como na referência). */
+/* Barra "Localizar dados": ocorrência destacada e a atual. */
 .dg-td.is-find-match {
   background: #fff59d;
   color: #1a1a1a;
@@ -1911,3 +1911,30 @@ select.et-input {
 .tab {
   max-width: 252px;
 }
+
+/* ---------- Assistente de exportação ---------- */
+.exp-dialog { width: 560px; }
+.exp-fields { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.exp-fields:disabled { opacity: 0.6; }
+.exp-source { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.exp-kinds { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.exp-kind {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  padding: 6px 8px; text-align: left; cursor: default;
+  border: 1px solid var(--c-border-strong); background: var(--c-surface); color: var(--c-text);
+}
+.exp-kind:hover { background: var(--c-hover); border-color: var(--c-hover-border); }
+.exp-kind.is-active { background: var(--c-selected); border-color: var(--c-selected-border); }
+.exp-kind-name { font-weight: 600; }
+.exp-kind .muted { margin: 0; font-size: 11px; }
+.exp-options { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--c-border); min-height: 96px; }
+.exp-row { display: grid; grid-template-columns: 150px 1fr; align-items: center; gap: 8px; }
+.exp-row .field { width: 100%; }
+.exp-row .exp-num { width: 90px; }
+.exp-note { font-size: 11px; margin: 0; }
+.exp-file { display: flex; flex-direction: column; gap: 4px; }
+.exp-file-row { display: flex; gap: 6px; }
+.exp-file-row .field { flex: 1; min-width: 0; }
+.exp-status { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 6px 8px; background: var(--c-surface-alt); border: 1px solid var(--c-border); flex-wrap: wrap; }
+.exp-status.is-ok { background: var(--c-ok-bg); border-color: var(--c-ok-text); flex-direction: column; align-items: flex-start; gap: 2px; }
+.exp-path { word-break: break-all; margin: 0; font-size: 11px; }

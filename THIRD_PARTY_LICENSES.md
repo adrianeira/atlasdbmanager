@@ -13,20 +13,20 @@ The Rust list includes dependencies for every platform (Windows, Linux and macOS
 
 ## Resumo / Summary
 
-### Rust (517 pacotes / packages)
+### Rust (530 pacotes / packages)
 
 | Licença / License | Pacotes / Packages |
 |---|---|
-| MIT OR Apache-2.0 | 239 |
-| MIT | 118 |
-| Apache-2.0 OR MIT | 38 |
-| MIT/Apache-2.0 | 23 |
+| MIT OR Apache-2.0 | 242 |
+| MIT | 122 |
+| Apache-2.0 OR MIT | 41 |
+| MIT/Apache-2.0 | 24 |
 | Zlib OR Apache-2.0 OR MIT | 18 |
 | Unicode-3.0 | 18 |
 | Unlicense OR MIT | 10 |
 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | 6 |
 | MPL-2.0 | 5 |
-| Apache-2.0 | 4 |
+| Apache-2.0 | 5 |
 | MIT OR Apache-2.0 OR Zlib | 4 |
 | Apache-2.0/MIT | 3 |
 | Zlib | 3 |
@@ -45,17 +45,18 @@ The Rust list includes dependencies for every platform (Windows, Linux and macOS
 | BSD-3-Clause/MIT | 1 |
 | Apache-2.0 AND MIT | 1 |
 | CC0-1.0 OR MIT-0 OR Apache-2.0 | 1 |
+| (Apache-2.0 OR MIT) AND BSD-3-Clause | 1 |
 | Apache-2.0 / MIT | 1 |
 | ISC | 1 |
 | Apache-2.0 WITH LLVM-exception | 1 |
 
-### npm — produção / production (19 pacotes / packages)
+### npm — produção / production (20 pacotes / packages)
 
 | Licença / License | Pacotes / Packages |
 |---|---|
 | MIT | 16 |
+| MIT OR Apache-2.0 | 2 |
 | Apache-2.0 OR MIT | 1 |
-| MIT OR Apache-2.0 | 1 |
 | CC0-1.0 | 1 |
 
 ## npm
@@ -75,6 +76,7 @@ The Rust list includes dependencies for every platform (Windows, Linux and macOS
 | @lezer/lr | 1.4.11 | MIT | https://code.haverbeke.berlin/lezer/lr |
 | @tauri-apps/api | 2.12.4 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
 | @tauri-apps/plugin-clipboard-manager | 2.5.0 | MIT OR Apache-2.0 | https://github.com/tauri-apps/plugins-workspace |
+| @tauri-apps/plugin-dialog | 2.8.3 | MIT OR Apache-2.0 | https://github.com/tauri-apps/plugins-workspace |
 | codemirror | 6.0.2 | MIT | https://github.com/codemirror/basic-setup |
 | crelt | 1.0.7 | MIT | https://code.haverbeke.berlin/marijn/crelt |
 | react | 19.3.1 | MIT | https://github.com/react/react |
@@ -127,6 +129,7 @@ The Rust list includes dependencies for every platform (Windows, Linux and macOS
 | cc | 1.9.0 | MIT OR Apache-2.0 | https://github.com/rust-lang/cc-rs |
 | cesu8 | 1.1.0 | Apache-2.0/MIT | https://github.com/emk/cesu8-rs |
 | cfb | 0.14.0 | MIT | https://github.com/mdsteele/rust-cfb |
+| cfg_aliases | 0.2.2 | MIT | https://github.com/katharostech/cfg_aliases |
 | cfg-expr | 0.15.8 | MIT OR Apache-2.0 | https://github.com/EmbarkStudios/cfg-expr |
 | cfg-if | 1.0.5 | MIT OR Apache-2.0 | https://github.com/rust-lang/cfg-if |
 | chacha20 | 0.10.2 | MIT OR Apache-2.0 | https://github.com/RustCrypto/stream-ciphers |
@@ -136,6 +139,7 @@ The Rust list includes dependencies for every platform (Windows, Linux and macOS
 | combine | 4.6.9 | MIT | https://github.com/Marwes/combine |
 | const-oid | 0.10.2 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats |
 | cookie | 0.18.2 | MIT OR Apache-2.0 | https://github.com/SergioBenitez/cookie-rs |
+| core_detect | 1.0.0 | MIT/Apache-2.0 | https://github.com/thomcc/core_detect |
 | core-foundation | 0.10.1 | MIT OR Apache-2.0 | https://github.com/servo/core-foundation-rs |
 | core-foundation | 0.9.4 | MIT OR Apache-2.0 | https://github.com/servo/core-foundation-rs |
 | core-foundation-sys | 0.8.7 | MIT OR Apache-2.0 | https://github.com/servo/core-foundation-rs |
@@ -181,6 +185,7 @@ The Rust list includes dependencies for every platform (Windows, Linux and macOS
 | dyn-clone | 1.0.20 | MIT OR Apache-2.0 | https://github.com/dtolnay/dyn-clone |
 | embed_plist | 1.2.2 | MIT OR Apache-2.0 | https://github.com/nvzqz/embed-plist-rs |
 | embed-resource | 3.0.12 | MIT | https://github.com/nabijaczleweli/rust-embed-resource |
+| encoding_rs | 0.8.42 | (Apache-2.0 OR MIT) AND BSD-3-Clause | https://github.com/hsivonen/encoding_rs |
 | env_filter | 0.1.4 | MIT OR Apache-2.0 | https://github.com/rust-cli/env_logger |
 | equivalent | 1.0.3 | Apache-2.0 OR MIT | https://github.com/indexmap-rs/equivalent |
 | erased-serde | 0.4.10 | MIT OR Apache-2.0 | https://github.com/dtolnay/erased-serde |
@@ -309,11 +314,13 @@ The Rust list includes dependencies for every platform (Windows, Linux and macOS
 | mio | 1.2.4 | MIT | https://github.com/tokio-rs/mio |
 | moxcms | 0.8.1 | BSD-3-Clause OR Apache-2.0 | https://github.com/awxkee/moxcms.git |
 | muda | 0.20.0 | Apache-2.0 OR MIT | https://github.com/tauri-apps/muda |
+| multiversion_no_op | 1.0.0 | Apache-2.0 OR MIT | https://github.com/hsivonen/multiversion_no_op |
 | native-tls | 0.2.18 | MIT OR Apache-2.0 | https://github.com/rust-native-tls/rust-native-tls |
 | ndk | 0.9.0 | MIT OR Apache-2.0 | https://github.com/rust-mobile/ndk |
 | ndk-context | 0.1.1 | MIT OR Apache-2.0 | https://github.com/rust-windowing/android-ndk-rs |
 | ndk-sys | 0.6.0+11769913 | MIT OR Apache-2.0 | https://github.com/rust-mobile/ndk |
 | new_debug_unreachable | 1.0.6 | MIT | https://github.com/mbrubeck/rust-debug-unreachable |
+| nix | 0.31.3 | MIT | https://github.com/nix-rust/nix |
 | nom | 8.0.0 | MIT | https://github.com/rust-bakery/nom |
 | num_enum | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 | https://github.com/illicitonion/num_enum |
 | num_enum_derive | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 | https://github.com/illicitonion/num_enum |
@@ -392,7 +399,9 @@ The Rust list includes dependencies for every platform (Windows, Linux and macOS
 | regex-automata | 0.4.18 | MIT OR Apache-2.0 | https://github.com/rust-lang/regex |
 | regex-syntax | 0.8.11 | MIT OR Apache-2.0 | https://github.com/rust-lang/regex |
 | reqwest | 0.13.5 | MIT OR Apache-2.0 | https://github.com/seanmonstar/reqwest |
+| rfd | 0.16.0 | MIT | https://github.com/PolyMeilex/rfd |
 | rusqlite | 0.37.0 | MIT | https://github.com/rusqlite/rusqlite |
+| rust_xlsxwriter | 0.101.0 | MIT OR Apache-2.0 | https://github.com/jmcnamara/rust_xlsxwriter |
 | rustc_version | 0.4.1 | MIT OR Apache-2.0 | https://github.com/djc/rustc-version-rs |
 | rustc-hash | 2.1.3 | Apache-2.0 OR MIT | https://github.com/rust-lang/rustc-hash |
 | rustix | 1.1.5 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | https://github.com/bytecodealliance/rustix |
@@ -427,6 +436,7 @@ The Rust list includes dependencies for every platform (Windows, Linux and macOS
 | sha2 | 0.11.1 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes |
 | shlex | 2.0.1 | MIT OR Apache-2.0 | https://github.com/comex/rust-shlex |
 | simd-adler32 | 0.3.10 | MIT | https://github.com/mcountryman/simd-adler32 |
+| simdutf8 | 0.1.5 | MIT OR Apache-2.0 | https://github.com/rusticstuff/simdutf8 |
 | siphasher | 1.0.4 | MIT OR Apache-2.0 | https://github.com/jedisct1/rust-siphash |
 | slab | 0.4.12 | MIT | https://github.com/tokio-rs/slab |
 | smallvec | 1.16.3 | MIT OR Apache-2.0 | https://github.com/servo/rust-smallvec |
@@ -456,6 +466,8 @@ The Rust list includes dependencies for every platform (Windows, Linux and macOS
 | tauri-macros | 2.7.4 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
 | tauri-plugin | 2.7.2 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
 | tauri-plugin-clipboard-manager | 2.5.0 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace |
+| tauri-plugin-dialog | 2.8.3 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace |
+| tauri-plugin-fs | 2.7.1 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace |
 | tauri-plugin-log | 2.10.1 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace |
 | tauri-runtime | 2.12.2 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
 | tauri-runtime-wry | 2.12.3 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
@@ -496,6 +508,7 @@ The Rust list includes dependencies for every platform (Windows, Linux and macOS
 | tray-icon | 0.25.1 | MIT OR Apache-2.0 | https://github.com/tauri-apps/tray-icon |
 | tree_magic_mini | 3.2.2 | MIT | https://github.com/mbrubeck/tree_magic/ |
 | try-lock | 0.2.5 | MIT | https://github.com/seanmonstar/try-lock |
+| typed-path | 0.12.4 | MIT OR Apache-2.0 | https://github.com/chipsenkbeil/typed-path |
 | typeid | 1.0.3 | MIT OR Apache-2.0 | https://github.com/dtolnay/typeid |
 | typenum | 1.20.1 | MIT OR Apache-2.0 | https://github.com/paholg/typenum |
 | unicode-bidi | 0.3.18 | MIT OR Apache-2.0 | https://github.com/servo/unicode-bidi |
@@ -599,7 +612,9 @@ The Rust list includes dependencies for every platform (Windows, Linux and macOS
 | zerotrie | 0.2.5 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
 | zerovec | 0.11.8 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
 | zerovec-derive | 0.11.6 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
+| zip | 9.0.5 | MIT | https://github.com/zip-rs/zip2 |
 | zlib-rs | 0.6.8 | Zlib | https://github.com/trifectatechfoundation/zlib-rs |
 | zmij | 1.0.23 | MIT | https://github.com/dtolnay/zmij |
+| zopfli | 0.8.4 | Apache-2.0 | https://github.com/zopfli-rs/zopfli |
 | zune-core | 0.5.3 | MIT OR Apache-2.0 OR Zlib | https://github.com/etemesi254/zune-image |
 | zune-jpeg | 0.5.15 | MIT OR Apache-2.0 OR Zlib | https://github.com/etemesi254/zune-image/tree/dev/crates/zune-jpeg |

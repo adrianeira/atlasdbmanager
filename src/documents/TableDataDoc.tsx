@@ -38,6 +38,8 @@ interface Props {
   isView?: boolean;
   /** Há alterações não gravadas (a aba pergunta antes de fechar). */
   onDirty?: (dirty: boolean) => void;
+  /** Abre o assistente de exportação com o filtro, a ordenação e as colunas visíveis do grid. Só com banco real. */
+  onExport?: (scope: { orderBy: OrderBy[]; filter: TableFilter | null; allColumns: string[]; visibleColumns: string[] }) => void;
 }
 
 const DEFAULT_PAGE_SIZE = 1000;
@@ -47,7 +49,7 @@ function literal(v: CellValue): string {
   return v === null ? "NULL" : `'${v.replace(/'/g, "''")}'`;
 }
 
-export function TableDataDoc({ schema, table: tableProp, active, production, onStatus, backend, lookup, isView, onDirty }: Props) {
+export function TableDataDoc({ schema, table: tableProp, active, production, onStatus, backend, lookup, isView, onDirty, onExport }: Props) {
   const t = useT();
   const [table, setTable] = useState<DbObject>(tableProp);
   const cols = useMemo(() => table.columns ?? [], [table]);
@@ -153,7 +155,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   const replaceCurrent = () => {
     if (!activeFind) return;
     if (applyReplace(activeFind.row, activeFind.col)) {
-      // Avança para a próxima ocorrência (como na referência).
+      // Avança para a próxima ocorrência.
       stepFind(1);
     }
   };
@@ -487,6 +489,15 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   };
 
   // Menu "⋯" do cabeçalho: ordenar só por aquela coluna (substitui a ordenação atual).
+  /** Exportar: mesmo filtro e ordem do grid (sem ordenação escolhida, pela chave primária, como a paginação). */
+  const openExport = () =>
+    onExport?.({
+      orderBy: sort.length ? sort : keyCols.map(({ c }) => ({ column: c.name, descending: false })),
+      filter,
+      allColumns: cols.map((c) => c.name),
+      visibleColumns: cols.filter((c) => !hiddenCols.has(c.name)).map((c) => c.name),
+    });
+
   const sortByColumn = (col: number, descending: boolean) => {
     const name = cols[col]?.name;
     if (!name) return;
@@ -567,7 +578,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
         {tool("columns", "data.columns", () => setColumnsOpen(true))}
         {tool("profiling", "data.profiling")}
         {tool("import", "data.import")}
-        {tool("export", "data.export")}
+        {tool("export", "data.export", onExport ? openExport : undefined)}
         {tool("dataGen", "data.generation")}
         {tool("biCreate", "data.createBi")}
         <div className="ot-spacer" />
@@ -604,6 +615,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
             findQuery={findOpen ? findQuery : ""}
             activeFind={findOpen ? activeFind : null}
             highlightAll={highlightAll}
+            onSaveAs={onExport ? openExport : undefined}
             onSortColumn={sortByColumn}
             onClearSort={clearSort}
             onAddFilter={addFilterForColumn}

@@ -33,6 +33,12 @@ is about to run.
 - Cell context menu: set NULL/empty, generate UUID (v4/v7), copy, copy as
   `INSERT`/`UPDATE`/TSV, paste, delete record.
 
+**Export**
+- Export wizard for tables and views to **CSV/TXT, JSON, SQL (`INSERT`) and Excel (`.xlsx`)**,
+  honoring the grid's filter, sort order and visible columns.
+- **Streaming** writes (flat memory even with millions of rows), with progress and cancel;
+  the file only appears once the export finishes successfully.
+
 **SQL and structure**
 - SQL editor (CodeMirror) with PostgreSQL dialect highlighting, autocomplete, run, `EXPLAIN`,
   formatting and server-side query cancel.
@@ -99,6 +105,7 @@ crates/
   atlas-core/    domain and contracts (types, errors, a secret type that never leaks into logs)
   atlas-pg/      PostgreSQL provider (tokio-postgres): connection, catalog, execution, writes
   atlas-local/   local storage (SQLite) and the OS credential vault
+  atlas-export/  writes results as CSV, JSON, SQL and Excel (streaming)
 src-tauri/       desktop app (Tauri commands, sessions, window)
 src/             React + TypeScript UI
 scripts/         utilities (e.g. third-party license list generator)

@@ -3,6 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { errorText, isDesktop, local, pg, toAtlasError, type ConnectionParams, type ProfileRecord } from "./backend";
 import { entries, matchesShortcut, sub, type CommandMap, type MenuDef, type MenuEntry } from "./commands";
 import { ConnectionDialog, type ConnectionForm } from "./components/ConnectionDialog";
+import { ExportDialog, type ExportTarget } from "./components/ExportDialog";
 import { schemaFromServer, sessionPasswords, tableFromServer } from "./live";
 import type { TableDataBackend } from "./documents/TableDataDoc";
 import type { FkLookupSource } from "./components/FkLookup";
@@ -24,7 +25,7 @@ import { detectLang, I18nContext, makeTranslator, type Lang, type MessageKey } f
 import { ProviderIcon, SmallIcon } from "./icons";
 import {
   buildVisibleTree, CONNECTION_COLORS, INITIAL_CONNECTIONS, mockRows, quoteIdent, resolveNode, seg,
-  type Category, type ConnectionColor, type ConnectionMock, type DbObject, type ProviderId, type TreeNode,
+  type Category, type ConnectionColor, type ConnectionMock, type DbObject, type NodeContext, type ProviderId, type TreeNode,
 } from "./model";
 
 /** Cores do menu "Cor" (as mesmas do CSS `.color-*`). */
@@ -311,6 +312,7 @@ export default function App() {
   const [category, setCategory] = useState<Category>("table");
   const [selectedObjects, setSelectedObjects] = useState<string[]>([]);
   const [dialog, setDialog] = useState<Dialog | null>(null);
+  const [exportTarget, setExportTarget] = useState<ExportTarget | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; items: MenuEntry[] } | null>(null);
   const [recents, setRecents] = useState<RecentItem[]>([]);
   const [recentProviders, setRecentProviders] = useState<ProviderId[]>(["postgresql"]);
@@ -683,7 +685,20 @@ export default function App() {
     openTab({ kind: "viewDesigner", title, windowTitle: title, icon: "view", connectionId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name });
   };
 
-  const openObjects = (kind: "open" | "design" | "new", names: string[], cat: Category = category, c = ctx) => {
+  /** Assistente de exportação de uma tabela/view (todos os registros). Só com conexão real. */
+  const startExport = (c: NodeContext, name: string) => {
+    if (!c.connection?.live || !c.database || !c.schema) return;
+    setExportTarget({
+      connId: c.connection.id, database: c.database.name, schema: c.schema.name, table: name,
+      allColumns: [], visibleColumns: [], orderBy: [], filter: null,
+    });
+  };
+
+  const openObjects = (kind: "open" | "design" | "new" | "export", names: string[], cat: Category = category, c = ctx) => {
+    if (kind === "export") {
+      if ((cat === "table" || cat === "view") && names[0]) startExport(c, names[0]);
+      return;
+    }
     if (kind === "new") {
       if (cat === "query") return newQuery();
       if (cat === "table") return newTable();
@@ -1030,7 +1045,7 @@ export default function App() {
         },
         sep,
         item("act.importWizard"),
-        item("act.exportWizard"),
+        item("act.exportWizard", live ? () => startExport(c, name) : undefined),
         dumpSub,
         sep,
         item("cmd.copyName", () => { void navigator.clipboard?.writeText(name).catch(() => undefined); }),
@@ -1066,7 +1081,7 @@ export default function App() {
           ...scope, title: t("act.deleteView"), statements: [`DROP VIEW ${target};`], danger: true, confirmText: prod ? name : undefined,
         }) : undefined),
         sep,
-        item("act.exportWizard"),
+        item("act.exportWizard", live ? () => startExport(c, name) : undefined),
         sep,
         item("cmd.copyName", () => { void navigator.clipboard?.writeText(name).catch(() => undefined); }),
         item("cmd.renameView", live ? () => askName(t("cmd.renameView"), t("msg.newName"), name, (newName) => askDdl({
@@ -1467,6 +1482,9 @@ export default function App() {
           lookup={tab.objectKind === "view" ? undefined : lookupSourceFor(tab, conn)}
           isView={tab.objectKind === "view"}
           onDirty={(d) => setTabDirty(tab.id, d)}
+          onExport={conn?.live && tab.database ? (scope) => setExportTarget({
+            connId: conn.id, database: tab.database ?? "", schema: tab.schema ?? "", table: tab.object ?? base.name, ...scope,
+          }) : undefined}
         />
       );
     }
@@ -1620,6 +1638,8 @@ export default function App() {
           style={{ position: "fixed", left: Math.min(ctxMenu.x, window.innerWidth - 240), top: Math.min(ctxMenu.y, window.innerHeight - 320) }}
         />
       )}
+
+      {exportTarget && <ExportDialog target={exportTarget} onClose={() => setExportTarget(null)} />}
 
       {dialog?.kind === "connection" && (
         <ConnectionDialog

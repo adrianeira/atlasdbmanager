@@ -65,22 +65,11 @@ pub async fn execute(s: &PgSession, sql: &str, max_rows: usize) -> Result<QueryO
     Ok(QueryOutcome { statements, elapsed_ms: started.elapsed().as_millis() as u64 })
 }
 
-/// Página de uma tabela. A ordenação pela chave primária torna a paginação determinística
-/// (spec §31.2); sem chave, a ordem do servidor não é garantida.
-///
-/// `limit = None` lê a tabela inteira ("Limitar registros" desmarcado); ainda assim a
-/// memória fica limitada a `max_rows` linhas e o excedente é sinalizado como `truncated`.
-pub async fn table_rows(
-    s: &PgSession,
-    schema: &str,
-    table: &str,
-    order_by: &[OrderBy],
-    filter: Option<&TableFilter>,
-    limit: Option<u32>,
-    offset: u64,
-    max_rows: usize,
-) -> Result<(String, QueryOutcome), DatabaseError> {
-    let mut sql = format!("SELECT * FROM {}.{}", quote_ident(schema), quote_ident(table));
+/// `SELECT` de uma tabela com o filtro e a ordenação do grid, sem `LIMIT`. `columns` vazio = `*`.
+/// Só identificadores (entre aspas) entram no texto; o filtro é a expressão do próprio usuário.
+pub fn select_sql(schema: &str, table: &str, columns: &[String], order_by: &[OrderBy], filter: Option<&TableFilter>) -> String {
+    let list = if columns.is_empty() { "*".to_string() } else { columns.iter().map(|c| quote_ident(c)).collect::<Vec<_>>().join(", ") };
+    let mut sql = format!("SELECT {list} FROM {}.{}", quote_ident(schema), quote_ident(table));
     if let Some(f) = filter {
         let expr = f.expr.trim();
         if !expr.is_empty() {
@@ -94,6 +83,71 @@ pub async fn table_rows(
             .collect();
         sql.push_str(&format!(" ORDER BY {}", cols.join(", ")));
     }
+    sql
+}
+
+/// Lê o resultado de um único `SELECT` linha a linha, sem guardar nada na memória: `on_begin` recebe
+/// as colunas (com o tipo, quando o servidor descreve) e `on_row` cada linha; devolver `Ok(false)`
+/// encerra a leitura (cancelamento). Devolve quantas linhas foram entregues.
+pub async fn stream_rows<B, R>(s: &PgSession, sql: &str, on_begin: B, mut on_row: R) -> Result<u64, DatabaseError>
+where
+    B: FnOnce(&[ResultColumn]) -> Result<(), DatabaseError>,
+    R: FnMut(&[Option<&str>]) -> Result<bool, DatabaseError>,
+{
+    let described: Option<Vec<String>> = match s.client.prepare(sql).await {
+        Ok(stmt) => Some(stmt.columns().iter().map(|c| c.type_().name().to_string()).collect()),
+        Err(_) => None,
+    };
+    let stream = s.client.simple_query_raw(sql).await.map_err(|e| map_error(&e))?;
+    pin_mut!(stream);
+
+    let mut on_begin = Some(on_begin);
+    let mut count = 0u64;
+    while let Some(msg) = stream.next().await {
+        match msg.map_err(|e| map_error(&e))? {
+            SimpleQueryMessage::RowDescription(cols) => {
+                if let Some(begin) = on_begin.take() {
+                    let columns: Vec<ResultColumn> = cols
+                        .iter()
+                        .enumerate()
+                        .map(|(i, c)| ResultColumn {
+                            name: c.name().to_string(),
+                            type_name: described.as_ref().filter(|d| d.len() == cols.len()).map(|d| d[i].clone()),
+                        })
+                        .collect();
+                    begin(&columns)?;
+                }
+            }
+            SimpleQueryMessage::Row(row) => {
+                let values: Vec<Option<&str>> = (0..row.len()).map(|i| row.get(i)).collect();
+                count += 1;
+                if !on_row(&values)? {
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(count)
+}
+
+/// Página de uma tabela. A ordenação pela chave primária torna a paginação determinística
+/// (spec §31.2); sem chave, a ordem do servidor não é garantida.
+///
+/// `limit = None` lê a tabela inteira ("Limitar registros" desmarcado); ainda assim a
+/// memória fica limitada a `max_rows` linhas e o excedente é sinalizado como `truncated`.
+#[allow(clippy::too_many_arguments)]
+pub async fn table_rows(
+    s: &PgSession,
+    schema: &str,
+    table: &str,
+    order_by: &[OrderBy],
+    filter: Option<&TableFilter>,
+    limit: Option<u32>,
+    offset: u64,
+    max_rows: usize,
+) -> Result<(String, QueryOutcome), DatabaseError> {
+    let mut sql = select_sql(schema, table, &[], order_by, filter);
     let keep = match limit {
         Some(limit) => {
             sql.push_str(&format!(" LIMIT {limit} OFFSET {offset}"));

@@ -4,6 +4,8 @@
  * a interface continua no modo de demonstração com dados fictícios.
  */
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { save } from "@tauri-apps/plugin-dialog";
 
 export const isDesktop = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -195,4 +197,45 @@ export const pg = {
     call<number>("pg_table_count", { sessionId, database, schema, table, filter }),
   apply: (sessionId: string, database: string, statements: PlannedStatement[]) =>
     call<number[]>("pg_apply", { sessionId, database, statements }),
+  export: (req: ExportRequest) => call<ExportResult>("pg_export", { req }),
+  exportCancel: (exportId: string) => call<void>("pg_export_cancel", { exportId }),
 };
+
+/* ---------- Exportação de dados (CSV, JSON, SQL, Excel) ---------- */
+
+export type ExportEncoding = "utf8" | "utf8Bom" | "windows1252";
+
+/** Formato e opções; o mesmo desenho que o Rust lê (`atlas-export`). */
+export type ExportFormat =
+  | { kind: "delimited"; delimiter: string; qualifier: string; header: boolean; crlf: boolean; nullText: string; encoding: ExportEncoding }
+  | { kind: "json"; pretty: boolean }
+  | { kind: "sql"; rowsPerInsert: number }
+  | { kind: "xlsx"; header: boolean; sheetName: string };
+
+export interface ExportRequest {
+  exportId: string;
+  sessionId: string;
+  database: string;
+  schema: string;
+  table: string;
+  /** Vazio = todas as colunas. */
+  columns: string[];
+  orderBy: OrderBy[];
+  filter: TableFilter | null;
+  format: ExportFormat;
+  path: string;
+}
+
+export interface ExportResult { rows: number; bytes: number; elapsedMs: number; path: string }
+
+/** Progresso da exportação em andamento (a cada ~200 ms). Devolve a função que cancela a assinatura. */
+export async function onExportProgress(exportId: string, cb: (rows: number) => void): Promise<() => void> {
+  return listen<{ exportId: string; rows: number }>("export-progress", (e) => {
+    if (e.payload.exportId === exportId) cb(e.payload.rows);
+  });
+}
+
+/** Janela nativa "Salvar como". `null` se o usuário cancelar. */
+export async function chooseExportPath(defaultName: string, extensions: string[]): Promise<string | null> {
+  return save({ defaultPath: defaultName, filters: [{ name: extensions.map((x) => `*.${x}`).join(", "), extensions }] });
+}

@@ -206,24 +206,74 @@ async fn table_rows_pages_and_reads_all() {
     atlas_pg::execute(&s, "CREATE TEMP TABLE atlas_pages AS SELECT g AS id FROM generate_series(1, 25) g", 1)
         .await
         .expect("temp table");
-    let order = vec!["id".to_string()];
+    let order = vec![atlas_core::OrderBy { column: "id".into(), descending: false }];
     let rows = |o: &atlas_core::QueryOutcome| o.statements[0].result.as_ref().unwrap().rows.clone();
 
     // Página 2 com 10 por página.
-    let (sql, out) = atlas_pg::table_rows(&s, "pg_temp", "atlas_pages", &order, Some(10), 10, 1_000).await.expect("page");
+    let (sql, out) = atlas_pg::table_rows(&s, "pg_temp", "atlas_pages", &order, None, Some(10), 10, 1_000).await.expect("page");
     assert!(sql.ends_with("LIMIT 10 OFFSET 10"), "{sql}");
     let r = rows(&out);
     assert_eq!(r.len(), 10);
     assert_eq!(r[0][0].as_deref(), Some("11"));
 
     // "Limitar registros" desmarcado: sem LIMIT, tabela inteira.
-    let (sql, out) = atlas_pg::table_rows(&s, "pg_temp", "atlas_pages", &order, None, 0, 1_000).await.expect("all");
+    let (sql, out) = atlas_pg::table_rows(&s, "pg_temp", "atlas_pages", &order, None, None, 0, 1_000).await.expect("all");
     assert!(!sql.contains("LIMIT"), "{sql}");
     assert_eq!(rows(&out).len(), 25);
     assert!(!out.statements[0].result.as_ref().unwrap().truncated);
 
     // Teto de segurança: guarda só `max_rows` e sinaliza o corte.
-    let (_, out) = atlas_pg::table_rows(&s, "pg_temp", "atlas_pages", &order, None, 0, 20).await.expect("cap");
+    let (_, out) = atlas_pg::table_rows(&s, "pg_temp", "atlas_pages", &order, None, None, 0, 20).await.expect("cap");
     assert_eq!(rows(&out).len(), 20);
     assert!(out.statements[0].result.as_ref().unwrap().truncated);
+}
+
+#[tokio::test]
+async fn stream_rows_reads_in_order_reports_types_and_can_stop_early() {
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    atlas_pg::execute(
+        &s,
+        "CREATE TEMP TABLE atlas_stream AS SELECT g AS id, (g % 2 = 0) AS par, 'v' || g AS txt, NULL::text AS nulo FROM generate_series(1, 25) g",
+        1,
+    )
+    .await
+    .expect("temp table");
+    let sql = atlas_pg::select_sql("pg_temp", "atlas_stream", &["id".into(), "par".into(), "nulo".into()], &[atlas_core::OrderBy { column: "id".into(), descending: true }], None);
+    assert_eq!(sql, "SELECT \"id\", \"par\", \"nulo\" FROM \"pg_temp\".\"atlas_stream\" ORDER BY \"id\" DESC");
+
+    // Lê tudo: colunas com tipo, NULL como None, ordem pedida.
+    let mut cols = Vec::new();
+    let mut first = None;
+    let n = atlas_pg::stream_rows(
+        &s,
+        &sql,
+        |c| {
+            cols = c.iter().map(|x| (x.name.clone(), x.type_name.clone())).collect();
+            Ok(())
+        },
+        |row| {
+            if first.is_none() {
+                first = Some(row.iter().map(|v| v.map(str::to_string)).collect::<Vec<_>>());
+            }
+            Ok(true)
+        },
+    )
+    .await
+    .expect("stream");
+    assert_eq!(n, 25);
+    assert_eq!(cols, vec![("id".into(), Some("int4".into())), ("par".into(), Some("bool".into())), ("nulo".into(), Some("text".into()))]);
+    assert_eq!(first.unwrap(), vec![Some("25".into()), Some("f".into()), None]);
+
+    // Parada antecipada (cancelamento): entrega só o que foi lido e a sessão continua utilizável.
+    let mut seen = 0;
+    let n = atlas_pg::stream_rows(&s, &sql, |_| Ok(()), |_| { seen += 1; Ok(seen < 3) }).await.expect("stop early");
+    assert_eq!(n, 3);
+    let again = atlas_pg::execute(&s, "SELECT count(*) FROM atlas_stream", 1).await.expect("session still works");
+    assert_eq!(again.statements[0].result.as_ref().unwrap().rows[0][0].as_deref(), Some("25"));
+
+    // Resultado vazio não chama on_row, mas ainda descreve as colunas.
+    let mut described = false;
+    let n = atlas_pg::stream_rows(&s, "SELECT id FROM atlas_stream WHERE false", |c| { described = !c.is_empty(); Ok(()) }, |_| Ok(true)).await.expect("empty");
+    assert!(n == 0 && described);
 }

@@ -177,6 +177,8 @@ interface Props {
   /** Marcar todas as ocorrências (desligado = só a atual). */
   highlightAll?: boolean;
   /** Menu "⋯" no cabeçalho (hover): ordenar a coluna. Omitir esconde o botão. */
+  /** "Salvar dados como...": abre o assistente de exportação. Omitir desabilita o item. */
+  onSaveAs?: () => void;
   onSortColumn?: (col: number, descending: boolean) => void;
   /** Idem: "Remove All Sorts" no menu do cabeçalho. */
   onClearSort?: () => void;
@@ -190,7 +192,7 @@ interface Props {
 
 export function DataGrid({
   columns, rows, readOnly, edited, deletedRows, newRows, activeRow, onActiveRow, onEdit, rowHeight = 23, simpleHeader, lookupCols, onLookup,
-  sqlTarget, onDeleteRow, onRefresh, findQuery, activeFind, highlightAll, onSortColumn, onClearSort, onAddFilter, onActiveCell, onOpenCellEditor,
+  sqlTarget, onDeleteRow, onRefresh, findQuery, activeFind, highlightAll, onSaveAs, onSortColumn, onClearSort, onAddFilter, onActiveCell, onOpenCellEditor,
 }: Props) {
   const t = useT();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -446,7 +448,7 @@ export function DataGrid({
           .then((text) => setCell(row, col, text.replace(/\r?\n$/, "")))
           .catch(() => undefined);
       } : undefined),
-      item("grid.saveDataAs"),
+      item("grid.saveDataAs", onSaveAs),
       sep,
       item("grid.toggleFilter"),
       { kind: "sub", label: "grid.filter", items: [item("grid.filter")] },
