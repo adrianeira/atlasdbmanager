@@ -20,7 +20,7 @@ export type MenuEntry =
   | { kind: "cmd"; id: string }
   | { kind: "sep" }
   | { kind: "sub"; label: MessageKey; items: MenuEntry[] }
-  | { kind: "item"; text: string; run?: () => void; icon?: SmallIconName };
+  | { kind: "item"; text: string; run?: () => void; icon?: SmallIconName; iconColor?: string; checked?: boolean };
 
 export interface MenuDef {
   label: MessageKey;

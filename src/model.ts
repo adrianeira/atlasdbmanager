@@ -82,7 +82,14 @@ export interface ConnectionMock {
   /** Conexão real (app desktop) em vez de dados fictícios. */
   live?: boolean;
   sslMode?: "disable" | "prefer" | "require" | "verify-ca" | "verify-full";
+  /** Cor de identificação na árvore (menu "Cor"). */
+  color?: ConnectionColor;
+  /** Favorita (menu "Adicionar estrela"). */
+  starred?: boolean;
 }
+
+export type ConnectionColor = "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "gray";
+export const CONNECTION_COLORS: ConnectionColor[] = ["red", "orange", "yellow", "green", "blue", "purple", "gray"];
 
 const col = (name: string, type: string, length = 0, decimal = 0, notNull = false, extra: Partial<ColumnDef> = {}): ColumnDef =>
   ({ name, type, length, decimal, notNull, ...extra });
@@ -266,6 +273,8 @@ export interface TreeNode {
   expandable: boolean;
   category?: Category;
   provider?: ProviderId;
+  color?: ConnectionColor;
+  starred?: boolean;
 }
 
 /** Pastas exibidas sob um schema PostgreSQL, na ordem da referência. */
@@ -305,6 +314,8 @@ export interface TreeState {
   openConnections: Set<string>;
   openDatabases: Set<string>;
   filter: string;
+  /** Mostrar só conexões com estrela (botão ★ da busca). */
+  starredOnly?: boolean;
 }
 
 export function functionLabel(o: DbObject): string {
@@ -326,8 +337,9 @@ export function buildVisibleTree(
   for (const conn of connections) {
     const connId = `conn:${seg(conn.id)}`;
     const isOpen = state.openConnections.has(conn.id);
+    if (state.starredOnly && !conn.starred) continue;
     if (!isOpen && !matches(conn.name)) continue;
-    out.push({ id: connId, kind: "connection", label: conn.name, depth: 0, expandable: true, provider: conn.provider });
+    out.push({ id: connId, kind: "connection", label: conn.name, depth: 0, expandable: true, provider: conn.provider, color: conn.color, starred: conn.starred });
     if (!isOpen || !state.expanded.has(connId)) continue;
 
     for (const db of conn.databases) {

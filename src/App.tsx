@@ -20,9 +20,17 @@ import { TableDesignerDoc } from "./documents/TableDesignerDoc";
 import { detectLang, I18nContext, makeTranslator, type Lang, type MessageKey } from "./i18n";
 import { ProviderIcon, SmallIcon } from "./icons";
 import {
-  buildVisibleTree, INITIAL_CONNECTIONS, resolveNode, seg,
-  type Category, type ConnectionMock, type DbObject, type ProviderId, type TreeNode,
+  buildVisibleTree, CONNECTION_COLORS, INITIAL_CONNECTIONS, quoteIdent, resolveNode, seg,
+  type Category, type ConnectionColor, type ConnectionMock, type DbObject, type ProviderId, type TreeNode,
 } from "./model";
+
+/** Cores do menu "Cor" (as mesmas do CSS `.color-*`). */
+const COLOR_HEX: Record<ConnectionColor, string> = {
+  red: "#e5484d", orange: "#f08c2e", yellow: "#e2b714", green: "#2fb36b", blue: "#2f7fd0", purple: "#8c4fe0", gray: "#8c8c8c",
+};
+
+/** Limite para "Executar arquivo SQL" (o arquivo é lido inteiro na memória). */
+const MAX_SQL_FILE_BYTES = 50 * 1024 * 1024;
 
 type Theme = "system" | "light" | "dark";
 
@@ -65,6 +73,8 @@ function writeJson(key: string, value: unknown) {
 interface SavedProfile {
   id: string; name: string; provider: ProviderId; host: string; port: number; user: string; initialDatabase: string; environment: string;
   sslMode?: ConnectionMock["sslMode"];
+  color?: ConnectionColor;
+  starred?: boolean;
 }
 
 /** No app desktop a conexão é real e os níveis são lidos do servidor sob demanda. */
@@ -96,6 +106,7 @@ function saveConnections(list: ConnectionMock[]) {
     .map((c) => ({
       id: c.id, name: c.name, provider: c.provider, host: c.host, port: c.port, user: c.user,
       initialDatabase: c.initialDatabase, environment: c.environment ?? "development", sslMode: c.sslMode,
+      color: c.color, starred: c.starred,
     }));
   writeJson(CONNECTIONS_KEY, profiles);
 }
@@ -134,6 +145,9 @@ type Dialog =
   | { kind: "closeDirty"; tabId: string }
   | { kind: "password"; connId: string; retry?: string }
   | { kind: "error"; title: string; message: string }
+  | { kind: "info"; title: string; message: string }
+  | { kind: "newDatabase"; connId: string; name?: string; busy?: boolean; error?: string }
+  | { kind: "execFile"; connId: string; database: string; fileName: string; size: number; sql: string; busy?: boolean; error?: string }
   | { kind: "about" };
 
 export default function App() {
@@ -166,9 +180,10 @@ export default function App() {
   const [recents, setRecents] = useState<RecentItem[]>([]);
   const [recentProviders, setRecentProviders] = useState<ProviderId[]>(["postgresql"]);
 
+  const [starredOnly, setStarredOnly] = useState(false);
   const nodes = useMemo(
-    () => buildVisibleTree(connections, { expanded, openConnections, openDatabases, filter }, (c) => t(FOLDER_LABEL[c] ?? CATEGORY_LABEL[c]), t("nav.myConnections")),
-    [connections, expanded, openConnections, openDatabases, filter, t],
+    () => buildVisibleTree(connections, { expanded, openConnections, openDatabases, filter, starredOnly }, (c) => t(FOLDER_LABEL[c] ?? CATEGORY_LABEL[c]), t("nav.myConnections")),
+    [connections, expanded, openConnections, openDatabases, filter, starredOnly, t],
   );
 
   const add = (set: Set<string>, id: string) => new Set(set).add(id);
@@ -405,13 +420,88 @@ export default function App() {
   const objectTitle = (name: string, kind: MessageKey, c = ctx) =>
     c.database && c.schema && c.connection ? `${name} @${c.database.name}.${c.schema.name} (${c.connection.name}) - ${t(kind)}` : name;
 
-  const newQuery = (sqlText?: string) => {
+  /** `forConn`: abre a consulta já apontando para essa conexão, mesmo fechada (abre ao executar). */
+  const newQuery = (sqlText?: string, forConn?: ConnectionMock) => {
+    if (forConn) {
+      openTab({
+        kind: "query", title: t("tab.untitledQuery"), windowTitle: t("tab.untitledQuery"), icon: "query",
+        connectionId: forConn.id, database: forConn.initialDatabase || "postgres", schema: "public", sql: sqlText,
+      });
+      return;
+    }
     const conn = ctx.connection && openConnections.has(ctx.connection.id) ? ctx.connection : undefined;
     const db = conn ? ctx.database ?? conn.databases[0] : undefined;
     openTab({
       kind: "query", title: t("tab.untitledQuery"), windowTitle: t("tab.untitledQuery"), icon: "query",
       connectionId: conn?.id, database: db?.name, schema: ctx.schema?.name ?? db?.schemas[0]?.name, sql: sqlText,
     });
+  };
+
+  /* ---------- Ações do menu da conexão ---------- */
+  const duplicateConnection = (conn: ConnectionMock) => {
+    const id = `c${Date.now().toString(36)}`;
+    const copy: ConnectionMock = {
+      ...conn, id, name: t("conn.copyName", { name: conn.name }),
+      databases: conn.live ? [] : conn.databases, starred: false,
+    };
+    const pw = sessionPasswords.get(conn.id);
+    if (pw !== undefined) sessionPasswords.set(id, pw);
+    setConnections((list) => {
+      const i = list.findIndex((c) => c.id === conn.id);
+      return [...list.slice(0, i + 1), copy, ...list.slice(i + 1)];
+    });
+    setSelectedNode(`conn:${seg(id)}`);
+  };
+
+  const sqlFileInput = useRef<HTMLInputElement>(null);
+  const sqlFileTarget = useRef<{ connId: string; database: string } | null>(null);
+  const pickSqlFile = (connId: string, database: string) => {
+    sqlFileTarget.current = { connId, database };
+    if (sqlFileInput.current) {
+      sqlFileInput.current.value = "";
+      sqlFileInput.current.click();
+    }
+  };
+  const onSqlFilePicked = async (file: File | undefined) => {
+    const target = sqlFileTarget.current;
+    if (!file || !target) return;
+    if (file.size > MAX_SQL_FILE_BYTES) {
+      setDialog({ kind: "error", title: t("cmd.executeSqlFile"), message: t("msg.execFileTooLarge", { mb: MAX_SQL_FILE_BYTES / 1024 / 1024 }) });
+      return;
+    }
+    setDialog({ kind: "execFile", ...target, fileName: file.name, size: file.size, sql: await file.text() });
+  };
+
+  const runSqlFile = async (d: Extract<Dialog, { kind: "execFile" }>) => {
+    setDialog({ ...d, busy: true, error: undefined });
+    try {
+      const out = await pg.execute(d.connId, d.database, d.sql, 1);
+      const affected = out.statements.reduce((s, st) => s + (st.result ? 0 : st.rowsAffected ?? 0), 0);
+      setDialog({
+        kind: "info", title: t("cmd.executeSqlFile"),
+        message: t("msg.execFileDone", { n: out.statements.length, rows: affected, s: (out.elapsedMs / 1000).toFixed(2) }),
+      });
+      const conn = connectionsRef.current.find((c) => c.id === d.connId);
+      if (conn?.databases.find((x) => x.name === d.database)?.loaded) void loadDatabase(d.connId, d.database, true).catch(() => undefined);
+    } catch (e) {
+      // Sem transação explícita no arquivo, comandos anteriores ao erro já foram efetivados.
+      setDialog({ ...d, busy: false, error: `${errorText(toAtlasError(e))}\n\n${t("msg.execFilePartial")}` });
+    }
+  };
+
+  const createDatabase = async (d: Extract<Dialog, { kind: "newDatabase" }>) => {
+    const conn = connectionsRef.current.find((c) => c.id === d.connId);
+    if (!conn || !d.name) return;
+    setDialog({ ...d, busy: true, error: undefined });
+    try {
+      // CREATE DATABASE não roda dentro de transação: executa isolado.
+      await pg.execute(conn.id, conn.initialDatabase || "postgres", `CREATE DATABASE ${quoteIdent(d.name)}`, 1);
+      setDialog(null);
+      const node = nodes.find((n) => n.id === `conn:${seg(conn.id)}`);
+      if (node) refreshNode(node);
+    } catch (e) {
+      setDialog({ ...d, busy: false, error: errorText(toAtlasError(e)) });
+    }
   };
 
   const newTable = () => {
@@ -546,16 +636,42 @@ export default function App() {
     if (node.kind === "connection" && c.connection) {
       const conn = c.connection;
       const isOpen = openConnections.has(conn.id);
+      const live = !!conn.live;
+      const setColor = (color?: ConnectionColor) => updateConn(conn.id, (x) => ({ ...x, color }));
+      // Mesma ordem e agrupamento do menu da referência (CONFIRMADO_EM_CAPTURA).
       items.push(
         isOpen ? item("cmd.closeConnection", () => disconnect(conn.id)) : item("cmd.openConnection", () => connect(conn.id)),
+        {
+          kind: "sub", label: "cmd.switchProfile",
+          items: [{ kind: "item", text: `${t("conn.mainProfile")} (${t("conn.active")})`, checked: true, run: () => undefined }],
+        },
         sep,
-        item("cmd.editConnection", isOpen ? undefined : () => setDialog({ kind: "connection", editing: conn })),
+        item("cmd.editConnection", () => setDialog({ kind: "connection", editing: conn })),
         item("cmd.newConnection", () => setDialog({ kind: "connection" })),
-        item("cmd.deleteConnection", isOpen ? undefined : () => setDialog({ kind: "deleteConnection", conn })),
+        item("cmd.deleteConnection", () => setDialog({ kind: "deleteConnection", conn })),
+        item("cmd.duplicateConnection", () => duplicateConnection(conn)),
         sep,
-        item("cmd.newQuery", isOpen ? () => newQuery() : undefined),
+        item("cmd.newDatabase", isOpen && live ? () => setDialog({ kind: "newDatabase", connId: conn.id }) : undefined),
+        item("cmd.newQuery", () => (isOpen ? newQuery() : newQuery(undefined, conn))),
         sep,
-        item("cmd.refresh", isOpen && conn.live ? () => refreshNode(node) : undefined),
+        item("cmd.console"),
+        item("cmd.executeSqlFile", isOpen && live ? () => pickSqlFile(conn.id, conn.initialDatabase || "postgres") : undefined),
+        sep,
+        item(conn.starred ? "cmd.removeStar" : "cmd.addStar", () => updateConn(conn.id, (x) => ({ ...x, starred: !x.starred }))),
+        {
+          kind: "sub", label: "sub.color",
+          items: [
+            { kind: "item", text: t("color.none"), checked: !conn.color || undefined, run: () => setColor(undefined) },
+            ...CONNECTION_COLORS.map<MenuEntry>((col) => ({
+              kind: "item", text: t(`color.${col}` as MessageKey), icon: "colorDot", iconColor: COLOR_HEX[col],
+              checked: conn.color === col || undefined, run: () => setColor(col),
+            })),
+          ],
+        },
+        sep,
+        item("cmd.share"),
+        sep,
+        item("cmd.refresh", isOpen && live ? () => refreshNode(node) : undefined),
       );
     }
     if (node.kind === "database") {
@@ -570,6 +686,7 @@ export default function App() {
           : item("cmd.openDatabase", () => toggle(node)),
         sep,
         item("cmd.newQuery", () => newQuery()),
+        item("cmd.executeSqlFile", isOpen && live && c.connection && c.database ? () => pickSqlFile(c.connection!.id, c.database!.name) : undefined),
         sep,
         item("cmd.refresh", isOpen && live ? () => refreshNode(node) : undefined),
       );
@@ -958,6 +1075,8 @@ export default function App() {
                   onToggle={toggle}
                   onCollapseAll={() => setExpanded(new Set())}
                   onContextMenu={showContextMenu}
+                  starredOnly={starredOnly}
+                  onToggleStarredOnly={() => setStarredOnly((s) => !s)}
                 />
               </div>
               <div className="splitter" role="separator" aria-orientation="vertical" onMouseDown={startResize} />
@@ -1025,6 +1144,8 @@ export default function App() {
           message={t("msg.deleteConnection", { name: dialog.conn.name })}
           danger
           onOk={() => {
+            if (openConnections.has(dialog.conn.id)) disconnect(dialog.conn.id);
+            sessionPasswords.delete(dialog.conn.id);
             setConnections((list) => list.filter((c) => c.id !== dialog.conn.id));
             setSelectedNode("root");
             setDialog(null);
@@ -1063,6 +1184,54 @@ export default function App() {
       {dialog?.kind === "error" && (
         <MessageDialog title={dialog.title} message={dialog.message} danger onOk={() => setDialog(null)} onCancel={() => setDialog(null)} />
       )}
+      {dialog?.kind === "info" && (
+        <MessageDialog title={dialog.title} message={dialog.message} onOk={() => setDialog(null)} onCancel={() => setDialog(null)} />
+      )}
+      {dialog?.kind === "newDatabase" && !dialog.name && (
+        <MessageDialog
+          title={t("cmd.newDatabase").replace(/\.\.\.$/, "")}
+          prompt={{ label: t("msg.newDatabaseName"), initial: "" }}
+          onOk={(name) => name && setDialog({ ...dialog, name })}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+      {dialog?.kind === "newDatabase" && dialog.name && (
+        <MessageDialog
+          title={t("des.reviewTitle")}
+          message={t("des.reviewMessage")}
+          sql={`CREATE DATABASE ${quoteIdent(dialog.name)};`}
+          okLabel={t("msg.create")}
+          busy={dialog.busy}
+          error={dialog.error}
+          onOk={() => void createDatabase(dialog)}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+      {dialog?.kind === "execFile" && (() => {
+        const conn = connections.find((c) => c.id === dialog.connId);
+        const preview = dialog.sql.length > 6000 ? `${dialog.sql.slice(0, 6000)}\n\n-- … (${t("msg.execFileMore", { n: dialog.sql.length - 6000 })})` : dialog.sql;
+        return (
+          <MessageDialog
+            title={t("cmd.executeSqlFile").replace(/\.\.\.$/, "")}
+            message={t("msg.execFileMessage", { file: dialog.fileName, kb: Math.max(1, Math.round(dialog.size / 1024)), db: dialog.database, conn: conn?.name ?? "" })}
+            sql={preview}
+            danger
+            confirmText={conn?.environment === "production" ? dialog.database : undefined}
+            okLabel={t("msg.execute")}
+            busy={dialog.busy}
+            error={dialog.error}
+            onOk={() => void runSqlFile(dialog)}
+            onCancel={() => setDialog(null)}
+          />
+        );
+      })()}
+      <input
+        ref={sqlFileInput}
+        type="file"
+        accept=".sql,.txt,text/plain"
+        hidden
+        onChange={(e) => void onSqlFilePicked(e.target.files?.[0])}
+      />
       {dialog?.kind === "about" && (
         <MessageDialog title={t("cmd.about")} message={t("msg.about")} onOk={() => setDialog(null)} onCancel={() => setDialog(null)} />
       )}

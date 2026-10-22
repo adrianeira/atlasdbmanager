@@ -19,6 +19,30 @@ body.is-resizing-v {
   cursor: row-resize;
 }
 
+/* ---------- Cor e estrela da conexão ---------- */
+
+.tree-row.has-color {
+  box-shadow: inset 3px 0 0 var(--conn-color);
+  background: color-mix(in srgb, var(--conn-color) 14%, transparent);
+}
+
+.tree-row.has-color.is-selected {
+  background: color-mix(in srgb, var(--conn-color) 28%, var(--c-selected));
+}
+
+.color-red { --conn-color: #e5484d; }
+.color-orange { --conn-color: #f08c2e; }
+.color-yellow { --conn-color: #e2b714; }
+.color-green { --conn-color: #2fb36b; }
+.color-blue { --conn-color: #2f7fd0; }
+.color-purple { --conn-color: #8c4fe0; }
+.color-gray { --conn-color: #8c8c8c; }
+
+.tree-star {
+  margin-left: 6px;
+  display: flex;
+}
+
 /* ---------- Logotipos de SGBD ---------- */
 
 /* Conexão fechada: logotipo em cinza, como na referência. */

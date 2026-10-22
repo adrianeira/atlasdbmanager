@@ -19,6 +19,8 @@ interface Props {
   onToggle: (node: TreeNode) => void;
   onCollapseAll: () => void;
   onContextMenu: (node: TreeNode, x: number, y: number) => void;
+  starredOnly: boolean;
+  onToggleStarredOnly: () => void;
 }
 
 /** Id da conexão a partir do id do nó "conn:<id>". */
@@ -127,7 +129,7 @@ export function NavigationPane(p: Props) {
               aria-selected={selected}
               aria-expanded={n.expandable ? expanded : undefined}
               aria-level={n.depth + 1}
-              className={`tree-row${n.kind === "root" ? " tree-root" : ""}${selected ? " is-selected" : ""}`}
+              className={`tree-row${n.kind === "root" ? " tree-root" : ""}${selected ? " is-selected" : ""}${n.color ? ` has-color color-${n.color}` : ""}`}
               style={{ paddingLeft: n.kind === "root" ? 16 : 14 + n.depth * 18 }}
               onMouseDown={() => p.onSelect(n.id)}
               onDoubleClick={() => p.onActivate(n)}
@@ -151,6 +153,7 @@ export function NavigationPane(p: Props) {
               )}
               <span className="tree-icon">{icon(n)}</span>
               <span className="tree-label">{n.label}</span>
+              {n.starred && <span className="tree-star" aria-label="★"><SmallIcon name="starFilled" size={12} /></span>}
               {busy && n.kind === "connection" && <span className="tree-busy">{t("nav.connecting")}</span>}
             </div>
           );
@@ -169,8 +172,14 @@ export function NavigationPane(p: Props) {
         <button type="button" className="icon-button" title={t("nav.filter")} disabled>
           <SmallIcon name="filter" />
         </button>
-        <button type="button" className="icon-button" title={t("nav.showFavorites")} disabled>
-          <SmallIcon name="star" />
+        <button
+          type="button"
+          className={`icon-button${p.starredOnly ? " is-active" : ""}`}
+          title={t("nav.showFavorites")}
+          aria-pressed={p.starredOnly}
+          onClick={p.onToggleStarredOnly}
+        >
+          <SmallIcon name={p.starredOnly ? "starFilled" : "star"} />
         </button>
         <button type="button" className="icon-button" title={t("nav.collapseAll")} onClick={p.onCollapseAll}>
           <SmallIcon name="collapseAll" />

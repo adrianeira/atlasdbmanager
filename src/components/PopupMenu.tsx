@@ -49,12 +49,14 @@ export function PopupMenu({ items, commands, onClose, style, className }: Props)
         const label = cmd ? t(cmd.label) : e.kind === "item" ? e.text : "";
         const icon = cmd?.icon ?? (e.kind === "item" ? e.icon : undefined);
         const run = cmd ? cmd.run : e.kind === "item" ? e.run : undefined;
+        const checked = cmd?.checked ?? (e.kind === "item" ? e.checked : undefined);
+        const iconColor = e.kind === "item" ? e.iconColor : undefined;
         return (
           <button
             key={cmd?.id ?? `item${i}`}
             type="button"
-            role={cmd?.checked === undefined ? "menuitem" : "menuitemcheckbox"}
-            aria-checked={cmd?.checked}
+            role={checked === undefined ? "menuitem" : "menuitemcheckbox"}
+            aria-checked={checked}
             className="menu-entry"
             disabled={!enabled}
             title={enabled ? undefined : t("notImplemented")}
@@ -64,7 +66,9 @@ export function PopupMenu({ items, commands, onClose, style, className }: Props)
               run?.();
             }}
           >
-            <span className="menu-check">{cmd?.checked ? <SmallIcon name="check" /> : icon ? <SmallIcon name={icon} /> : null}</span>
+            <span className="menu-check" style={iconColor ? { color: iconColor } : undefined}>
+              {checked ? <SmallIcon name="check" /> : icon ? <SmallIcon name={icon} /> : null}
+            </span>
             <span className="menu-label">{label}</span>
             <span className="menu-shortcut">{cmd?.shortcut ?? ""}</span>
           </button>
