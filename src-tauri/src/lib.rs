@@ -8,7 +8,7 @@ use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
 /// Tempo mínimo da tela de abertura (para não piscar quando o app carrega rápido) e o máximo, depois do qual a
 /// janela principal aparece mesmo que a interface nunca avise que está pronta.
-const SPLASH_MIN: Duration = Duration::from_millis(1500);
+const SPLASH_MIN: Duration = Duration::from_millis(3000);
 const SPLASH_MAX: Duration = Duration::from_secs(20);
 /// Tempo que a barra completa fica visível antes de a splash fechar.
 const SPLASH_FINISH: Duration = Duration::from_millis(350);

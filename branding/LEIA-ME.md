@@ -16,7 +16,7 @@ Para trocar o logo ou a splash, substitua os arquivos de origem (mesmos nomes) e
 ## Onde cada um é usado
 
 - **Ícone do app** (janela, barra de tarefas, instalador, atalho): `src-tauri/icons/`, gerado de `logo-1024.png`.
-- **Tela de abertura:** `public/splash.jpg` (imagem, sem barra nem texto) + `public/splash.html`/`splash.js` (barra e texto animados por cima; ajuste `.progress` no CSS se mudar a imagem). Fica até as conexões serem lidas (mín. 1,5 s, máx. 20 s).
+- **Tela de abertura:** `public/splash.jpg` (imagem, sem barra nem texto) + `public/splash.html`/`splash.js` (barra e texto animados por cima; ajuste `.progress` no CSS se mudar a imagem). Fica até as conexões serem lidas (mín. 3 s, máx. 20 s).
 - **Janela "Sobre" e favicon:** `public/logo.png` (256×256).
 
 ## Regerar
