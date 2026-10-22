@@ -87,6 +87,11 @@ body.is-resizing-v {
   z-index: 90;
 }
 
+.ot-button.is-active {
+  background: var(--c-selected);
+  border-color: var(--c-selected-border);
+}
+
 /* ---------- Botão com seta (split) ---------- */
 
 .split-button {
@@ -878,6 +883,33 @@ textarea.field.remarks {
   white-space: nowrap;
   overflow: hidden;
   line-height: 16px;
+  padding-right: 14px;
+}
+
+/* Menu "⋯" do cabeçalho (Sort Ascending/Descending, Remove All Sorts, Add Filter): só no hover. */
+.dg-th-menu {
+  position: absolute;
+  top: 3px;
+  right: 7px;
+  width: 16px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--c-text-muted);
+  font-size: 11px;
+  line-height: 14px;
+  cursor: default;
+  opacity: 0;
+  pointer-events: none;
+}
+.dg-th:hover .dg-th-menu {
+  opacity: 1;
+  pointer-events: auto;
+}
+.dg-th-menu:hover {
+  background: var(--c-hover);
+  color: var(--c-text);
 }
 
 .dg-th-type {
@@ -958,6 +990,88 @@ textarea.field.remarks {
   background: var(--c-edited);
 }
 
+/* Coluna gerada pelo banco (identity ALWAYS / STORED): sem edição, visual atenuado. */
+.dg-td.is-generated {
+  color: var(--c-text-muted);
+  background: var(--c-surface-alt);
+  cursor: not-allowed;
+}
+
+/* Barra "Localizar dados": ocorrência destacada e a atual (como na referência). */
+.dg-td.is-find-match {
+  background: #fff59d;
+  color: #1a1a1a;
+}
+.dg-td.is-find-active {
+  background: #ffb300;
+  color: #1a1a1a;
+}
+
+.data-find-stack {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+}
+.data-find {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  border-top: 1px solid var(--c-border);
+  background: var(--c-surface-alt);
+  min-height: 26px;
+}
+.data-find-replace .find-input {
+  padding-left: 8px;
+  background-image: none;
+}
+.data-find .find-button {
+  flex: none;
+  white-space: nowrap;
+  padding: 2px 12px;
+  min-height: 22px;
+  border: 1px solid var(--c-border);
+  background: var(--c-surface);
+  color: var(--c-text);
+  cursor: pointer;
+  border-radius: 2px;
+}
+.data-find .find-button:hover:not(:disabled) {
+  background: var(--c-hover);
+}
+.data-find .find-button:disabled {
+  color: var(--c-muted);
+  cursor: default;
+  opacity: 0.6;
+}
+.data-find .find-input {
+  flex: 1;
+  min-width: 0;
+  padding-left: 22px;
+  background-repeat: no-repeat;
+  background-position: 6px center;
+  background-size: 12px 12px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><circle cx='5' cy='5' r='3.2' fill='none' stroke='%23666' stroke-width='1.1'/><path d='M7.3 7.3L10 10' stroke='%23666' stroke-width='1.3' stroke-linecap='round'/></svg>");
+}
+.data-find .find-count {
+  color: var(--c-muted);
+  font-size: 11px;
+  min-width: 60px;
+  text-align: right;
+}
+.data-find .find-count.is-none { color: #c62828; }
+.data-find .find-spacer { flex: 0 0 6px; }
+.data-find .find-close {
+  width: 20px; height: 20px;
+  display: inline-flex;
+  align-items: center; justify-content: center;
+  border: 0; background: transparent; cursor: pointer;
+  color: var(--c-muted);
+  font-size: 14px; line-height: 1;
+}
+.data-find .find-close:hover { color: var(--c-text); }
+
 /* Booleano exibido como checkbox. */
 .dg-check {
   margin: 0;
@@ -991,6 +1105,18 @@ textarea.field.remarks {
 /* Botão "…" do lookup de FK, à direita da célula ativa. */
 .dg-td {
   position: relative;
+}
+
+/* Marcador visual à direita em células de data/hora/timestamp (identifica a coluna). */
+.dg-dt-icon {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  pointer-events: none;
+  color: var(--c-text-muted);
+  opacity: 0.7;
 }
 
 .dg-lookup {
@@ -1106,6 +1232,104 @@ textarea.field.remarks {
   font: inherit;
 }
 
+/* Popup próprio de data/hora (DateTimePopup): calendário + relógio compactos. */
+.dtp {
+  z-index: 100;
+  display: flex;
+  background: var(--c-surface);
+  color: var(--c-text);
+  border: 1px solid var(--c-border-strong);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  border-radius: 2px;
+  font-size: 11px;
+  user-select: none;
+}
+.dtp-cal { padding: 6px; flex: none; }
+.dtp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 2px 4px;
+}
+.dtp-head .icon-button {
+  width: 20px; height: 20px;
+  font-size: 10px;
+  color: var(--c-text);
+}
+.dtp-month { font-weight: 600; }
+.dtp-dow {
+  display: grid;
+  grid-template-columns: repeat(7, 24px);
+  color: var(--c-text-muted);
+  text-align: center;
+  padding-bottom: 2px;
+}
+.dtp-dow span { line-height: 18px; }
+.dtp-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 24px);
+  gap: 0;
+}
+.dtp-day {
+  width: 24px; height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--c-text);
+  font: inherit;
+  cursor: pointer;
+  border-radius: 2px;
+}
+.dtp-day.is-other { color: var(--c-text-muted); }
+.dtp-day:hover { background: var(--c-hover); }
+.dtp-day.is-today { outline: 1px solid var(--c-focus); outline-offset: -1px; }
+.dtp-day.is-sel {
+  background: var(--c-selected);
+  color: var(--c-text);
+  font-weight: 600;
+}
+
+.dtp-time {
+  flex: none;
+  padding: 6px;
+  border-left: 1px solid var(--c-border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dtp-time-head { color: var(--c-text-muted); font-weight: 600; }
+.dtp-time-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.dtp-time-input {
+  width: 28px;
+  text-align: center;
+  padding: 2px 0;
+}
+
+.dtp-foot {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px;
+  border-top: 1px solid var(--c-border);
+  background: var(--c-surface);
+}
+.dtp { padding-bottom: 28px; position: relative; }
+.dtp-foot .link {
+  background: none;
+  border: 0;
+  color: var(--c-accent);
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+}
+.dtp-foot .link:hover { text-decoration: underline; }
+
 .data-footer {
   flex: none;
   display: flex;
@@ -1130,6 +1354,8 @@ textarea.field.remarks {
   width: 34px;
   height: 19px;
   text-align: center;
+  background: var(--c-hover);
+  border-color: var(--c-selected-border);
 }
 
 .data-limit {
@@ -1193,18 +1419,178 @@ textarea.field.remarks {
   pointer-events: none;
 }
 
-.ctx-select select {
+/* Dropdown próprio (Dropdown.tsx): botão + popup em DOM próprio, no lugar do <select> nativo
+   (cujo popup o Chromium pinta cinza escuro no hover, ignorando CSS). */
+.dd-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
   width: 160px;
   height: 22px;
-  padding: 0 4px 0 24px;
-  border: 1px solid #7a7a7a;
+  padding: 0 4px;
+  border: 1px solid var(--c-border-strong);
   background: var(--c-surface);
   color: var(--c-text);
   font: inherit;
+  cursor: default;
+  text-align: left;
 }
+.dd-button:disabled { background: var(--c-field-disabled); color: var(--c-text-disabled); }
+.dd-button .dd-left { flex: none; display: inline-flex; }
+.dd-button .dd-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dd-button .dd-chevron { flex: none; display: inline-flex; color: var(--c-text-muted); }
 
-.ctx-select select:disabled {
+.ctx-dd { width: 160px; }
+.ctx-dd-db { width: 200px; }
+
+.dd-popup {
+  z-index: 100;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 2px 0;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border-strong);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+}
+.dd-item {
+  display: block;
+  width: 100%;
+  padding: 3px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--c-text);
+  font: inherit;
+  text-align: left;
+  cursor: default;
+  white-space: nowrap;
+}
+.dd-item.is-active { background: #0277BD; color: #ffffff; }
+.dd-item.is-selected { background: #0277BD; color: #ffffff; font-weight: 600; }
+.dd-item.is-selected.is-active { background: #0277BD; color: #ffffff; }
+
+/* Diálogo "Filter & Sort". */
+.modal {
+  display: flex;
+  flex-direction: column;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border-strong);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
+}
+.modal-header {
+  flex: none;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--c-border);
+  background: var(--c-surface-alt);
+  font-weight: 600;
+}
+.modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 12px;
+}
+.modal-footer {
+  flex: none;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 8px 12px;
+  border-top: 1px solid var(--c-border);
+  background: var(--c-surface-alt);
+}
+.fs-dialog { width: 640px; }
+.fs-section { margin-bottom: 10px; }
+.fs-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.fs-section-head h4 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-text);
+  flex: 1;
+}
+.fs-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.fs-row .fs-col { width: 200px; }
+.fs-row .fs-op { width: 120px; }
+.fs-row .fs-val { flex: 1; min-width: 80px; height: 22px; }
+.fs-row .fs-and { color: var(--c-text-muted); padding: 0 2px; }
+.fs-preview {
+  margin-top: 12px;
+  padding: 8px;
+  background: var(--c-surface-alt);
+  border: 1px solid var(--c-border);
+}
+.fs-preview-label { color: var(--c-text-muted); font-size: 11px; margin-bottom: 4px; }
+.fs-preview code { font-family: var(--font-mono); font-size: 11px; white-space: pre-wrap; word-break: break-all; }
+.muted { color: var(--c-text-muted); margin: 2px 0; }
+
+/* Diálogo "Columns" (mostrar/ocultar colunas do grid). */
+.cols-dialog { width: 360px; }
+.cols-list {
+  max-height: 360px;
+  overflow-y: auto;
+  border: 1px solid var(--c-border);
+}
+.cols-row {
+  display: flex;
+  width: 100%;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--c-border);
+}
+.cols-row:last-child { border-bottom: 0; }
+.cols-row:hover { background: var(--c-hover); }
+.cols-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cols-type { flex: none; font-size: 11px; }
+.cols-count { margin-top: 6px; font-size: 11px; }
+
+/* Painel "Cell Editor": edita a célula ativa num texto grande, com quebra de linha. */
+.cell-editor-panel {
+  flex: none;
+  height: 180px;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--c-border);
+  background: var(--c-surface);
+}
+.cell-editor-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--c-border);
+  background: var(--c-surface-alt);
+  min-height: 26px;
+}
+.cell-editor-col { font-weight: 600; }
+.cell-editor-type { font-size: 11px; }
+.cell-editor-text {
+  flex: 1;
+  min-height: 0;
+  resize: none;
+  border: 0;
+  outline: none;
+  padding: 6px 8px;
+  background: var(--c-surface);
+  color: var(--c-text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.cell-editor-text:read-only {
   background: var(--c-field-disabled);
+  color: var(--c-text-disabled);
 }
 
 .ctx-select:nth-child(2) select {

@@ -537,9 +537,9 @@ const small: Record<string, ReactElement> = {
 
 export type SmallIconName = keyof typeof small;
 
-export function SmallIcon({ name, size = 16 }: { name: SmallIconName; size?: number }) {
+export function SmallIcon({ name, size = 16, className }: { name: SmallIconName; size?: number; className?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden="true" className="icon16">
+    <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden="true" className={`icon16${className ? ` ${className}` : ""}`}>
       {small[name]}
     </svg>
   );

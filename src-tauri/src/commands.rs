@@ -4,8 +4,8 @@
 use crate::local::Local;
 use crate::sessions::Sessions;
 use atlas_core::{
-    ConnectionParams, DatabaseError, DatabaseList, QueryOutcome, RoleInfo, SchemaObjects, ServerInfo, TableDetail,
-    ViewDetail,
+    ConnectionParams, DatabaseError, DatabaseList, OrderBy, QueryOutcome, RoleInfo, SchemaObjects, ServerInfo, TableDetail,
+    TableFilter, ViewDetail,
 };
 use serde::Serialize;
 use tauri::State;
@@ -151,12 +151,26 @@ pub async fn pg_table_rows(
     database: String,
     schema: String,
     table: String,
-    order_by: Vec<String>,
+    order_by: Vec<OrderBy>,
+    filter: Option<TableFilter>,
     limit: Option<u32>,
     offset: u64,
 ) -> Result<TableRows, DatabaseError> {
     let s = sessions.get(&session_id, Some(&database)).await?;
     let limit = limit.map(|l| l.clamp(1, TABLE_ROWS_CAP as u32));
-    let (sql, outcome) = atlas_pg::table_rows(&s, &schema, &table, &order_by, limit, offset, TABLE_ROWS_CAP).await?;
+    let (sql, outcome) = atlas_pg::table_rows(&s, &schema, &table, &order_by, filter.as_ref(), limit, offset, TABLE_ROWS_CAP).await?;
     Ok(TableRows { sql, outcome })
+}
+
+#[tauri::command]
+pub async fn pg_table_count(
+    sessions: State<'_, Sessions>,
+    session_id: String,
+    database: String,
+    schema: String,
+    table: String,
+    filter: Option<TableFilter>,
+) -> Result<u64, DatabaseError> {
+    let s = sessions.get(&session_id, Some(&database)).await?;
+    atlas_pg::table_count(&s, &schema, &table, filter.as_ref()).await
 }

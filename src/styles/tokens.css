@@ -3,6 +3,7 @@
  * 1586x865 a 100%). Nenhuma View define cor ou tamanho fora destes tokens.
  */
 :root {
+  accent-color: #0277BD;
   --font-ui: "Segoe UI", system-ui, -apple-system, "Ubuntu", "Cantarell", sans-serif;
   --font-mono: "Cascadia Mono", Consolas, "SF Mono", "DejaVu Sans Mono", monospace;
   --fs-ui: 12px;

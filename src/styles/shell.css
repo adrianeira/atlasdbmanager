@@ -37,13 +37,19 @@ input {
 }
 
 :focus-visible {
-  outline: 2px solid var(--c-focus);
-  outline-offset: -2px;
+  outline: 1px solid var(--c-focus);
+  outline-offset: -1px;
 }
 
 .icon16 {
   flex: none;
   display: block;
+}
+
+/* Ícone "apagado" (ex.: schema fechado): dessaturado e com opacidade reduzida. */
+.icon16.is-muted {
+  filter: grayscale(1);
+  opacity: 0.55;
 }
 
 .shell {

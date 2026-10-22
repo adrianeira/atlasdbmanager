@@ -94,7 +94,7 @@ export function NavigationPane(p: Props) {
       case "database":
         return <SmallIcon name={p.openDatabases.has(n.id) ? "database" : "databaseClosed"} />;
       case "schema":
-        return <SmallIcon name="schema" />;
+        return <SmallIcon name="schema" className={isExpanded(n) ? undefined : "is-muted"} />;
       case "column":
         return <SmallIcon name={n.columnRole === "pk" ? "columnPk" : n.columnRole === "fk" ? "columnFk" : "column"} />;
       default:

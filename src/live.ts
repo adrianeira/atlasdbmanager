@@ -67,6 +67,8 @@ export function tableFromServer(base: DbObject, d: TableDetail): DbObject {
       default: c.default ?? undefined,
       comment: c.comment ?? undefined,
       collation: c.collation ?? undefined,
+      identity: c.identity === "a" || c.identity === "d" ? c.identity : undefined,
+      generated: c.generated === "s" ? "s" : undefined,
     })),
     indexes: d.indexes.map((i) => ({ name: i.name, fields: i.fields, method: i.method, unique: i.unique, concurrently: false, comment: i.comment ?? "" })),
     foreignKeys: cons("f").map((c) => ({

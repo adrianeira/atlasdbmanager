@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { errorText, toAtlasError, type PlannedStatement } from "../backend";
+import { errorText, toAtlasError, type OrderBy, type PlannedStatement, type TableFilter } from "../backend";
+import { CellEditorPanel } from "../components/CellEditorPanel";
+import { ColumnsDialog } from "../components/ColumnsDialog";
 import { DataGrid, typeKind, type GridColumn } from "../components/DataGrid";
+import { FilterSortDialog } from "../components/FilterSortDialog";
 import { FkLookup, type FkLookupSource } from "../components/FkLookup";
 import { MessageDialog } from "../components/MessageDialog";
 import type { StatusCell } from "../components/StatusBar";
@@ -14,8 +17,12 @@ import { columnType, selectSql } from "../sql/ddl";
 export interface TableDataBackend {
   loadDetail: () => Promise<DbObject>;
   /** `limit = null`: sem LIMIT ("Limitar registros" desmarcado). */
-  loadRows: (orderBy: string[], limit: number | null, offset: number) => Promise<{ sql: string; rows: CellValue[][]; truncated: boolean }>;
+  loadRows: (orderBy: OrderBy[], filter: TableFilter | null, limit: number | null, offset: number) => Promise<{ sql: string; rows: CellValue[][]; truncated: boolean }>;
   apply: (statements: PlannedStatement[]) => Promise<void>;
+  /** Opcional: cancela a consulta em andamento no servidor (botão "Parar"). */
+  cancel?: () => Promise<void>;
+  /** Opcional: total de registros (respeitando o filtro) para a navegação de páginas. */
+  count?: (filter: TableFilter | null) => Promise<number>;
 }
 
 interface Props {
@@ -47,9 +54,23 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   const keyCols = cols.map((c, i) => ({ c, i })).filter((x) => x.c.key).sort((a, b) => (a.c.key ?? 0) - (b.c.key ?? 0));
   const readOnly = isView || keyCols.length === 0;
 
+  // "Columns" da toolbar: colunas ocultas do grid, por nome (os dados continuam carregados).
+  const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
+  const [columnsOpen, setColumnsOpen] = useState(false);
+
   const columns: GridColumn[] = useMemo(
-    () => cols.map((c) => ({ name: c.name, type: columnType(c), kind: typeKind(c.type), isKey: !!c.key, required: c.notNull, hasDefault: !!c.default })),
-    [cols],
+    () => cols.map((c) => ({
+      name: c.name,
+      type: columnType(c),
+      kind: typeKind(c.type),
+      isKey: !!c.key,
+      required: c.notNull,
+      hasDefault: !!c.default,
+      // Bloqueia edição em colunas geradas pelo banco: GENERATED ALWAYS AS IDENTITY ou STORED.
+      generated: c.identity === "a" || c.generated === "s",
+      hidden: hiddenCols.has(c.name),
+    })),
+    [cols, hiddenCols],
   );
 
   const [original, setOriginal] = useState<CellValue[][]>(() => (backend ? [] : mockRows(tableProp)));
@@ -76,6 +97,71 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   const limit = limitOn ? pageSize : null;
   const [fkOpen, setFkOpen] = useState<{ row: number; fk: ForeignKeyDef; anchor: DOMRect } | null>(null);
 
+  // Barra "Localizar dados" (Ctrl+F): filtra em todas as colunas das linhas carregadas.
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState("");
+  const [findIndex, setFindIndex] = useState(0);
+  const [highlightAll, setHighlightAll] = useState(true);
+  const [replaceMode, setReplaceMode] = useState(false);
+  const [replaceText, setReplaceText] = useState("");
+  const findInputRef = useRef<HTMLInputElement>(null);
+
+  const findMatches = useMemo(() => {
+    if (!findOpen || !findQuery) return [] as Array<{ row: number; col: number }>;
+    const q = findQuery.toLowerCase();
+    const out: Array<{ row: number; col: number }> = [];
+    for (let r = 0; r < rows.length; r++) {
+      const row = rows[r];
+      for (let c = 0; c < row.length; c++) {
+        const v = row[c];
+        if (v !== null && v !== undefined && columns[c]?.kind !== "bool" && String(v).toLowerCase().includes(q)) {
+          out.push({ row: r, col: c });
+        }
+      }
+    }
+    return out;
+  }, [findOpen, findQuery, rows, columns]);
+
+  useEffect(() => {
+    if (findIndex >= findMatches.length) setFindIndex(0);
+  }, [findMatches, findIndex]);
+
+  const activeFind = findMatches[findIndex] ?? null;
+  const stepFind = (delta: number) => {
+    if (!findMatches.length) return;
+    setFindIndex((i) => (i + delta + findMatches.length) % findMatches.length);
+  };
+  const closeFind = () => { setFindOpen(false); setFindQuery(""); setReplaceMode(false); setReplaceText(""); };
+
+  // Célula "substituível": edição permitida e tipo compatível com busca em texto.
+  const cellReplaceable = (r: number, c: number): boolean => {
+    if (readOnly || deleted.has(r)) return false;
+    const kind = columns[c]?.kind;
+    return kind !== "bool" && kind !== "binary";
+  };
+  const applyReplace = (r: number, c: number) => {
+    const v = rows[r]?.[c];
+    if (v === null || v === undefined || !findQuery || !cellReplaceable(r, c)) return false;
+    // Primeira ocorrência (case-insensitive), preservando o resto do texto.
+    const s = String(v);
+    const i = s.toLowerCase().indexOf(findQuery.toLowerCase());
+    if (i < 0) return false;
+    onEdit(r, c, s.slice(0, i) + replaceText + s.slice(i + findQuery.length));
+    return true;
+  };
+  const replaceCurrent = () => {
+    if (!activeFind) return;
+    if (applyReplace(activeFind.row, activeFind.col)) {
+      // Avança para a próxima ocorrência (como na referência).
+      stepFind(1);
+    }
+  };
+  const replaceAll = () => {
+    if (!findMatches.length) return;
+    // Trabalha num snapshot: cada match é uma célula distinta, cada edição é independente.
+    for (const m of findMatches) applyReplace(m.row, m.col);
+  };
+
   // Coluna → FK a que pertence (para o botão "…" de lookup).
   const fkByCol = useMemo(() => {
     const m = new Map<number, ForeignKeyDef>();
@@ -96,20 +182,47 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
     setDeleted(new Set());
   };
 
-  /** `keepRow`: linha a manter selecionada após reler (ex.: depois de gravar um registro novo). */
-  const loadPage = useCallback(async (p: number, structure: DbObject, lim: number | null, keepRow?: number) => {
+  // Total conhecido (depois de "Última página" ou refresh). null = desconhecido.
+  const [totalRows, setTotalRows] = useState<number | null>(null);
+  // Texto editável do campo "página", separado do estado real para permitir digitação.
+  const [pageText, setPageText] = useState("1");
+  // Filter & Sort (botão da toolbar). Vazios = ordenação pela PK, sem WHERE.
+  const [sort, setSort] = useState<OrderBy[]>([]);
+  const [filter, setFilter] = useState<TableFilter | null>(null);
+  const [filterOpen, setFilterOpen] = useState(false);
+  // Coluna a pré-selecionar ao abrir via "Add Filter" no menu "⋯" do cabeçalho.
+  const [filterColumn, setFilterColumn] = useState<string | undefined>(undefined);
+  // Painel "Cell Editor": coluna ativa é relatada pelo grid (linha já é lifted via activeRow).
+  const [cellEditorOpen, setCellEditorOpen] = useState(false);
+  const [activeCol, setActiveCol] = useState(0);
+
+  /**
+   * `keepRow`: linha a manter selecionada após reler (ex.: depois de gravar um registro novo).
+   * `overrideSort`/`overrideFilter`: usados quando o chamador acabou de mudar `sort`/`filter` e
+   * não pode esperar o próximo render — `setState` é assíncrono, então o fechamento (closure)
+   * desta função só veria o valor novo depois; passando-o explicitamente evita aplicar o valor
+   * antigo (bug observado: clicar "Crescente" ordenava pelo sort anterior, não o novo).
+   */
+  const loadPage = useCallback(async (
+    p: number, structure: DbObject, lim: number | null, keepRow?: number,
+    overrideSort?: OrderBy[], overrideFilter?: TableFilter | null,
+  ) => {
     if (!backend) return;
     setLoading(true);
     setLoadError(null);
     try {
       const pk = (structure.columns ?? []).filter((c) => c.key).sort((a, b) => (a.key ?? 0) - (b.key ?? 0)).map((c) => c.name);
-      const res = await backend.loadRows(pk, lim, lim === null ? 0 : p * lim);
+      const effectiveSort = overrideSort ?? sort;
+      const effectiveFilter = overrideFilter !== undefined ? overrideFilter : filter;
+      const orderBy: OrderBy[] = effectiveSort.length ? effectiveSort : pk.map((c) => ({ column: c, descending: false }));
+      const res = await backend.loadRows(orderBy, effectiveFilter, lim, lim === null ? 0 : p * lim);
       setOriginal(res.rows);
       setRows(res.rows);
       setSqlText(res.sql);
       setTruncated(res.truncated);
       resetEdits();
       setPage(p);
+      setPageText(String(p + 1));
       setActiveRow(Math.max(0, Math.min(keepRow ?? 0, res.rows.length - 1)));
       setRefreshedAt(new Date());
     } catch (e) {
@@ -117,7 +230,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
     } finally {
       setLoading(false);
     }
-  }, [backend]);
+  }, [backend, sort, filter]);
 
   // Conexão real: lê a estrutura (colunas/PK) e a primeira página.
   useEffect(() => {
@@ -335,8 +448,64 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
 
   const refresh = () => {
     if (dirty) return;
+    setTotalRows(null); // relê a contagem na próxima vez que precisar
     if (backend) void loadPage(page, table, limit);
     else setRefreshedAt(new Date());
+  };
+
+  // "Parar" (botão ⏹): cancela a consulta em andamento no servidor.
+  const stop = () => {
+    if (!backend?.cancel) return;
+    void backend.cancel().catch(() => undefined);
+  };
+
+  // "Última página": busca o total (uma vez) e salta para a última página do limite atual.
+  const goLast = async () => {
+    if (!backend || limit === null || !canPage) return;
+    try {
+      let total = totalRows;
+      if (total === null && backend.count) {
+        total = await backend.count(filter);
+        setTotalRows(total);
+      }
+      if (total === null) return;
+      const last = Math.max(0, Math.ceil(total / limit) - 1);
+      await loadPage(last, table, limit);
+    } catch (e) {
+      setLoadError(errorText(toAtlasError(e)));
+    }
+  };
+
+  // Aplicação do diálogo Filter & Sort: zera a página e o total conhecido.
+  const applyFilterSort = (newFilter: TableFilter | null, newSort: OrderBy[]) => {
+    setFilter(newFilter);
+    setSort(newSort);
+    setTotalRows(null);
+    // Passa os valores novos direto (não espera o próximo render) — ver comentário em loadPage.
+    if (backend) void loadPage(0, table, limit, undefined, newSort, newFilter);
+  };
+
+  // Menu "⋯" do cabeçalho: ordenar só por aquela coluna (substitui a ordenação atual).
+  const sortByColumn = (col: number, descending: boolean) => {
+    const name = cols[col]?.name;
+    if (!name) return;
+    applyFilterSort(filter, [{ column: name, descending }]);
+  };
+  // "Remove All Sorts": volta à ordenação padrão (pela chave primária).
+  const clearSort = () => applyFilterSort(filter, []);
+  // "Add Filter": abre o diálogo já com uma regra para esta coluna.
+  const addFilterForColumn = (col: number) => {
+    setFilterColumn(cols[col]?.name);
+    setFilterOpen(true);
+  };
+
+  // Enter no campo de página: valida e navega.
+  const commitPage = () => {
+    const n = Number(pageText.trim());
+    if (!Number.isInteger(n) || n < 1 || !canPage) { setPageText(String(page + 1)); return; }
+    const target = n - 1;
+    if (target === page) { setPageText(String(page + 1)); return; }
+    void loadPage(target, table, limit);
   };
 
   // F5 (como na referência) relê só os registros desta tabela; o recarregamento da janela é bloqueado no App.
@@ -345,9 +514,18 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   useEffect(() => {
     if (!active) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "F5" || e.altKey || document.querySelector(".modal-overlay")) return;
-      e.preventDefault();
-      refreshRef.current();
+      if (document.querySelector(".modal-overlay")) return;
+      if (e.key === "F5" && !e.altKey) {
+        e.preventDefault();
+        refreshRef.current();
+        return;
+      }
+      // Ctrl+F (ou Cmd+F no macOS): abre a barra "Localizar dados" e foca o input.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key === "f" || e.key === "F")) {
+        e.preventDefault();
+        setFindOpen(true);
+        requestAnimationFrame(() => findInputRef.current?.select());
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -367,8 +545,8 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
     else setSizeText(String(pageSize));
   };
 
-  const tool = (icon: SmallIconName, label: MessageKey, onClick?: () => void) => (
-    <button type="button" className="ot-button" disabled={!onClick} onClick={onClick} title={onClick ? t(label) : t("notImplemented")}>
+  const tool = (icon: SmallIconName, label: MessageKey, onClick?: () => void, active?: boolean) => (
+    <button type="button" className={`ot-button${active ? " is-active" : ""}`} disabled={!onClick} onClick={onClick} title={onClick ? t(label) : t("notImplemented")}>
       <SmallIcon name={icon} />
       <span>{t(label)}</span>
     </button>
@@ -383,9 +561,9 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
       <div className="object-toolbar" role="toolbar">
         {tool("table", "data.tableProfile")}
         {tool("transaction", "data.beginTransaction")}
-        {tool("cellEditor", "data.cellEditor")}
-        {tool("filterSort", "data.filterSort")}
-        {tool("columns", "data.columns")}
+        {tool("cellEditor", "data.cellEditor", () => setCellEditorOpen((v) => !v), cellEditorOpen)}
+        {tool("filterSort", "data.filterSort", () => { setFilterColumn(undefined); setFilterOpen(true); })}
+        {tool("columns", "data.columns", () => setColumnsOpen(true))}
         {tool("profiling", "data.profiling")}
         {tool("import", "data.import")}
         {tool("export", "data.export")}
@@ -422,6 +600,14 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
               const fk = fkByCol.get(col);
               if (fk) setFkOpen({ row, fk, anchor });
             }}
+            findQuery={findOpen ? findQuery : ""}
+            activeFind={findOpen ? activeFind : null}
+            highlightAll={highlightAll}
+            onSortColumn={sortByColumn}
+            onClearSort={clearSort}
+            onAddFilter={addFilterForColumn}
+            onActiveCell={(_, c) => setActiveCol(c)}
+            onOpenCellEditor={(r, c) => { setActiveRow(r); setActiveCol(c); setCellEditorOpen(true); }}
           />
         ) : (
           <div className="form-view">
@@ -432,8 +618,8 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
                   className="field"
                   value={record[i] ?? ""}
                   placeholder={record[i] === null ? "(NULL)" : ""}
-                  readOnly={readOnly}
-                  title={c.notNull ? t("grid.required", { name: c.name }) : undefined}
+                  readOnly={readOnly || c.identity === "a" || c.generated === "s"}
+                  title={c.identity === "a" || c.generated === "s" ? t("grid.generated", { name: c.name }) : c.notNull ? t("grid.required", { name: c.name }) : undefined}
                   // Obrigatório (NOT NULL) não pode ficar em branco, como no grid.
                   onChange={(e) => { if (!(c.notNull && e.target.value === "")) onEdit(activeRow, i, e.target.value); }}
                 />
@@ -444,13 +630,82 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
         )}
       </div>
 
+      {cellEditorOpen && view === "grid" && cols[activeCol] && (
+        <CellEditorPanel
+          row={activeRow}
+          col={activeCol}
+          columnName={cols[activeCol].name}
+          columnType={columns[activeCol]?.type ?? ""}
+          kind={columns[activeCol]?.kind ?? "text"}
+          value={rows[activeRow]?.[activeCol] ?? null}
+          readOnly={readOnly || !!columns[activeCol]?.generated || columns[activeCol]?.kind === "binary" || deleted.has(activeRow) || !rows.length}
+          required={!!columns[activeCol]?.required}
+          onChange={(v) => onEdit(activeRow, activeCol, v)}
+          onClose={() => setCellEditorOpen(false)}
+        />
+      )}
+
+      {findOpen && (
+        <div className="data-find-stack">
+          <div className="data-find" role="search">
+            <button type="button" className="find-close" title={t("data.find.close")} aria-label={t("data.find.close")} onClick={closeFind}>✕</button>
+            <input
+              ref={findInputRef}
+              type="search"
+              className="field find-input"
+              placeholder={t("data.find.placeholder")}
+              value={findQuery}
+              onChange={(e) => { setFindQuery(e.target.value); setFindIndex(0); }}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") { e.preventDefault(); closeFind(); }
+                else if (e.key === "Enter") { e.preventDefault(); stepFind(e.shiftKey ? -1 : 1); }
+              }}
+            />
+            <span className={`find-count${findQuery && !findMatches.length ? " is-none" : ""}`}>
+              {findQuery ? (findMatches.length ? t("data.find.count", { i: findIndex + 1, n: findMatches.length }) : t("data.find.none")) : ""}
+            </span>
+            <button type="button" className="icon-button" title={t("data.find.prev")} disabled={!findMatches.length} onClick={() => stepFind(-1)}><SmallIcon name="prev" /></button>
+            <button type="button" className="icon-button" title={t("data.find.next")} disabled={!findMatches.length} onClick={() => stepFind(1)}><SmallIcon name="next" /></button>
+            <label className="check-row">
+              <input type="checkbox" checked={highlightAll} onChange={(e) => setHighlightAll(e.target.checked)} />
+              <span>{t("data.find.highlight")}</span>
+            </label>
+            <span className="spacer" />
+            <label className="check-row" title={readOnly ? t("data.readOnlyNoKey") : undefined}>
+              <input type="checkbox" checked={replaceMode} disabled={readOnly} onChange={(e) => setReplaceMode(e.target.checked)} />
+              <span>{t("data.find.replace")}</span>
+            </label>
+          </div>
+          {replaceMode && !readOnly && (
+            <div className="data-find data-find-replace" role="search">
+              <span className="find-close" aria-hidden="true" />
+              <input
+                type="text"
+                className="field find-input"
+                placeholder={t("data.find.replaceWith")}
+                value={replaceText}
+                onChange={(e) => setReplaceText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") { e.preventDefault(); closeFind(); }
+                  else if (e.key === "Enter") { e.preventDefault(); replaceCurrent(); }
+                }}
+              />
+              <span className="find-count" />
+              <button type="button" className="find-button" disabled={!findMatches.length} onClick={replaceCurrent}>{t("data.find.replace")}</button>
+              <button type="button" className="find-button" disabled={!findMatches.length} onClick={replaceAll}>{t("data.find.replaceAll")}</button>
+              <span className="spacer" />
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="data-footer">
         <button type="button" className="icon-button" title={t("data.addRecord")} disabled={readOnly || loading} onClick={addRow}><SmallIcon name="addRow" /></button>
         <button type="button" className="icon-button" title={t("data.deleteRecord")} disabled={readOnly || !rows.length} onClick={() => deleteRow()}><SmallIcon name="removeRow" /></button>
         <button type="button" className="icon-button" title={t("data.apply")} disabled={!dirty || applying} onClick={requestApply}><SmallIcon name="apply" /></button>
         <button type="button" className="icon-button" title={t("data.discard")} disabled={!dirty} onClick={discard}><SmallIcon name="discard" /></button>
         <button type="button" className="icon-button" title={t("data.refresh")} disabled={dirty || loading} onClick={refresh}><SmallIcon name="refresh" /></button>
-        <button type="button" className="icon-button" title={t("data.stop")} disabled><SmallIcon name="stopSmall" /></button>
+        <button type="button" className="icon-button" title={t("data.stop")} disabled={!backend?.cancel || (!loading && !applying)} onClick={stop}><SmallIcon name="stopSmall" /></button>
         {(loading || applying) && <span className="spinner" />}
         {dirty && <span className="data-pending">{t("data.pending", { n: edited.size + newRows.size + deleted.size })}</span>}
         <span className="spacer" />
@@ -480,9 +735,22 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
           <>
             <button type="button" className="icon-button" disabled={!canPage || page === 0} title={t("data.firstPage")} onClick={() => void loadPage(0, table, limit)}><SmallIcon name="first" /></button>
             <button type="button" className="icon-button" disabled={!canPage || page === 0} title={t("data.prevPage")} onClick={() => void loadPage(page - 1, table, limit)}><SmallIcon name="prev" /></button>
-            <input className="field page-input" value={page + 1} readOnly aria-label={t("data.page")} />
+            <input
+              className="field page-input"
+              value={pageText}
+              disabled={!canPage}
+              inputMode="numeric"
+              aria-label={t("data.page")}
+              onChange={(e) => setPageText(e.target.value.replace(/\D/g, ""))}
+              onFocus={(e) => e.target.select()}
+              onBlur={commitPage}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); commitPage(); }
+                if (e.key === "Escape") { e.preventDefault(); setPageText(String(page + 1)); }
+              }}
+            />
             <button type="button" className="icon-button" disabled={!canPage || !hasNext} title={t("data.nextPage")} onClick={() => void loadPage(page + 1, table, limit)}><SmallIcon name="next" /></button>
-            <button type="button" className="icon-button" disabled title={t("data.lastPage")}><SmallIcon name="last" /></button>
+            <button type="button" className="icon-button" disabled={!canPage || !backend?.count || limit === null} title={t("data.lastPage")} onClick={() => void goLast()}><SmallIcon name="last" /></button>
           </>
         )}
         <button
@@ -498,6 +766,33 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
         <button type="button" className={`sb-button${view === "grid" ? " is-active" : ""}`} title={t("data.gridView")} onClick={() => setView("grid")}><SmallIcon name="gridView" /></button>
         <button type="button" className={`sb-button${view === "form" ? " is-active" : ""}`} title={t("data.formView")} onClick={() => setView("form")}><SmallIcon name="formView" /></button>
       </div>
+
+      {filterOpen && (
+        <FilterSortDialog
+          columns={cols}
+          initialFilter={filter}
+          initialSort={sort}
+          initialColumn={filterColumn}
+          onApply={applyFilterSort}
+          onClose={() => setFilterOpen(false)}
+        />
+      )}
+
+      {columnsOpen && (
+        <ColumnsDialog
+          columns={cols.map((c) => ({ name: c.name, type: columnType(c) }))}
+          hidden={hiddenCols}
+          onToggle={(name) => setHiddenCols((s) => {
+            const n = new Set(s);
+            if (n.has(name)) n.delete(name); else n.add(name);
+            // Nunca deixa todas as colunas ocultas: sempre sobra pelo menos uma visível.
+            return n.size >= cols.length ? s : n;
+          })}
+          onShowAll={() => setHiddenCols(new Set())}
+          onHideAll={() => setHiddenCols(new Set(cols.slice(1).map((c) => c.name)))}
+          onClose={() => setColumnsOpen(false)}
+        />
+      )}
 
       {fkOpen && lookup && (
         <FkLookup

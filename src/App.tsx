@@ -940,7 +940,28 @@ export default function App() {
       const conn = c.connection;
       const dbName = c.database.name;
       const scName = c.schema.name;
+      const scPrefix = `${seg(conn.id)}/${seg(dbName)}/${seg(scName)}`;
+      const closeSchema = () => {
+        // Colapsa o schema e qualquer descendente (pastas, objetos, colunas),
+        // e marca como não carregado para a próxima abertura rebuscar do servidor.
+        setExpanded((s) => {
+          const n = new Set(s);
+          for (const id of n) {
+            if (id === node.id || id.startsWith(`folder:${scPrefix}/`) || id.startsWith(`object:${scPrefix}/`) || id.startsWith(`col:${scPrefix}/`)) n.delete(id);
+          }
+          return n;
+        });
+        setConnections((cs) => cs.map((cc) => cc.id !== conn.id ? cc : {
+          ...cc,
+          databases: cc.databases.map((d) => d.name !== dbName ? d : {
+            ...d,
+            schemas: d.schemas.map((s) => s.name !== scName ? s : { ...s, loaded: false, objects: {} }),
+          }),
+        }));
+      };
       items.push(
+        item("cmd.closeSchema", closeSchema),
+        sep,
         item("cmd.newSchema", live ? () => askName(t("cmd.newSchema"), t("msg.schemaName"), "", (name) => askDdl({
           title: t("cmd.newSchema"), statements: [`CREATE SCHEMA ${quoteIdent(name)};`],
           connId: conn.id, database: dbName, refresh: "database",
@@ -1345,14 +1366,18 @@ export default function App() {
     const schema = tab.schema ?? "";
     return (dataBackends.current[tab.id] ??= {
       loadDetail: async () => tableFromServer(base, await pg.tableDetail(connId, db, schema, tab.object ?? base.name)),
-      loadRows: async (orderBy, limit, offset) => {
-        const r = await pg.tableRows(connId, db, schema, tab.object ?? base.name, orderBy, limit, offset);
+      loadRows: async (orderBy, filter, limit, offset) => {
+        const r = await pg.tableRows(connId, db, schema, tab.object ?? base.name, orderBy, filter, limit, offset);
         const rs = r.outcome.statements[0]?.result;
         return { sql: r.sql, rows: rs?.rows ?? [], truncated: !!rs?.truncated };
       },
       apply: async (statements) => {
         await pg.apply(connId, db, statements);
       },
+      cancel: async () => {
+        await pg.cancel(connId, db);
+      },
+      count: async (filter) => pg.tableCount(connId, db, schema, tab.object ?? base.name, filter),
     });
   };
 

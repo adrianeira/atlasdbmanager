@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { DataGrid, typeKind, type GridColumn } from "../components/DataGrid";
+import { Dropdown } from "../components/Dropdown";
 import { PopupMenu } from "../components/PopupMenu";
 import { SqlEditor, type SqlEditorHandle } from "../components/SqlEditor";
 import type { StatusCell } from "../components/StatusBar";
@@ -294,38 +295,39 @@ export function QueryDoc({ connections, openConnections, initial, initialSql, ac
       </div>
 
       <div className="query-context">
-        <label className="ctx-select">
-          <span className="ctx-icon">{conn ? <ProviderIcon provider={conn.provider} open={connOpen} /> : <SmallIcon name="myConnections" />}</span>
-          <select
-            value={ctx.connectionId ?? ""}
-            onChange={(e) => {
-              const c = connections.find((x) => x.id === e.target.value);
-              const d0 = c?.databases[0];
-              setCtx({ connectionId: c?.id, database: d0?.name, schema: d0?.schemas[0]?.name });
-            }}
-            aria-label={t("tb.connection")}
-          >
-            <option value="">{t("query.noConnection")}</option>
-            {connections.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </label>
-        <label className="ctx-select">
-          <span className="ctx-icon"><SmallIcon name={db ? "database" : "databaseClosed"} /></span>
-          <select value={ctx.database ?? ""} onChange={(e) => {
-            const d1 = conn?.databases.find((x) => x.name === e.target.value);
+        <Dropdown
+          className="ctx-dd"
+          ariaLabel={t("tb.connection")}
+          leftIcon={conn ? <ProviderIcon provider={conn.provider} open={connOpen} /> : <SmallIcon name="myConnections" />}
+          value={ctx.connectionId ?? ""}
+          items={[{ value: "", label: t("query.noConnection") }, ...connections.map((c) => ({ value: c.id, label: c.name }))]}
+          onChange={(v) => {
+            const c = connections.find((x) => x.id === v);
+            const d0 = c?.databases[0];
+            setCtx({ connectionId: c?.id, database: d0?.name, schema: d0?.schemas[0]?.name });
+          }}
+        />
+        <Dropdown
+          className="ctx-dd ctx-dd-db"
+          ariaLabel={t("info.database")}
+          leftIcon={<SmallIcon name={db ? "database" : "databaseClosed"} />}
+          value={ctx.database ?? ""}
+          items={(conn?.databases ?? []).map((d) => ({ value: d.name, label: d.name }))}
+          disabled={!conn}
+          onChange={(v) => {
+            const d1 = conn?.databases.find((x) => x.name === v);
             setCtx({ ...ctx, database: d1?.name, schema: d1?.schemas[0]?.name });
-          }} disabled={!conn} aria-label={t("info.database")}>
-            {!conn && <option value="" />}
-            {conn?.databases.map((d) => <option key={d.name}>{d.name}</option>)}
-          </select>
-        </label>
-        <label className="ctx-select">
-          <span className="ctx-icon"><SmallIcon name={schemaMock ? "schema" : "schemaGray"} /></span>
-          <select value={ctx.schema ?? ""} onChange={(e) => setCtx({ ...ctx, schema: e.target.value })} disabled={!db} aria-label={t("info.schema")}>
-            {!db && <option value="" />}
-            {db?.schemas.map((s) => <option key={s.name}>{s.name}</option>)}
-          </select>
-        </label>
+          }}
+        />
+        <Dropdown
+          className="ctx-dd"
+          ariaLabel={t("info.schema")}
+          leftIcon={<SmallIcon name={schemaMock ? "schema" : "schemaGray"} />}
+          value={ctx.schema ?? ""}
+          items={(db?.schemas ?? []).map((s) => ({ value: s.name, label: s.name }))}
+          disabled={!db}
+          onChange={(v) => setCtx({ ...ctx, schema: v })}
+        />
         <div className="split-button">
           <button type="button" className="ot-button run-button" disabled={!conn || running} onClick={() => run(false)} title="Ctrl+R / F5">
             <SmallIcon name="run" />

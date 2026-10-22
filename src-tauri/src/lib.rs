@@ -57,6 +57,7 @@ pub fn run() {
             commands::pg_execute,
             commands::pg_cancel,
             commands::pg_table_rows,
+            commands::pg_table_count,
             commands::pg_apply,
             local::local_status,
             local::profiles_list,

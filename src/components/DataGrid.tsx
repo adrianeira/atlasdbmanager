@@ -1,9 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactElement } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactElement } from "react";
 import { createPortal } from "react-dom";
 import { copyToClipboard, readClipboard } from "../clipboard";
 import type { MenuEntry } from "../commands";
 import { useT } from "../i18n";
 import { quoteIdent, type CellValue } from "../model";
+import { DateTimePopup, type DateTimeKind } from "./DateTimePopup";
 import { PopupMenu } from "./PopupMenu";
 
 /*
@@ -25,6 +26,10 @@ export interface GridColumn {
   required?: boolean;
   /** Tem DEFAULT no servidor: num registro novo pode ficar em branco (o banco preenche). */
   hasDefault?: boolean;
+  /** Coluna gerada pelo banco (identity ALWAYS ou STORED): bloqueada para edição. */
+  generated?: boolean;
+  /** Oculta a coluna do grid (botão "Columns" da toolbar); os dados continuam no array de linhas. */
+  hidden?: boolean;
 }
 
 /** Valor que a célula receberia: fora de colunas de texto, vazio significa NULL. */
@@ -104,6 +109,15 @@ function autoWidth(c: GridColumn): number {
   return Math.ceil(Math.min(320, Math.max(BASE_WIDTH[c.kind], name, type)));
 }
 
+/** Subkind temporal para o picker custom (interval volta a ser editado como texto). */
+function dtKind(type: string): DateTimeKind | null {
+  const t = type.toLowerCase();
+  if (t.startsWith("timestamp")) return "datetime";
+  if (t.startsWith("date")) return "date";
+  if (t.startsWith("time")) return "time";
+  return null;
+}
+
 /** Texto exibido na célula (sem alterar o valor): BLOB vira "(BLOB) N bytes" como na referência. */
 function display(v: string, kind: TypeKind): string {
   if (kind === "binary" && v.startsWith("\\x")) return `(BLOB) ${(v.length - 2) / 2} bytes`;
@@ -154,26 +168,64 @@ interface Props {
   sqlTarget?: string;
   onDeleteRow?: (row: number) => void;
   onRefresh?: () => void;
+  /** Barra "Find Data": destaca células que contêm o texto. Vazio = sem busca. */
+  findQuery?: string;
+  /** Célula da ocorrência atual (destaque mais forte + rolagem). */
+  activeFind?: { row: number; col: number } | null;
+  /** Marcar todas as ocorrências (desligado = só a atual). */
+  highlightAll?: boolean;
+  /** Menu "⋯" no cabeçalho (hover): ordenar a coluna. Omitir esconde o botão. */
+  onSortColumn?: (col: number, descending: boolean) => void;
+  /** Idem: "Remove All Sorts" no menu do cabeçalho. */
+  onClearSort?: () => void;
+  /** Idem: "Add Filter" no menu do cabeçalho. */
+  onAddFilter?: (col: number) => void;
+  /** Avisa qual é a célula ativa (linha/coluna) a cada mudança — usado pelo painel "Cell Editor". */
+  onActiveCell?: (row: number, col: number) => void;
+  /** "Edit in Cell Editor" no menu de contexto da célula: abre o painel inferior nessa célula. */
+  onOpenCellEditor?: (row: number, col: number) => void;
 }
 
 export function DataGrid({
   columns, rows, readOnly, edited, deletedRows, newRows, activeRow, onActiveRow, onEdit, rowHeight = 23, simpleHeader, lookupCols, onLookup,
-  sqlTarget, onDeleteRow, onRefresh,
+  sqlTarget, onDeleteRow, onRefresh, findQuery, activeFind, highlightAll, onSortColumn, onClearSort, onAddFilter, onActiveCell, onOpenCellEditor,
 }: Props) {
   const t = useT();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; row: number; col: number } | null>(null);
+  const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number; col: number } | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewport, setViewport] = useState(400);
   const [activeCol, setActiveCol] = useState(0);
   const [editing, setEditing] = useState<{ row: number; col: number; value: string; isNull: boolean } | null>(null);
   const [widths, setWidths] = useState<number[]>([]);
+  const [editorEl, setEditorEl] = useState<HTMLInputElement | null>(null);
 
+  // Índices reais (em `columns`/`rows`) das colunas visíveis, na ordem — "Columns" da toolbar
+  // só afeta exibição/navegação; edição, FK e cópia continuam indexadas pela coluna real.
+  const visible = useMemo(() => columns.map((_, i) => i).filter((i) => !columns[i]?.hidden), [columns]);
+
+  // Larguras/posição só são reiniciadas quando a ESTRUTURA muda de verdade (nome/tipo), não a
+  // cada mostrar/ocultar coluna — senão o diálogo "Columns" resetaria larguras ajustadas manualmente.
+  const structureKey = useMemo(() => columns.map((c) => `${c.name}:${c.type}`).join("|"), [columns]);
   useEffect(() => {
     setWidths(columns.map((c) => c.width ?? autoWidth(c)));
-    setActiveCol(0);
+    const firstVisible = columns.findIndex((c) => !c.hidden);
+    setActiveCol(firstVisible >= 0 ? firstVisible : 0);
     setEditing(null);
-  }, [columns]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [structureKey]);
+
+  // Se a coluna ativa for ocultada, pula para a primeira coluna visível.
+  useEffect(() => {
+    if (visible.length && !visible.includes(activeCol)) setActiveCol(visible[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
+  useEffect(() => {
+    onActiveCell?.(activeRow, activeCol);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRow, activeCol]);
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
@@ -188,7 +240,15 @@ export function DataGrid({
   const overscan = 8;
   const first = Math.max(0, Math.floor(scrollTop / rowHeight) - overscan);
   const last = Math.min(rows.length, Math.ceil((scrollTop + viewport) / rowHeight) + overscan);
-  const totalWidth = rowHeadWidth + widths.reduce((a, b) => a + b, 0);
+  const totalWidth = rowHeadWidth + visible.reduce((a, i) => a + (widths[i] ?? 0), 0);
+
+  const findLower = findQuery ? findQuery.toLowerCase() : "";
+  const cellMatches = (v: CellValue, kind: TypeKind): boolean => {
+    if (!findLower || v === null) return false;
+    // Checkbox/booleano: comparar com "true"/"false"/"t"/"f" não acrescenta nada útil — ignorado.
+    if (kind === "bool") return false;
+    return display(v, kind).toLowerCase().includes(findLower);
+  };
 
   const ensureVisible = (row: number) => {
     const el = scrollRef.current;
@@ -199,16 +259,33 @@ export function DataGrid({
     else if (top + rowHeight > el.scrollTop + bodyHeight) el.scrollTop = top + rowHeight - bodyHeight;
   };
 
+  // Ocorrência ativa da busca: foca a célula e rola o grid para dentro da viewport.
+  useEffect(() => {
+    if (!activeFind) return;
+    onActiveRow(activeFind.row);
+    setActiveCol(activeFind.col);
+    ensureVisible(activeFind.row);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFind?.row, activeFind?.col]);
+
+  // Linha ativa alterada por fora (ex.: "Adicionar registro" criou linha no fim):
+  // garante que ela fique visível na viewport.
+  useEffect(() => {
+    ensureVisible(activeRow);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRow]);
+
   /** Booleano: alterna true/false (NULL vira true), no formato do servidor ("t"/"f"). */
   const toggleBool = (row: number, col: number) => {
-    if (readOnly || !onEdit || deletedRows?.has(row)) return;
+    if (readOnly || !onEdit || deletedRows?.has(row) || columns[col]?.generated) return;
     const v = rows[row][col];
     onEdit(row, col, v === "t" || v === "true" ? "f" : "t");
   };
 
   const startEdit = (row: number, col: number, initial?: string) => {
     // Binários não são editados como texto no grid (editor próprio de BLOB — spec §31.6).
-    if (readOnly || !onEdit || deletedRows?.has(row) || columns[col]?.kind === "binary") return;
+    // Colunas geradas pelo banco (identity ALWAYS / STORED) são sempre bloqueadas.
+    if (readOnly || !onEdit || deletedRows?.has(row) || columns[col]?.kind === "binary" || columns[col]?.generated) return;
     // Booleano é checkbox: Enter/F2/espaço alternam em vez de abrir o editor de texto.
     if (columns[col]?.kind === "bool") {
       if (initial === undefined || initial === " ") toggleBool(row, col);
@@ -239,9 +316,13 @@ export function DataGrid({
 
   const move = (dr: number, dc: number) => {
     const r = Math.max(0, Math.min(rows.length - 1, activeRow + dr));
-    const c = Math.max(0, Math.min(columns.length - 1, activeCol + dc));
+    if (dc !== 0 && visible.length) {
+      // dc conta passos entre colunas VISÍVEIS (colunas ocultas são puladas na navegação).
+      const pos = Math.max(0, visible.indexOf(activeCol));
+      const nextPos = Math.max(0, Math.min(visible.length - 1, pos + dc));
+      setActiveCol(visible[nextPos]);
+    }
     onActiveRow(r);
-    setActiveCol(c);
     ensureVisible(r);
   };
 
@@ -282,13 +363,14 @@ export function DataGrid({
     window.addEventListener("mouseup", onUp);
   };
 
-  /* ----- Menu de contexto da célula (itens e ordem da referência) ----- */
+  /* ----- Menu de contexto da célula e menu "⋯" do cabeçalho (mesmo padrão de fechamento) ----- */
   useEffect(() => {
-    if (!menu) return;
+    if (!menu && !headerMenu) return;
     const close = (e: Event) => {
       if (e instanceof KeyboardEvent && e.key !== "Escape") return;
       if (e instanceof MouseEvent && (e.target as HTMLElement).closest?.(".dg-menu")) return;
       setMenu(null);
+      setHeaderMenu(null);
     };
     window.addEventListener("mousedown", close);
     window.addEventListener("keydown", close);
@@ -298,7 +380,7 @@ export function DataGrid({
       window.removeEventListener("keydown", close);
       window.removeEventListener("resize", close);
     };
-  }, [menu]);
+  }, [menu, headerMenu]);
 
   const canEdit = (row: number, col: number) => !readOnly && !!onEdit && !deletedRows?.has(row) && columns[col]?.kind !== "binary";
   const setCell = (row: number, col: number, raw: CellValue) => {
@@ -339,7 +421,7 @@ export function DataGrid({
           item("grid.uuidV7", uuidOk ? () => setCell(row, col, uuidV7()) : undefined),
         ],
       },
-      item("grid.cellEditor"),
+      item("grid.cellEditor", onOpenCellEditor ? () => onOpenCellEditor(row, col) : undefined),
       sep,
       item("grid.deleteRecord", !readOnly && onDeleteRow ? () => onDeleteRow(row) : undefined),
       sep,
@@ -370,6 +452,19 @@ export function DataGrid({
       item("grid.removeFilters"),
       sep,
       item("grid.refresh", onRefresh),
+    ];
+  };
+
+  /** Menu "⋯" do cabeçalho: Sort Ascending/Descending, Remove All Sorts, Add Filter. */
+  const headerMenuItems = (col: number): MenuEntry[] => {
+    const item = (key: Parameters<typeof t>[0], run?: () => void): MenuEntry => ({ kind: "item", text: t(key), run });
+    const sep: MenuEntry = { kind: "sep" };
+    return [
+      item("grid.sortAsc", onSortColumn ? () => onSortColumn(col, false) : undefined),
+      item("grid.sortDesc", onSortColumn ? () => onSortColumn(col, true) : undefined),
+      item("grid.removeAllSorts", onClearSort ? () => onClearSort() : undefined),
+      sep,
+      item("grid.addFilter", onAddFilter ? () => onAddFilter(col) : undefined),
     ];
   };
 
@@ -407,7 +502,9 @@ export function DataGrid({
       <div className="dg-inner" style={{ width: totalWidth, height: headerHeight + rows.length * rowHeight }}>
         <div className="dg-header" style={{ height: headerHeight }} role="row">
           <div className="dg-rowhead" style={{ width: rowHeadWidth }} />
-          {columns.map((c, i) => (
+          {visible.map((i) => {
+            const c = columns[i];
+            return (
             <div
               key={c.name + i}
               className={`dg-th${i === activeCol && rows.length ? " is-active-col" : ""}`}
@@ -419,9 +516,26 @@ export function DataGrid({
               <div className="dg-th-name">{c.name}</div>
               {/* Em lotes com vários comandos o servidor não descreve os tipos: a linha fica vazia. */}
               {!simpleHeader && <div className="dg-th-type">{c.type && <><KindIcon kind={c.kind} /><span>{c.type}</span></>}</div>}
+              {/* "⋯" aparece no hover do cabeçalho: Sort Ascending/Descending, Remove All Sorts, Add Filter. */}
+              {(onSortColumn || onClearSort || onAddFilter) && (
+                <button
+                  type="button"
+                  className="dg-th-menu"
+                  title="…"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const r = e.currentTarget.getBoundingClientRect();
+                    setHeaderMenu({ x: r.left, y: r.bottom, col: i });
+                  }}
+                >
+                  ⋯
+                </button>
+              )}
               <span className="dg-resize" onMouseDown={(e) => startResize(i, e)} onDoubleClick={() => fitColumn(i)} />
             </div>
-          ))}
+            );
+          })}
         </div>
 
         {rows.slice(first, last).map((r, k) => {
@@ -432,20 +546,23 @@ export function DataGrid({
           return (
             <div key={ri} className={cls} style={{ top: headerHeight + ri * rowHeight, height: rowHeight }} role="row" aria-rowindex={ri + 1}>
               <div className="dg-rowhead" style={{ width: rowHeadWidth }} />
-              {columns.map((c, ci) => {
+              {visible.map((ci) => {
+                const c = columns[ci];
                 const v = r[ci];
                 const isEditing = editing?.row === ri && editing.col === ci;
                 // Obrigatório em branco: no editor enquanto digita, ou num registro novo ainda sem valor.
                 const editorInvalid = isEditing && !!c.required && editing.value === "";
                 const missing = !isEditing && !!c.required && !c.hasDefault && v === null && !!newRows?.has(ri);
-                const cellCls = `dg-td${c.kind === "number" ? " is-num" : c.kind === "bool" ? " is-bool" : ""}${isActive && ci === activeCol ? " is-focus" : ""}${edited?.has(`${ri}:${ci}`) ? " is-edited" : ""}${missing || editorInvalid ? " is-required" : ""}`;
+                const isFindActive = !!activeFind && activeFind.row === ri && activeFind.col === ci;
+                const isFindMatch = isFindActive || (highlightAll !== false && cellMatches(v, c.kind));
+                const cellCls = `dg-td${c.kind === "number" ? " is-num" : c.kind === "bool" ? " is-bool" : ""}${isActive && ci === activeCol ? " is-focus" : ""}${edited?.has(`${ri}:${ci}`) ? " is-edited" : ""}${missing || editorInvalid ? " is-required" : ""}${isFindMatch ? " is-find-match" : ""}${isFindActive ? " is-find-active" : ""}${c.generated ? " is-generated" : ""}`;
                 return (
                   <div
                     key={ci}
                     className={cellCls}
                     style={{ width: widths[ci] }}
                     role="gridcell"
-                    title={missing || editorInvalid ? t("grid.required", { name: c.name }) : undefined}
+                    title={missing || editorInvalid ? t("grid.required", { name: c.name }) : c.generated ? t("grid.generated", { name: c.name }) : undefined}
                     onMouseDown={() => { onActiveRow(ri); setActiveCol(ci); if (editing && !isEditing && !commitEdit()) cancelEdit(); }}
                     onDoubleClick={() => startEdit(ri, ci)}
                     onContextMenu={isEditing ? undefined : (e) => openMenu(e, ri, ci)}
@@ -456,16 +573,15 @@ export function DataGrid({
                         autoFocus
                         value={editing.value}
                         placeholder={editing.isNull ? "(Null)" : ""}
+                        ref={setEditorEl}
                         onChange={(e) => setEditing({ ...editing, value: e.target.value, isNull: false })}
-                        // Ao sair com valor inválido (obrigatório em branco) volta ao valor original.
-                        onBlur={() => { if (!commitEdit()) cancelEdit(); }}
+                        // Em data/hora, o blur é tratado pelo próprio popup (ignora para não cancelar ao clicar nele).
+                        onBlur={dtKind(c.type) ? undefined : () => { if (!commitEdit()) cancelEdit(); }}
                         onKeyDown={(e) => {
                           e.stopPropagation();
-                          // Enter/Tab com obrigatório em branco: não sai da célula (fica marcada em vermelho).
                           if (e.key === "Enter") { if (commitEdit()) move(1, 0); }
                           else if (e.key === "Escape") cancelEdit();
                           else if (e.key === "Tab") { e.preventDefault(); if (commitEdit()) move(0, e.shiftKey ? -1 : 1); }
-                          // Ctrl+0 grava NULL explicitamente (NULL ≠ texto vazio); recusado em obrigatório.
                           else if (e.key === "0" && e.ctrlKey) { e.preventDefault(); commitEdit(true); }
                         }}
                       />
@@ -487,6 +603,16 @@ export function DataGrid({
                       <span className="dg-null">(Null)</span>
                     ) : (
                       display(v, c.kind)
+                    )}
+                    {/* Ícone discreto à direita em colunas de data/hora/timestamp (como na referência). */}
+                    {!isEditing && dtKind(c.type) && (
+                      <span className="dg-dt-icon" aria-hidden="true">
+                        {dtKind(c.type) === "time" ? (
+                          <svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="4.5" fill="none" stroke="currentColor" strokeWidth="1" /><path d="M6 3.5V6l1.8 1.1" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" /></svg>
+                        ) : (
+                          <svg width="12" height="12" viewBox="0 0 12 12"><rect x="1.5" y="2.5" width="9" height="8" rx="1" fill="none" stroke="currentColor" strokeWidth="1" /><path d="M1.5 5h9M4 1.5v2M8 1.5v2" stroke="currentColor" strokeWidth="1" strokeLinecap="round" fill="none" /></svg>
+                        )}
+                      </span>
                     )}
                     {/* Lookup de FK: botão "…" na célula ativa (como a referência). */}
                     {!isEditing && isActive && ci === activeCol && lookupCols?.has(ci) && onLookup && !readOnly && !deletedRows?.has(ri) && (
@@ -517,6 +643,39 @@ export function DataGrid({
         />,
         document.body,
       )}
+      {headerMenu && createPortal(
+        <PopupMenu
+          items={headerMenuItems(headerMenu.col)}
+          commands={{}}
+          onClose={() => { setHeaderMenu(null); scrollRef.current?.focus(); }}
+          className="ctx-menu dg-menu"
+          style={{ position: "fixed", left: Math.min(headerMenu.x, window.innerWidth - 220), top: Math.min(headerMenu.y, window.innerHeight - 180) }}
+        />,
+        document.body,
+      )}
+      {editing && editorEl && (() => {
+        const kind = dtKind(columns[editing.col]?.type ?? "");
+        if (!kind) return null;
+        const anchor = editorEl.getBoundingClientRect();
+        return (
+          <DateTimePopup
+            kind={kind}
+            value={editing.value}
+            anchor={anchor}
+            onPick={(v) => {
+              setEditing({ ...editing, value: v, isNull: false });
+              // Commit imediato: picker é escolha explícita, não precisa confirmar.
+              const col = columns[editing.col];
+              const next = v === "" ? null : v;
+              if (col.required && (next === null || next === "")) { setEditing(null); scrollRef.current?.focus(); return; }
+              if (next !== rows[editing.row][editing.col]) onEdit?.(editing.row, editing.col, next);
+              setEditing(null);
+              scrollRef.current?.focus();
+            }}
+            onClose={() => { setEditing(null); scrollRef.current?.focus(); }}
+          />
+        );
+      })()}
     </div>
   );
 }

@@ -130,11 +130,16 @@ pub async fn table_detail(s: &PgSession, schema: &str, table: &str) -> Result<Ta
     } else {
         "NULL::int"
     };
+    // attidentity/attgenerated existem desde PostgreSQL 10/12. Em versões anteriores viriam vazios
+    // ou a coluna nem existe — fazemos NULLIF('') para normalizar e usamos NULL::text se precisar.
+    let identity_expr = if v >= 100000 { "NULLIF(a.attidentity::text, '')" } else { "NULL::text" };
+    let generated_expr = if v >= 120000 { "NULLIF(a.attgenerated::text, '')" } else { "NULL::text" };
     let csql = format!(
         "SELECT a.attname::text, t.typname::text, format_type(a.atttypid, a.atttypmod), a.atttypmod, a.attnotnull, \
                 {pk_expr}, pg_get_expr(d.adbin, d.adrelid), col_description(c.oid, a.attnum), \
                 (SELECT cn.nspname::text FROM pg_catalog.pg_collation co JOIN pg_catalog.pg_namespace cn ON cn.oid = co.collnamespace WHERE co.oid = a.attcollation), \
-                (SELECT co.collname::text FROM pg_catalog.pg_collation co WHERE co.oid = a.attcollation) \
+                (SELECT co.collname::text FROM pg_catalog.pg_collation co WHERE co.oid = a.attcollation), \
+                {identity_expr}, {generated_expr} \
            FROM pg_catalog.pg_attribute a \
            JOIN pg_catalog.pg_class c ON c.oid = a.attrelid \
            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
@@ -166,6 +171,8 @@ pub async fn table_detail(s: &PgSession, schema: &str, table: &str) -> Result<Ta
                     (Some(n), Some(c)) => Some(format!("\"{n}\".\"{c}\"")),
                     _ => None,
                 },
+                identity: r.get(10),
+                generated: r.get(11),
             }
         })
         .collect();

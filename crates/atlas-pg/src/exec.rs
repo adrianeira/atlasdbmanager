@@ -2,7 +2,7 @@
 
 use crate::connect::PgSession;
 use crate::error::map_error;
-use atlas_core::{DatabaseError, QueryOutcome, ResultColumn, ResultSet, StatementOutcome};
+use atlas_core::{DatabaseError, OrderBy, QueryOutcome, ResultColumn, ResultSet, StatementOutcome, TableFilter};
 use futures_util::{StreamExt, pin_mut};
 use std::time::Instant;
 use tokio_postgres::SimpleQueryMessage;
@@ -74,14 +74,24 @@ pub async fn table_rows(
     s: &PgSession,
     schema: &str,
     table: &str,
-    order_by: &[String],
+    order_by: &[OrderBy],
+    filter: Option<&TableFilter>,
     limit: Option<u32>,
     offset: u64,
     max_rows: usize,
 ) -> Result<(String, QueryOutcome), DatabaseError> {
     let mut sql = format!("SELECT * FROM {}.{}", quote_ident(schema), quote_ident(table));
+    if let Some(f) = filter {
+        let expr = f.expr.trim();
+        if !expr.is_empty() {
+            sql.push_str(&format!(" WHERE {expr}"));
+        }
+    }
     if !order_by.is_empty() {
-        let cols: Vec<String> = order_by.iter().map(|c| quote_ident(c)).collect();
+        let cols: Vec<String> = order_by
+            .iter()
+            .map(|o| format!("{} {}", quote_ident(&o.column), if o.descending { "DESC" } else { "ASC" }))
+            .collect();
         sql.push_str(&format!(" ORDER BY {}", cols.join(", ")));
     }
     let keep = match limit {
@@ -93,6 +103,33 @@ pub async fn table_rows(
     };
     let out = execute(s, &sql, keep).await?;
     Ok((sql, out))
+}
+
+/// Total de linhas (com o mesmo WHERE) para o botão "Última página" / numeração.
+pub async fn table_count(
+    s: &PgSession,
+    schema: &str,
+    table: &str,
+    filter: Option<&TableFilter>,
+) -> Result<u64, DatabaseError> {
+    let mut sql = format!("SELECT COUNT(*) FROM {}.{}", quote_ident(schema), quote_ident(table));
+    if let Some(f) = filter {
+        let expr = f.expr.trim();
+        if !expr.is_empty() {
+            sql.push_str(&format!(" WHERE {expr}"));
+        }
+    }
+    let out = execute(s, &sql, 1).await?;
+    let n = out
+        .statements
+        .first()
+        .and_then(|st| st.result.as_ref())
+        .and_then(|rs| rs.rows.first())
+        .and_then(|r| r.first())
+        .and_then(|v| v.as_ref())
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(0);
+    Ok(n)
 }
 
 #[cfg(test)]

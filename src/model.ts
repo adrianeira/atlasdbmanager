@@ -27,6 +27,10 @@ export interface ColumnDef {
   collation?: string;
   /** Tipo completo para casts de parâmetros (ex.: "numeric(19,4)"), quando vindo do servidor. */
   castType?: string;
+  /** Identidade do PostgreSQL: "a" = ALWAYS (bloqueado), "d" = BY DEFAULT, ausente = nenhum. */
+  identity?: "a" | "d";
+  /** Coluna gerada por expressão: "s" = STORED (sempre read-only). */
+  generated?: "s";
 }
 
 export interface IndexDef { name: string; fields: string; method: string; unique: boolean; concurrently: boolean; comment?: string }
