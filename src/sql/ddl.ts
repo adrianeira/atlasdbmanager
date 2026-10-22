@@ -1,4 +1,4 @@
-import { quoteIdent, type ColumnDef, type DbObject } from "../model";
+import { quoteIdent, type ColumnDef, type DbObject, type TriggerDef } from "../model";
 
 /**
  * Pré-visualização de DDL PostgreSQL gerada a partir do modelo do designer.
@@ -52,15 +52,32 @@ export function createTableStatements(schema: string, table: DbObject, nameOverr
   for (const ix of table.indexes ?? []) {
     out.push(`CREATE ${ix.unique ? "UNIQUE " : ""}INDEX ${ix.concurrently ? "CONCURRENTLY " : ""}${quoteIdent(ix.name)} ON ${name} USING ${ix.method} (\n  ${fieldList(ix.fields)}\n);`);
   }
-  for (const tg of table.triggers ?? []) {
-    const events = [tg.insert && "INSERT", tg.update && "UPDATE", tg.delete && "DELETE", tg.truncate && "TRUNCATE"].filter(Boolean).join(" OR ");
-    out.push(`CREATE TRIGGER ${quoteIdent(tg.name)} ${tg.fires} ${events} ON ${name}\nFOR EACH ${tg.forEach}\nEXECUTE PROCEDURE ${tg.fn}();`);
-  }
+  for (const tg of table.triggers ?? []) out.push(triggerSql(name, tg), ...triggerExtras(name, tg));
   if (table.owner) out.push(`ALTER TABLE ${name} \n  OWNER TO ${quoteIdent(table.owner)};`);
   for (const c of cols) {
     if (c.comment) out.push(`COMMENT ON COLUMN ${name}.${quoteIdent(c.name)} IS '${c.comment.replace(/'/g, "''")}';`);
   }
   if (table.comment) out.push(`COMMENT ON TABLE ${name} IS '${table.comment.replace(/'/g, "''")}';`);
+  return out;
+}
+
+/** `CREATE TRIGGER` de um gatilho (momento, eventos com `UPDATE OF`, `WHEN`, função e argumentos). */
+export function triggerSql(target: string, tg: TriggerDef): string {
+  const events = [
+    tg.insert && "INSERT",
+    tg.update && (tg.updateOf?.trim() ? `UPDATE OF ${fieldList(tg.updateOf)}` : "UPDATE"),
+    tg.delete && "DELETE",
+    tg.truncate && "TRUNCATE",
+  ].filter(Boolean).join(" OR ");
+  const when = tg.when?.trim() ? `\nWHEN (${tg.when.trim()})` : "";
+  return `CREATE TRIGGER ${quoteIdent(tg.name)} ${tg.fires} ${events} ON ${target}\nFOR EACH ${tg.forEach}${when}\nEXECUTE PROCEDURE ${tg.fn}(${tg.args?.trim() ?? ""});`;
+}
+
+/** Comandos que acompanham o `CREATE TRIGGER`: desabilitar (quando for o caso) e comentar. */
+export function triggerExtras(target: string, tg: TriggerDef): string[] {
+  const out: string[] = [];
+  if (!tg.enable) out.push(`ALTER TABLE ${target} DISABLE TRIGGER ${quoteIdent(tg.name)};`);
+  if (tg.comment) out.push(`COMMENT ON TRIGGER ${quoteIdent(tg.name)} ON ${target} IS '${tg.comment.replace(/'/g, "''")}';`);
   return out;
 }
 

@@ -449,6 +449,41 @@ async fn role_detail_reads_attributes_and_memberships() {
 }
 
 #[tokio::test]
+async fn triggers_are_described_in_full() {
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    let ns = format!("atlas_tg_{}", std::process::id());
+    atlas_pg::execute(
+        &s,
+        &format!(
+            "DROP SCHEMA IF EXISTS {ns} CASCADE; CREATE SCHEMA {ns};              CREATE TABLE {ns}.t(id integer, nome text, total numeric);              CREATE FUNCTION {ns}.\"Fn Gatilho\"() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$;              CREATE TRIGGER a_antes BEFORE INSERT OR UPDATE OF nome, total ON {ns}.t FOR EACH ROW WHEN (NEW.id > 0)                EXECUTE PROCEDURE {ns}.\"Fn Gatilho\"('x', 'dois, tres');              CREATE TRIGGER b_depois AFTER DELETE OR TRUNCATE ON {ns}.t FOR EACH STATEMENT EXECUTE PROCEDURE {ns}.\"Fn Gatilho\"();              ALTER TABLE {ns}.t DISABLE TRIGGER b_depois;              COMMENT ON TRIGGER a_antes ON {ns}.t IS 'auditoria'"
+        ),
+        1,
+    )
+    .await
+    .unwrap();
+
+    let d = atlas_pg::table_detail(&s, &ns, "t").await.unwrap();
+    assert_eq!(d.triggers.len(), 2);
+    let a = &d.triggers[0];
+    assert_eq!(a.name, "a_antes");
+    assert_eq!(a.timing, "BEFORE");
+    assert_eq!(a.events, ["INSERT", "UPDATE"]);
+    assert!(a.for_each_row && a.enabled && !a.read_only);
+    assert_eq!(a.when.as_deref(), Some("(new.id > 0)"), "{:?}", a.when);
+    assert_eq!(a.function, format!("{ns}.\"Fn Gatilho\""));
+    assert_eq!(a.args, ["x", "dois, tres"]);
+    assert_eq!(a.update_columns, ["nome", "total"]);
+    assert_eq!(a.comment.as_deref(), Some("auditoria"));
+
+    let b = &d.triggers[1];
+    assert_eq!((b.timing.as_str(), b.for_each_row, b.enabled), ("AFTER", false, false));
+    assert_eq!(b.events, ["DELETE", "TRUNCATE"]);
+    assert!(b.when.is_none() && b.args.is_empty() && b.update_columns.is_empty());
+    atlas_pg::execute(&s, &format!("DROP SCHEMA {ns} CASCADE"), 1).await.unwrap();
+}
+
+#[tokio::test]
 async fn syntax_error_reports_position() {
     let p = require_server!();
     let s = atlas_pg::connect(&p, None).await.expect("connect");

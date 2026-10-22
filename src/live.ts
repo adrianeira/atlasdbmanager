@@ -1,7 +1,7 @@
 /*
  * Integração da interface com o banco real: conversões e geração de comandos parametrizados.
  */
-import type { ConstraintInfo, ObjectInfo, PlannedStatement, SchemaObjects, TableDetail } from "./backend";
+import type { ConstraintInfo, ObjectInfo, PlannedStatement, SchemaObjects, TableDetail, TriggerInfo } from "./backend";
 import { quoteIdent, type CellValue, type ColumnDef, type DbObject, type SchemaMock, type TriggerDef } from "./model";
 
 /**
@@ -46,14 +46,14 @@ export function schemaFromServer(name: string, objs: SchemaObjects): SchemaMock 
   };
 }
 
-function parseTrigger(name: string, def: string, enabled: boolean): TriggerDef {
-  const up = def.toUpperCase();
-  const fires = up.includes(" INSTEAD OF ") ? "INSTEAD OF" : up.includes(" BEFORE ") ? "BEFORE" : "AFTER";
-  const fn = /EXECUTE (?:FUNCTION|PROCEDURE) (.+?)\(/i.exec(def)?.[1] ?? "";
+/** Argumentos do gatilho como entram nos parênteses do `EXECUTE PROCEDURE`: cada um é um literal de texto. */
+const triggerArgs = (args: string[]) => args.map((a) => `'${a.replace(/'/g, "''")}'`).join(", ");
+
+function triggerFromServer(g: TriggerInfo): TriggerDef {
   return {
-    name, fires, enable: enabled, fn,
-    forEach: up.includes("FOR EACH ROW") ? "ROW" : "STATEMENT",
-    insert: / INSERT( |$)/.test(up), update: / UPDATE( |$)/.test(up), delete: / DELETE( |$)/.test(up), truncate: / TRUNCATE( |$)/.test(up),
+    name: g.name, fires: g.timing, enable: g.enabled, fn: g.function, forEach: g.forEachRow ? "ROW" : "STATEMENT",
+    insert: g.events.includes("INSERT"), update: g.events.includes("UPDATE"), delete: g.events.includes("DELETE"), truncate: g.events.includes("TRUNCATE"),
+    comment: g.comment ?? undefined, updateOf: g.updateColumns.join(", "), when: g.when ?? "", args: triggerArgs(g.args), readOnly: g.readOnly,
   };
 }
 
@@ -90,7 +90,7 @@ export function tableFromServer(base: DbObject, d: TableDetail): DbObject {
       noInherit: /NO INHERIT/i.test(c.definition),
       comment: c.comment ?? "",
     })),
-    triggers: d.triggers.map((t) => parseTrigger(t.name, t.definition, t.enabled)),
+    triggers: d.triggers.map(triggerFromServer),
   };
 }
 

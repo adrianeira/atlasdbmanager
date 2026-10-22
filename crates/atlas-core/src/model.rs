@@ -159,8 +159,25 @@ pub struct ConstraintInfo {
 #[serde(rename_all = "camelCase")]
 pub struct TriggerInfo {
     pub name: String,
+    /// `pg_get_triggerdef`.
     pub definition: String,
     pub enabled: bool,
+    /// "BEFORE" | "AFTER" | "INSTEAD OF".
+    pub timing: String,
+    /// Eventos: "INSERT", "UPDATE", "DELETE", "TRUNCATE".
+    pub events: Vec<String>,
+    /// `FOR EACH ROW` (falso = `FOR EACH STATEMENT`).
+    pub for_each_row: bool,
+    /// Condição do `WHEN (...)`.
+    pub when: Option<String>,
+    /// Função chamada, qualificada e com aspas só onde precisa (`public.fn`).
+    pub function: String,
+    pub args: Vec<String>,
+    /// Colunas do `UPDATE OF`.
+    pub update_columns: Vec<String>,
+    pub comment: Option<String>,
+    /// Gatilho de restrição ou com tabelas de transição: aparece, mas o designer não o edita.
+    pub read_only: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

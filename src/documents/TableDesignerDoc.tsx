@@ -7,9 +7,9 @@ import { SqlEditor } from "../components/SqlEditor";
 import type { StatusCell } from "../components/StatusBar";
 import { useT, type MessageKey } from "../i18n";
 import { SmallIcon } from "../icons";
-import { quoteIdent, type ColumnDef, type DbObject } from "../model";
+import { quoteIdent, type ColumnDef, type DbObject, type TriggerDef } from "../model";
 import { errorText, toAtlasError } from "../backend";
-import { columnType, createTableSql, createTableStatements } from "../sql/ddl";
+import { columnType, createTableSql, createTableStatements, triggerExtras, triggerSql } from "../sql/ddl";
 
 /* ---------- Estado de trabalho do designer ---------- */
 
@@ -65,7 +65,7 @@ function toState(t: DbObject | null): DesignState {
     checks: (t?.checks ?? []).map((c) => ({ name: c.name, expression: c.expression, noInherit: c.noInherit, comment: c.comment ?? "" })),
     excludes: [],
     rules: [],
-    triggers: (t?.triggers ?? []).map((g) => ({ name: g.name, forEach: g.forEach, fires: g.fires, insert: g.insert, update: g.update, delete: g.delete, truncate: g.truncate, updateOf: "", enable: g.enable, comment: g.comment ?? "", when: "", fn: g.fn, args: "" })),
+    triggers: (t?.triggers ?? []).map((g) => ({ name: g.name, forEach: g.forEach, fires: g.fires, insert: g.insert, update: g.update, delete: g.delete, truncate: g.truncate, updateOf: g.updateOf ?? "", enable: g.enable, comment: g.comment ?? "", when: g.when ?? "", fn: g.fn, args: g.args ?? "", readOnly: !!g.readOnly })),
     unlogged: false,
     owner: t?.owner ?? "",
     tablespace: "",
@@ -78,6 +78,9 @@ function toState(t: DbObject | null): DesignState {
 }
 
 const s = (v: string | number | boolean | undefined) => String(v ?? "");
+
+/** Gatilho com nome, ao menos um evento e a função que ele chama. */
+const triggerComplete = (g: TriggerDef) => !!g.name.trim() && !!(g.insert || g.update || g.delete || g.truncate) && !!g.fn.trim();
 
 function toObject(d: DesignState): DbObject {
   return {
@@ -92,6 +95,7 @@ function toObject(d: DesignState): DbObject {
     triggers: d.triggers.map((g) => ({
       name: s(g.name), forEach: (s(g.forEach) || "ROW") as "ROW", fires: (s(g.fires) || "BEFORE") as "BEFORE",
       insert: !!g.insert, update: !!g.update, delete: !!g.delete, truncate: !!g.truncate, enable: !!g.enable, fn: s(g.fn), comment: s(g.comment),
+      updateOf: s(g.updateOf), when: s(g.when), args: s(g.args), readOnly: !!g.readOnly,
     })),
   };
 }
@@ -175,6 +179,29 @@ function alterSql(schema: string, original: DbObject, d: DesignState): AlterPlan
     (c) => `ALTER TABLE ${target} DROP CONSTRAINT ${quoteIdent(c.name)};`,
     (c) => `ALTER TABLE ${target} ADD CONSTRAINT ${quoteIdent(c.name)} CHECK (${c.expression})${c.noInherit ? " NO INHERIT" : ""};`,
   );
+  // Gatilhos: mudar o que define o gatilho = DROP + CREATE; habilitar/desabilitar e comentar não recriam.
+  const editable = (list: TriggerDef[] | undefined) => (list ?? []).filter((g) => !g.readOnly).map((g) => ({ ...g, comment: g.comment ?? "", updateOf: g.updateOf ?? "", when: g.when ?? "", args: g.args ?? "" }));
+  const origTriggers = editable(original.triggers);
+  const nextTriggers = editable(next.triggers).filter(triggerComplete);
+  const definitionKey = (g: TriggerDef) =>
+    [g.name, g.fires, g.forEach, !!g.insert, !!g.update, !!g.delete, !!g.truncate, g.updateOf?.trim(), g.when?.trim(), g.fn, g.args?.trim()].join("\u0001");
+  const sameDefinition = (a: TriggerDef, b: TriggerDef) => definitionKey(a) === definitionKey(b);
+  const dropTrigger = (g: TriggerDef) => `DROP TRIGGER ${quoteIdent(g.name)} ON ${target};`;
+  const commentTrigger = (g: TriggerDef) => `COMMENT ON TRIGGER ${quoteIdent(g.name)} ON ${target} IS ${g.comment ? `'${g.comment.replace(/'/g, "''")}'` : "NULL"};`;
+  for (const b of origTriggers) {
+    const a = nextTriggers.find((x) => x.name === b.name);
+    if (!a || !sameDefinition(a, b)) out.push(dropTrigger(b));
+  }
+  for (const a of nextTriggers) {
+    if (!a.name) continue;
+    const b = origTriggers.find((x) => x.name === a.name);
+    if (!b || !sameDefinition(a, b)) {
+      out.push(triggerSql(target, a), ...triggerExtras(target, a));
+    } else {
+      if (b.enable !== a.enable) out.push(`ALTER TABLE ${target} ${a.enable ? "ENABLE" : "DISABLE"} TRIGGER ${quoteIdent(a.name)};`);
+      if (b.comment !== a.comment) out.push(commentTrigger(a));
+    }
+  }
   for (const e of d.excludes) if (s(e.name)) out.push(`ALTER TABLE ${target} ADD CONSTRAINT ${quoteIdent(s(e.name))} EXCLUDE USING ${s(e.method) || "gist"} (${s(e.element)});`);
   for (const r of d.rules) if (s(r.name)) out.push(`CREATE RULE ${quoteIdent(s(r.name))} AS ON ${s(r.event) || "INSERT"} TO ${target}${r.where ? ` WHERE ${s(r.where)}` : ""} DO ${r.instead === "INSTEAD" ? "INSTEAD " : ""}${s(r.definition) || "NOTHING"};`);
 
@@ -212,13 +239,15 @@ interface Props {
   production: boolean;
   onStatus: (cells: StatusCell[]) => void;
   onSaved: (table: DbObject, previousName: string | null) => void;
+  /** Funções que retornam `trigger` (schema.nome), para escolher no gatilho. */
+  triggerFunctions?: string[];
   /** Conexão real: lê a estrutura atual do servidor ao abrir. */
   loadDetail?: () => Promise<DbObject>;
   /** Conexão real: executa os comandos em uma transação (falha = nada aplicado). */
   applyDdl?: (statements: string[]) => Promise<void>;
 }
 
-export function TableDesignerDoc({ schema, table, owners, otherTables, serverVersionNum, active, production, onStatus, onSaved, loadDetail, applyDdl }: Props) {
+export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFunctions, serverVersionNum, active, production, onStatus, onSaved, loadDetail, applyDdl }: Props) {
   const t = useT();
   const [original, setOriginal] = useState<DbObject | null>(table);
   const [d, setD] = useState<DesignState>(() => toState(table));
@@ -248,7 +277,7 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, serverVer
   const [sel, setSel] = useState<Record<string, number>>({});
   const [pkMenu, setPkMenu] = useState(false);
   const [previewMode, setPreviewMode] = useState<"save" | "saveAs">(table ? "save" : "saveAs");
-  const [dialog, setDialog] = useState<null | { kind: "name" } | { kind: "review"; sql: string; destructive: boolean; newName?: string }>(null);
+  const [dialog, setDialog] = useState<null | { kind: "name" } | { kind: "invalidTrigger" } | { kind: "review"; sql: string; destructive: boolean; newName?: string }>(null);
   const [triggerTab, setTriggerTab] = useState<"general" | "constraint">("general");
   const pkRef = useRef<HTMLDivElement>(null);
 
@@ -340,6 +369,10 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, serverVer
   };
 
   const save = () => {
+    if (toObject(d).triggers?.some((g) => !g.readOnly && !triggerComplete(g))) {
+      setDialog({ kind: "invalidTrigger" });
+      return;
+    }
     if (isNew) {
       if (!d.fields.length) return;
       setDialog({ kind: "name" });
@@ -575,11 +608,12 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, serverVer
         </div>
         {triggerTab === "general" ? (
           <>
+            {d.triggers.some((g) => g.readOnly) && <div className="muted snip-hint">{t("des.triggersReadOnly")}</div>}
             {prop("des.when", propInput("triggers", "when"), !listRow("triggers"))}
             {prop("des.triggerFunction", (
               <span className="prop-pair">
                 <select className="field" disabled={!listRow("triggers")} value={schema} onChange={() => undefined}><option>{schema}</option></select>
-                {propSelect("triggers", "fn", ["public.fn_audit_trigger"])}
+                {propSelect("triggers", "fn", [...new Set([...(triggerFunctions ?? []), ...(s(listRow("triggers")?.fn) ? [s(listRow("triggers")?.fn)] : [])])])}
               </span>
             ), !listRow("triggers"))}
             {prop("des.arguments", propInput("triggers", "args"), !listRow("triggers"))}
@@ -698,6 +732,9 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, serverVer
         )}
       </div>
 
+      {dialog?.kind === "invalidTrigger" && (
+        <MessageDialog title={t("des.triggers")} message={t("des.badTrigger")} onOk={() => setDialog(null)} onCancel={() => setDialog(null)} />
+      )}
       {dialog?.kind === "name" && (
         <MessageDialog
           title={t("des.saveTitle")}

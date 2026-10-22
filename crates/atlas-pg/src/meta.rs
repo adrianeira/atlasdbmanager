@@ -257,14 +257,24 @@ pub async fn table_detail(s: &PgSession, schema: &str, table: &str) -> Result<Ta
         })
         .collect();
 
-    let tsql = "SELECT t.tgname::text, pg_get_triggerdef(t.oid), t.tgenabled <> 'D' \
-                  FROM pg_catalog.pg_trigger t \
-                  JOIN pg_catalog.pg_class c ON c.oid = t.tgrelid \
-                  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
-                 WHERE n.nspname = $1 AND c.relname = $2 AND NOT t.tgisinternal \
-                 ORDER BY t.tgname";
-    let trows = s.client.query(tsql, &[&schema, &table]).await.map_err(|e| map_error(&e))?;
-    let triggers = trows.iter().map(|r| TriggerInfo { name: r.get(0), definition: r.get(1), enabled: r.get(2) }).collect();
+    // Tabelas de transição (`REFERENCING`) existem a partir do PostgreSQL 10.
+    let transition = if s.server.version_num >= 100000 { "(t.tgoldtable IS NOT NULL OR t.tgnewtable IS NOT NULL)" } else { "false" };
+    let tsql = format!(
+        "SELECT t.tgname::text, pg_get_triggerdef(t.oid), t.tgenabled <> 'D', t.tgtype::int4, \
+                (SELECT quote_ident(pn.nspname) || '.' || quote_ident(p.proname) FROM pg_catalog.pg_proc p \
+                   JOIN pg_catalog.pg_namespace pn ON pn.oid = p.pronamespace WHERE p.oid = t.tgfoid), \
+                t.tgnargs::int4, t.tgargs, \
+                ARRAY(SELECT a.attname::text FROM unnest(t.tgattr::int2[]) WITH ORDINALITY u(num, ord) \
+                        JOIN pg_catalog.pg_attribute a ON a.attrelid = t.tgrelid AND a.attnum = u.num ORDER BY u.ord), \
+                obj_description(t.oid, 'pg_trigger'), (t.tgconstraint <> 0 OR {transition}) \
+           FROM pg_catalog.pg_trigger t \
+           JOIN pg_catalog.pg_class c ON c.oid = t.tgrelid \
+           JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+          WHERE n.nspname = $1 AND c.relname = $2 AND NOT t.tgisinternal \
+          ORDER BY t.tgname"
+    );
+    let trows = s.client.query(&tsql, &[&schema, &table]).await.map_err(|e| map_error(&e))?;
+    let triggers = trows.iter().map(trigger_info).collect();
 
     let orow = s
         .client
@@ -628,6 +638,43 @@ pub async fn role_detail(s: &PgSession, name: &str) -> Result<RoleDetail, Databa
         member_of: member_of.iter().map(|x| x.get(0)).collect(),
         members: members.iter().map(|x| x.get(0)).collect(),
     })
+}
+
+/// Monta o gatilho a partir das colunas de `pg_trigger` (`tgtype`: 1 linha, 2 BEFORE, 4 INSERT, 8 DELETE, 16 UPDATE,
+/// 32 TRUNCATE, 64 INSTEAD OF) e dos argumentos (`tgargs`: textos separados por byte nulo).
+/// Condição do `WHEN (...)` de um `pg_get_triggerdef`, sem os parênteses externos.
+fn when_clause(definition: &str) -> Option<String> {
+    let start = definition.find(" WHEN (")? + " WHEN (".len();
+    let end = start + definition[start..].find(") EXECUTE ")?;
+    Some(definition[start..end].to_string())
+}
+
+fn trigger_info(r: &tokio_postgres::Row) -> TriggerInfo {
+    let definition: String = r.get(1);
+    let tgtype: i32 = r.get(3);
+    let nargs: i32 = r.get(5);
+    let raw: Vec<u8> = r.get(6);
+    let args = raw.split(|b| *b == 0).take(nargs.max(0) as usize).map(|a| String::from_utf8_lossy(a).into_owned()).collect();
+    let events = [(4, "INSERT"), (16, "UPDATE"), (8, "DELETE"), (32, "TRUNCATE")]
+        .iter()
+        .filter(|(bit, _)| tgtype & bit != 0)
+        .map(|(_, name)| (*name).to_string())
+        .collect();
+    let when = when_clause(&definition);
+    TriggerInfo {
+        name: r.get(0),
+        definition,
+        enabled: r.get(2),
+        timing: if tgtype & 64 != 0 { "INSTEAD OF" } else if tgtype & 2 != 0 { "BEFORE" } else { "AFTER" }.to_string(),
+        events,
+        for_each_row: tgtype & 1 != 0,
+        when,
+        function: r.get::<_, Option<String>>(4).unwrap_or_default(),
+        args,
+        update_columns: r.get(7),
+        comment: r.get(8),
+        read_only: r.get(9),
+    }
 }
 
 pub async fn list_roles(s: &PgSession) -> Result<Vec<RoleInfo>, DatabaseError> {

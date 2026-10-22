@@ -145,6 +145,16 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [x] Aviso ao renomear: o PostgreSQL apaga a senha do papel renomeado
       *(`src/documents/RoleDesignerDoc.tsx`, `src/sql/role.ts`, `crates/atlas-pg/src/meta.rs`)*
 
+### Gatilhos (aba da tabela)
+- [x] Lê o gatilho **completo** do servidor: momento (BEFORE/AFTER/INSTEAD OF), eventos, `UPDATE OF` colunas, `FOR EACH
+      ROW/STATEMENT`, `WHEN`, função (schema.nome), argumentos, habilitado e comentário
+- [x] **Grava** no banco (antes só valia para tabela nova): criar, alterar (DROP + CREATE do gatilho, mantendo
+      comentário e estado), excluir, **habilitar/desabilitar** (`ENABLE/DISABLE TRIGGER`) e comentar; a função é escolhida
+      entre as funções `trigger` dos schemas carregados
+- [x] Gatilho incompleto (sem nome, evento ou função) é barrado com aviso; gatilhos de restrição e com tabelas de
+      transição aparecem só para leitura
+      *(`src/documents/TableDesignerDoc.tsx`, `src/sql/ddl.ts`, `crates/atlas-pg/src/meta.rs`)*
+
 ### Navegação / Árvore
 - [x] **Fechar schema** no menu de contexto (colapsa + marca como não-carregado para rebuscar
       na próxima abertura) *(`src/App.tsx`)*
@@ -237,7 +247,7 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [ ] Plano de execução gráfico *(hoje `EXPLAIN` só em texto)*
 
 ## 5. Designers
-- [ ] Trigger designer completo *(hoje só lista básica)*
+- [x] Trigger designer completo (aba Gatilhos da tabela; ver "Gatilhos" em Entregues)
 - [ ] Rule designer *(PostgreSQL)*
 - [ ] Partition designer
 - [ ] Inherits browser *(`src/documents/TableDesignerDoc.tsx:617`)*
@@ -249,7 +259,7 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [ ] Debugger de PL/pgSQL
 - [x] Type (ENUM, composto, domínio): designer (ver "Tipos" em Entregues)
 - [x] Sequence: designer, reiniciar, definir valor (ver "Sequências" em Entregues)
-- [ ] Trigger / Event Trigger
+- [ ] Event Trigger (gatilhos de evento do banco; os gatilhos de tabela já estão no designer)
 - [ ] Extension
 - [ ] Foreign Server / Foreign Table
 - [ ] Publication / Subscription (replicação lógica)

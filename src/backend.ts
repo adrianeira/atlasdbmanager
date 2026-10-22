@@ -100,7 +100,6 @@ export interface ConstraintInfo {
   name: string; kind: "f" | "u" | "c" | "x"; fields: string; refSchema: string | null; refTable: string | null;
   refFields: string | null; onDelete: string | null; onUpdate: string | null; definition: string; comment: string | null;
 }
-export interface TriggerInfo { name: string; definition: string; enabled: boolean }
 
 export interface TableDetail {
   columns: ColumnInfo[];
@@ -142,6 +141,23 @@ export interface RoleDetail {
   comment: string | null;
   memberOf: string[];
   members: string[];
+}
+
+export interface TriggerInfo {
+  name: string;
+  definition: string;
+  enabled: boolean;
+  timing: "BEFORE" | "AFTER" | "INSTEAD OF";
+  events: ("INSERT" | "UPDATE" | "DELETE" | "TRUNCATE")[];
+  forEachRow: boolean;
+  when: string | null;
+  /** Função chamada, como schema.nome. */
+  function: string;
+  args: string[];
+  updateColumns: string[];
+  comment: string | null;
+  /** Gatilho de restrição ou com tabelas de transição: o designer só o exibe. */
+  readOnly: boolean;
 }
 
 export interface TypeDetail {

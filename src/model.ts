@@ -40,6 +40,14 @@ export interface CheckDef { name: string; expression: string; noInherit: boolean
 export interface TriggerDef {
   name: string; forEach: "ROW" | "STATEMENT"; fires: "BEFORE" | "AFTER" | "INSTEAD OF";
   insert: boolean; update: boolean; delete: boolean; truncate: boolean; enable: boolean; fn: string; comment?: string;
+  /** Colunas do `UPDATE OF` (separadas por vírgula). */
+  updateOf?: string;
+  /** Condição do `WHEN (...)`. */
+  when?: string;
+  /** Lista de argumentos como entra nos parênteses: `'a', 'b'`. */
+  args?: string;
+  /** Gatilho de restrição ou com tabelas de transição: aparece, mas o designer não o altera. */
+  readOnly?: boolean;
 }
 
 export interface DbObject {

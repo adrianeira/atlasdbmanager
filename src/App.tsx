@@ -723,6 +723,9 @@ export default function App() {
     openTab({ kind: "functionDesigner", title, windowTitle: title, icon: "function", connectionId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name });
   };
 
+  /** Como o `quote_ident` do PostgreSQL: só coloca aspas quando o nome precisa. */
+  const quoteIfNeeded = (name: string) => (/^[a-z_][a-z0-9_$]*$/.test(name) ? name : quoteIdent(name));
+
   const newRole = () => {
     if (!ctx.connection?.live) return;
     const title = objectTitle(t("des.untitled"), "tb.user", { connection: ctx.connection });
@@ -1949,6 +1952,9 @@ export default function App() {
           table={tab.object ? table ?? null : null}
           owners={conn?.roles.map((r) => r.name) ?? []}
           otherTables={tables.map((x) => x.name)}
+          triggerFunctions={(conn?.databases.find((db) => db.name === tab.database)?.schemas ?? []).flatMap((sc) =>
+            (sc.objects.function ?? []).filter((f) => f.returnType === "trigger" && f.fnName).map((f) => `${quoteIfNeeded(sc.name)}.${quoteIfNeeded(f.fnName ?? "")}`),
+          )}
           serverVersionNum={conn?.serverVersionNum ?? 0}
           active={isActive}
           production={conn?.environment === "production"}
