@@ -469,13 +469,14 @@ export function DataGrid({
                           else if (e.key === "0" && e.ctrlKey) { e.preventDefault(); commitEdit(true); }
                         }}
                       />
-                    ) : c.kind === "bool" && v !== null ? (
-                      // Checkbox: marcado = true, desmarcado = false. NULL mostra "(Null)" como as
-                      // demais colunas; duplo clique/espaço/Enter nele grava true.
+                    ) : c.kind === "bool" ? (
+                      // Checkbox: marcado = true; desmarcado = false ou NULL (a dica diz "(Null)").
+                      // Clicar grava true/false; para voltar a NULL, "Definir como NULL" no menu.
                       <input
                         type="checkbox"
                         className="dg-check"
                         checked={v === "t" || v === "true"}
+                        title={v === null ? "(Null)" : undefined}
                         aria-readonly={readOnly || !onEdit}
                         onMouseDown={(e) => { onActiveRow(ri); setActiveCol(ci); e.stopPropagation(); }}
                         onClick={(e) => {
