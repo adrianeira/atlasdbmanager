@@ -1913,20 +1913,22 @@ select.et-input {
 }
 
 /* ---------- Assistente de exportação ---------- */
-.exp-dialog { width: 560px; }
+.exp-dialog { width: 600px; }
 .exp-fields { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
 .exp-fields:disabled { opacity: 0.6; }
 .exp-source { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .exp-kinds { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .exp-kind {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  display: flex; align-items: center; gap: 8px;
   padding: 6px 8px; text-align: left; cursor: default;
   border: 1px solid var(--c-border-strong); background: var(--c-surface); color: var(--c-text);
 }
 .exp-kind:hover { background: var(--c-hover); border-color: var(--c-hover-border); }
 .exp-kind.is-active { background: var(--c-selected); border-color: var(--c-selected-border); }
+.exp-kind > svg { flex: none; }
+.exp-kind-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .exp-kind-name { font-weight: 600; }
-.exp-kind .muted { margin: 0; font-size: 11px; }
+.exp-kind .muted { margin: 0; font-size: 11px; white-space: nowrap; }
 .exp-options { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--c-border); min-height: 96px; }
 .exp-row { display: grid; grid-template-columns: 150px 1fr; align-items: center; gap: 8px; }
 .exp-row .field { width: 100%; }

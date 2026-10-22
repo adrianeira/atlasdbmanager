@@ -4,6 +4,7 @@ import {
   type ExportEncoding, type ExportFormat, type ExportResult, type OrderBy, type TableFilter,
 } from "../backend";
 import { useT } from "../i18n";
+import { SmallIcon, type SmallIconName } from "../icons";
 
 /** O que exportar: a tabela/view e, quando vem do grid, o filtro, a ordenação e as colunas em uso. */
 export interface ExportTarget {
@@ -24,6 +25,7 @@ interface Props {
 
 type Kind = "csv" | "json" | "sql" | "xlsx";
 const KINDS: Kind[] = ["csv", "json", "sql", "xlsx"];
+const KIND_ICON: Record<Kind, SmallIconName> = { csv: "fmtCsv", json: "fmtJson", sql: "fmtSql", xlsx: "fmtXlsx" };
 /** Extensões aceitas por formato; a primeira é a sugerida. */
 const EXTENSIONS: Record<Kind, string[]> = { csv: ["csv", "txt", "tsv"], json: ["json"], sql: ["sql"], xlsx: ["xlsx"] };
 const ALL_EXTENSIONS = new Set(Object.values(EXTENSIONS).flat());
@@ -213,8 +215,11 @@ export function ExportDialog({ target, onClose }: Props) {
                   className={`exp-kind${opts.kind === k ? " is-active" : ""}`}
                   onClick={() => setKind(k)}
                 >
-                  <span className="exp-kind-name">{t(`exp.kind.${k}`)}</span>
-                  <span className="muted">{t(`exp.kind.${k}.hint`)}</span>
+                  <SmallIcon name={KIND_ICON[k]} size={28} />
+                  <span className="exp-kind-text">
+                    <span className="exp-kind-name">{t(`exp.kind.${k}`)}</span>
+                    <span className="muted">{t(`exp.kind.${k}.hint`)}</span>
+                  </span>
                 </button>
               ))}
             </div>

@@ -269,6 +269,34 @@ const small: Record<string, ReactElement> = {
       <path d="M11.2 9.7l.8-.8a1.7 1.7 0 0 1 2.4 2.4l-.8.8M11.6 13.5l-.8.8a1.7 1.7 0 0 1-2.4-2.4l.8-.8" fill="#fff" stroke="#1f6fc4" strokeWidth="1.4" strokeLinecap="round" />
     </>
   ),
+  // Formatos do assistente de exportação (desenho próprio).
+  fmtCsv: (
+    <>
+      <path d="M3.5 1.5h6l3 3v10h-9z" fill="#fff" stroke="#6b7785" strokeLinejoin="round" />
+      <path d="M9.5 1.5v3h3" fill="none" stroke="#6b7785" strokeLinejoin="round" />
+      <path d="M5.2 7.2h5.6M5.2 9.6h5.6M5.2 12h5.6M7.9 7.2V12" stroke="#2f9e8f" strokeWidth="1.2" />
+    </>
+  ),
+  fmtJson: (
+    <path
+      d="M5.6 2c-1.6 0-1.9.9-1.9 2.2v1.6c0 1-.5 1.6-1.4 2.2.9.6 1.4 1.2 1.4 2.2v1.6c0 1.3.3 2.2 1.9 2.2M10.4 2c1.6 0 1.9.9 1.9 2.2v1.6c0 1 .5 1.6 1.4 2.2-.9.6-1.4 1.2-1.4 2.2v1.6c0 1.3-.3 2.2-1.9 2.2"
+      fill="none" stroke="#d98a1c" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+    />
+  ),
+  fmtSql: (
+    <>
+      <ellipse cx="8" cy="4" rx="5" ry="2" fill="#dbe9f8" stroke="#2f7fd0" />
+      <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4" fill="none" stroke="#2f7fd0" />
+      <path d="M3 8c0 1.1 2.2 2 5 2s5-.9 5-2" fill="none" stroke="#2f7fd0" />
+    </>
+  ),
+  fmtXlsx: (
+    <>
+      <rect x="2" y="2" width="12" height="12" rx="1.5" fill="#1f8a4c" />
+      <path d="M2 6h12M2 10h12M6 2v12" stroke="#fff" strokeWidth="1" />
+      <rect x="2" y="2" width="12" height="4" rx="1.5" fill="#fff" opacity=".18" />
+    </>
+  ),
   key: (
     <>
       <circle cx="5" cy="6" r="3" fill="none" stroke="#e0a412" strokeWidth="1.8" />
