@@ -422,7 +422,7 @@ const en = {
   "conn.savePassword": "Save password",
   "conn.environment": "Environment",
   "conn.productionNote": "Production: persistent badge, grid edits blocked until Edit mode, destructive DDL requires typing the database name.",
-  "conn.vaultNote": "The password is stored in the operating system credential vault, never in Atlas files.",
+  "conn.vaultNote": "For now the password is kept in memory only, until Atlas is closed; it is never written to Atlas files. The operating system credential vault comes in the next step.",
   "conn.charset": "Client Character Set",
   "conn.keepalive": "Keepalive interval (sec)",
   "conn.autoConnect": "Auto connect",
@@ -474,6 +474,17 @@ const en = {
   "msg.unsavedQuery": "This query has unsaved changes. Close it and discard them?",
   "msg.discard": "Discard",
   "msg.about": "Atlas DB Manager 0.1.0 — M0 prototype (mock data). Open source, MIT. Built with Rust, Tauri and React.",
+
+  "common.loading": "Loading...",
+  "conn.providerNotYet": "This database type is not supported yet in this version (PostgreSQL is available).",
+  "conn.needOpen": "The connection is not open. Open it in the navigation pane first.",
+  "conn.passwordTitle": "Password — {name}",
+  "conn.passwordMessage": "Enter the password for {user} at {host}. It stays in memory only until Atlas is closed.",
+  "query.rowsReturned": "{n} row(s) returned",
+  "query.rowsAffected": "{n} row(s) affected",
+  "query.truncated": "showing the first {n}",
+  "query.errorPosition": "Error at character {n}",
+  "data.reviewMessageLive": "Review the statements. They run in a single transaction with parameterized values; each UPDATE/DELETE must affect exactly one row, otherwise everything is rolled back.",
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -898,7 +909,7 @@ const pt: Record<MessageKey, string> = {
   "conn.savePassword": "Salvar senha",
   "conn.environment": "Ambiente",
   "conn.productionNote": "Produção: selo permanente, edição pelo grid bloqueada até o modo de edição e DDL destrutivo exige digitar o nome do banco.",
-  "conn.vaultNote": "A senha fica no cofre de credenciais do sistema operacional, nunca nos arquivos do Atlas.",
+  "conn.vaultNote": "Por enquanto a senha fica só na memória, até fechar o Atlas; nunca é gravada nos arquivos do Atlas. O cofre de credenciais do sistema chega na próxima etapa.",
   "conn.charset": "Charset do cliente",
   "conn.keepalive": "Intervalo de keepalive (s)",
   "conn.autoConnect": "Conectar automaticamente",
@@ -950,6 +961,17 @@ const pt: Record<MessageKey, string> = {
   "msg.unsavedQuery": "Esta consulta tem alterações não salvas. Fechar e descartá-las?",
   "msg.discard": "Descartar",
   "msg.about": "Atlas DB Manager 0.1.0 — protótipo M0 (dados fictícios). Código aberto, MIT. Feito com Rust, Tauri e React.",
+
+  "common.loading": "Carregando...",
+  "conn.providerNotYet": "Este tipo de banco ainda não é suportado nesta versão (PostgreSQL já está disponível).",
+  "conn.needOpen": "A conexão não está aberta. Abra-a primeiro no painel de navegação.",
+  "conn.passwordTitle": "Senha — {name}",
+  "conn.passwordMessage": "Informe a senha de {user} em {host}. Ela fica só na memória até o Atlas ser fechado.",
+  "query.rowsReturned": "{n} linha(s) retornada(s)",
+  "query.rowsAffected": "{n} linha(s) afetada(s)",
+  "query.truncated": "exibindo as primeiras {n}",
+  "query.errorPosition": "Erro no caractere {n}",
+  "data.reviewMessageLive": "Revise os comandos. Eles rodam em uma única transação com valores parametrizados; cada UPDATE/DELETE deve afetar exatamente uma linha, senão tudo é desfeito.",
 };
 
 const dictionaries: Record<Lang, Record<MessageKey, string>> = { "en-US": en, "pt-BR": pt };

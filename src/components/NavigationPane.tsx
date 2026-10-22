@@ -10,6 +10,8 @@ interface Props {
   openConnections: Set<string>;
   openDatabases: Set<string>;
   connecting: Set<string>;
+  /** Ids de nós sendo lidos do servidor (spinner no lugar da seta). */
+  loading: Set<string>;
   filter: string;
   onFilter: (v: string) => void;
   onSelect: (id: string) => void;
@@ -111,7 +113,7 @@ export function NavigationPane(p: Props) {
         {p.nodes.map((n) => {
           const selected = n.id === p.selectedId;
           const expanded = n.expandable && isExpanded(n);
-          const busy = n.kind === "connection" && p.connecting.has(connIdOf(n.id));
+          const busy = (n.kind === "connection" && p.connecting.has(connIdOf(n.id))) || p.loading.has(n.id);
           // Como na referência: conexão/banco fechados não exibem seta até serem abertos.
           const opened =
             (n.kind !== "connection" || p.openConnections.has(connIdOf(n.id))) &&
@@ -149,7 +151,7 @@ export function NavigationPane(p: Props) {
               )}
               <span className="tree-icon">{icon(n)}</span>
               <span className="tree-label">{n.label}</span>
-              {busy && <span className="tree-busy">{t("nav.connecting")}</span>}
+              {busy && n.kind === "connection" && <span className="tree-busy">{t("nav.connecting")}</span>}
             </div>
           );
         })}

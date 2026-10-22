@@ -7,7 +7,8 @@ import type { StatusCell } from "../components/StatusBar";
 import { useT, type MessageKey } from "../i18n";
 import { SmallIcon } from "../icons";
 import { quoteIdent, type ColumnDef, type DbObject } from "../model";
-import { columnType, createTableSql } from "../sql/ddl";
+import { errorText, toAtlasError } from "../backend";
+import { columnType, createTableSql, createTableStatements } from "../sql/ddl";
 
 /* ---------- Estado de trabalho do designer ---------- */
 
@@ -92,7 +93,7 @@ function toObject(d: DesignState): DbObject {
 
 /* ---------- Geração do ALTER (prévia de "Save") ---------- */
 
-interface AlterPlan { sql: string; destructive: boolean }
+interface AlterPlan { sql: string; statements: string[]; destructive: boolean }
 
 function alterSql(schema: string, original: DbObject, d: DesignState): AlterPlan {
   const target = `${quoteIdent(schema)}.${quoteIdent(original.name)}`;
@@ -174,7 +175,7 @@ function alterSql(schema: string, original: DbObject, d: DesignState): AlterPlan
 
   if ((original.owner ?? "") !== d.owner && d.owner) out.push(`ALTER TABLE ${target} OWNER TO ${quoteIdent(d.owner)};`);
   if ((original.comment ?? "") !== d.comment) out.push(`COMMENT ON TABLE ${target} IS ${d.comment ? `'${d.comment.replace(/'/g, "''")}'` : "NULL"};`);
-  return { sql: out.join("\n"), destructive };
+  return { sql: out.join("\n"), statements: out, destructive };
 }
 
 /* ---------- Componente ---------- */
@@ -206,12 +207,38 @@ interface Props {
   production: boolean;
   onStatus: (cells: StatusCell[]) => void;
   onSaved: (table: DbObject, previousName: string | null) => void;
+  /** Conexão real: lê a estrutura atual do servidor ao abrir. */
+  loadDetail?: () => Promise<DbObject>;
+  /** Conexão real: executa os comandos em uma transação (falha = nada aplicado). */
+  applyDdl?: (statements: string[]) => Promise<void>;
 }
 
-export function TableDesignerDoc({ schema, table, owners, otherTables, serverVersionNum, active, production, onStatus, onSaved }: Props) {
+export function TableDesignerDoc({ schema, table, owners, otherTables, serverVersionNum, active, production, onStatus, onSaved, loadDetail, applyDdl }: Props) {
   const t = useT();
   const [original, setOriginal] = useState<DbObject | null>(table);
   const [d, setD] = useState<DesignState>(() => toState(table));
+  const [loading, setLoading] = useState(!!loadDetail && !!table);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!loadDetail || !table) return;
+    let alive = true;
+    loadDetail()
+      .then((obj) => {
+        if (!alive) return;
+        setOriginal(obj);
+        setD(toState(obj));
+      })
+      .catch((e) => alive && setLoadError(errorText(toAtlasError(e))))
+      .finally(() => alive && setLoading(false));
+    return () => {
+      alive = false;
+    };
+    // Carrega uma vez ao abrir a aba.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [tab, setTab] = useState<SubTab>("fields");
   const [sel, setSel] = useState<Record<string, number>>({});
   const [pkMenu, setPkMenu] = useState(false);
@@ -317,9 +344,22 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, serverVer
     setDialog({ kind: "review", sql: plan.sql, destructive: plan.destructive });
   };
 
-  const commit = (newName?: string) => {
+  const commit = async (newName?: string) => {
     const obj = toObject(newName ? { ...d, name: newName } : d);
     const previous = original?.name ?? null;
+    if (applyDdl) {
+      const statements = isNew ? createTableStatements(schema, obj) : plan?.statements ?? [];
+      setSaving(true);
+      setSaveError(null);
+      try {
+        await applyDdl(statements);
+      } catch (e) {
+        setSaveError(errorText(toAtlasError(e)));
+        setSaving(false);
+        return;
+      }
+      setSaving(false);
+    }
     onSaved(obj, previous);
     setOriginal(obj);
     setD(toState(obj));
@@ -588,8 +628,11 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, serverVer
 
   const actions = listTabs[tab];
 
+  if (loading) return <div className="doc-loading"><span className="spinner" />{t("common.loading")}</div>;
+
   return (
     <div className="doc">
+      {loadError && <div className="doc-banner is-warn">{loadError}</div>}
       <div className="object-toolbar" role="toolbar">
         {toolBtn("save", "des.save", dirty ? save : undefined)}
         {actions && (
@@ -663,8 +706,10 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, serverVer
           danger={dialog.destructive}
           confirmText={production && dialog.destructive ? (original?.name ?? dialog.newName) : undefined}
           okLabel={t("des.save")}
-          onOk={() => commit(dialog.newName)}
-          onCancel={() => setDialog(null)}
+          busy={saving}
+          error={saveError ?? undefined}
+          onOk={() => void commit(dialog.newName)}
+          onCancel={() => { setSaveError(null); setDialog(null); }}
         />
       )}
     </div>

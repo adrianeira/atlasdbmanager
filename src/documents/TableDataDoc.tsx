@@ -1,11 +1,20 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { errorText, toAtlasError, type PlannedStatement } from "../backend";
 import { DataGrid, typeKind, type GridColumn } from "../components/DataGrid";
 import { MessageDialog } from "../components/MessageDialog";
 import type { StatusCell } from "../components/StatusBar";
 import { useT, type MessageKey } from "../i18n";
 import { SmallIcon, type SmallIconName } from "../icons";
+import { plannedStatements } from "../live";
 import { mockRows, quoteIdent, type CellValue, type DbObject } from "../model";
 import { columnType, selectSql } from "../sql/ddl";
+
+/** Acesso ao banco real; ausente = modo de demonstração com dados fictícios. */
+export interface TableDataBackend {
+  loadDetail: () => Promise<DbObject>;
+  loadRows: (orderBy: string[], limit: number, offset: number) => Promise<{ sql: string; rows: CellValue[][] }>;
+  apply: (statements: PlannedStatement[]) => Promise<void>;
+}
 
 interface Props {
   schema: string;
@@ -13,6 +22,7 @@ interface Props {
   active: boolean;
   production: boolean;
   onStatus: (cells: StatusCell[]) => void;
+  backend?: TableDataBackend;
 }
 
 const PAGE_SIZE = 1000;
@@ -21,9 +31,10 @@ function literal(v: CellValue): string {
   return v === null ? "NULL" : `'${v.replace(/'/g, "''")}'`;
 }
 
-export function TableDataDoc({ schema, table, active, production, onStatus }: Props) {
+export function TableDataDoc({ schema, table: tableProp, active, production, onStatus, backend }: Props) {
   const t = useT();
-  const cols = table.columns ?? [];
+  const [table, setTable] = useState<DbObject>(tableProp);
+  const cols = useMemo(() => table.columns ?? [], [table]);
   const keyCols = cols.map((c, i) => ({ c, i })).filter((x) => x.c.key).sort((a, b) => (a.c.key ?? 0) - (b.c.key ?? 0));
   const readOnly = keyCols.length === 0;
 
@@ -32,7 +43,7 @@ export function TableDataDoc({ schema, table, active, production, onStatus }: Pr
     [cols],
   );
 
-  const [original, setOriginal] = useState<CellValue[][]>(() => mockRows(table));
+  const [original, setOriginal] = useState<CellValue[][]>(() => (backend ? [] : mockRows(tableProp)));
   const [rows, setRows] = useState<CellValue[][]>(original);
   const [edited, setEdited] = useState<Set<string>>(new Set());
   const [newRows, setNewRows] = useState<Set<number>>(new Set());
@@ -41,18 +52,73 @@ export function TableDataDoc({ schema, table, active, production, onStatus }: Pr
   const [view, setView] = useState<"grid" | "form">("grid");
   const [refreshedAt, setRefreshedAt] = useState(() => new Date());
   const [review, setReview] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const [loading, setLoading] = useState(!!backend);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [applying, setApplying] = useState(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const [sqlText, setSqlText] = useState(() => selectSql(schema, tableProp.name, PAGE_SIZE, 0));
+
+  const resetEdits = () => {
+    setEdited(new Set());
+    setNewRows(new Set());
+    setDeleted(new Set());
+  };
+
+  const loadPage = useCallback(async (p: number, structure: DbObject) => {
+    if (!backend) return;
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const pk = (structure.columns ?? []).filter((c) => c.key).sort((a, b) => (a.key ?? 0) - (b.key ?? 0)).map((c) => c.name);
+      const res = await backend.loadRows(pk, PAGE_SIZE, p * PAGE_SIZE);
+      setOriginal(res.rows);
+      setRows(res.rows);
+      setSqlText(res.sql);
+      resetEdits();
+      setPage(p);
+      setActiveRow(0);
+      setRefreshedAt(new Date());
+    } catch (e) {
+      setLoadError(errorText(toAtlasError(e)));
+    } finally {
+      setLoading(false);
+    }
+  }, [backend]);
+
+  // Conexão real: lê a estrutura (colunas/PK) e a primeira página.
+  useEffect(() => {
+    if (!backend) return;
+    let alive = true;
+    backend
+      .loadDetail()
+      .then((obj) => {
+        if (!alive) return;
+        setTable(obj);
+        return loadPage(0, obj);
+      })
+      .catch((e) => {
+        if (!alive) return;
+        setLoadError(errorText(toAtlasError(e)));
+        setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+    // Uma vez ao abrir a aba.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const dirty = edited.size > 0 || newRows.size > 0 || deleted.size > 0;
-  const sqlText = selectSql(schema, table.name, PAGE_SIZE, 0);
 
   useEffect(() => {
     if (!active) return;
     onStatus([
       { text: sqlText, grow: true },
-      { text: rows.length ? t("data.record", { n: activeRow + 1, total: rows.length, page: 1 }) : t("data.noRecords"), width: 200 },
+      { text: rows.length ? t("data.record", { n: activeRow + 1, total: rows.length, page: page + 1 }) : t("data.noRecords"), width: 220 },
       { text: t("data.lastRefresh", { when: refreshedAt.toLocaleTimeString() }), width: 240 },
     ]);
-  }, [active, rows.length, activeRow, refreshedAt, sqlText, t, onStatus]);
+  }, [active, rows.length, activeRow, refreshedAt, sqlText, page, t, onStatus]);
 
   const onEdit = (r: number, c: number, v: CellValue) => {
     setRows((rs) => rs.map((row, i) => (i === r ? row.map((x, j) => (j === c ? v : x)) : row)));
@@ -84,14 +150,12 @@ export function TableDataDoc({ schema, table, active, production, onStatus }: Pr
 
   const discard = () => {
     setRows(original);
-    setEdited(new Set());
-    setNewRows(new Set());
-    setDeleted(new Set());
+    resetEdits();
     setActiveRow((r) => Math.min(r, Math.max(0, original.length - 1)));
   };
 
-  /** SQL gerado para revisão. Prévia legível; na execução real os valores vão como parâmetros. */
-  const buildSql = (): string => {
+  /** Prévia legível para revisão. Na execução real os valores vão como parâmetros, nunca no texto. */
+  const buildPreview = (): string => {
     const target = `${quoteIdent(schema)}.${quoteIdent(table.name)}`;
     const where = (orig: CellValue[], extra: number[]) => {
       const conds = keyCols.map(({ c, i }) => `${quoteIdent(c.name)} = ${literal(orig[i])}`);
@@ -122,14 +186,27 @@ export function TableDataDoc({ schema, table, active, production, onStatus }: Pr
     return out.join("\n\n");
   };
 
-  const apply = () => {
-    // Mock: aplica localmente. No M1: transação no servidor, affected=1 por linha, senão conflito.
+  const apply = async () => {
+    if (backend) {
+      setApplying(true);
+      setApplyError(null);
+      try {
+        await backend.apply(plannedStatements({ schema, table: table.name, columns: cols, original, current: rows, edited, newRows, deleted }));
+      } catch (e) {
+        setApplyError(errorText(toAtlasError(e)));
+        setApplying(false);
+        return;
+      }
+      setApplying(false);
+      setReview(null);
+      await loadPage(page, table);
+      return;
+    }
+    // Demonstração: aplica só em memória.
     const kept = rows.filter((_, i) => !deleted.has(i));
     setOriginal(kept);
     setRows(kept);
-    setEdited(new Set());
-    setNewRows(new Set());
-    setDeleted(new Set());
+    resetEdits();
     setReview(null);
     setRefreshedAt(new Date());
     setActiveRow((r) => Math.min(r, Math.max(0, kept.length - 1)));
@@ -137,17 +214,20 @@ export function TableDataDoc({ schema, table, active, production, onStatus }: Pr
 
   const refresh = () => {
     if (dirty) return;
-    setRefreshedAt(new Date());
+    if (backend) void loadPage(page, table);
+    else setRefreshedAt(new Date());
   };
 
-  const tool = (icon: SmallIconName, label: MessageKey, onClick?: () => void, extra = "") => (
-    <button type="button" className={`ot-button${extra}`} disabled={!onClick} onClick={onClick} title={onClick ? t(label) : t("notImplemented")}>
+  const tool = (icon: SmallIconName, label: MessageKey, onClick?: () => void) => (
+    <button type="button" className="ot-button" disabled={!onClick} onClick={onClick} title={onClick ? t(label) : t("notImplemented")}>
       <SmallIcon name={icon} />
       <span>{t(label)}</span>
     </button>
   );
 
   const record = rows[activeRow];
+  const hasNext = !!backend && original.length === PAGE_SIZE;
+  const canPage = !dirty && !loading;
 
   return (
     <div className="doc">
@@ -166,11 +246,14 @@ export function TableDataDoc({ schema, table, active, production, onStatus }: Pr
         <button type="button" className="icon-button" title={t("notImplemented")} disabled><SmallIcon name="fullscreen" /></button>
       </div>
 
-      {readOnly && <div className="doc-banner">{t("data.readOnlyNoKey")}</div>}
+      {loadError && <div className="doc-banner is-warn">{loadError}</div>}
+      {!loadError && !loading && readOnly && <div className="doc-banner">{t("data.readOnlyNoKey")}</div>}
       {!readOnly && production && <div className="doc-banner is-warn">{t("data.productionBanner")}</div>}
 
       <div className="doc-body">
-        {view === "grid" ? (
+        {loading && !rows.length ? (
+          <div className="doc-loading"><span className="spinner" />{t("common.loading")}</div>
+        ) : view === "grid" ? (
           <DataGrid
             columns={columns}
             rows={rows}
@@ -202,18 +285,19 @@ export function TableDataDoc({ schema, table, active, production, onStatus }: Pr
       </div>
 
       <div className="data-footer">
-        <button type="button" className="icon-button" title={t("data.addRecord")} disabled={readOnly} onClick={addRow}><SmallIcon name="addRow" /></button>
+        <button type="button" className="icon-button" title={t("data.addRecord")} disabled={readOnly || loading} onClick={addRow}><SmallIcon name="addRow" /></button>
         <button type="button" className="icon-button" title={t("data.deleteRecord")} disabled={readOnly || !rows.length} onClick={deleteRow}><SmallIcon name="removeRow" /></button>
-        <button type="button" className="icon-button" title={t("data.apply")} disabled={!dirty} onClick={() => setReview(buildSql())}><SmallIcon name="apply" /></button>
+        <button type="button" className="icon-button" title={t("data.apply")} disabled={!dirty} onClick={() => setReview(buildPreview())}><SmallIcon name="apply" /></button>
         <button type="button" className="icon-button" title={t("data.discard")} disabled={!dirty} onClick={discard}><SmallIcon name="discard" /></button>
-        <button type="button" className="icon-button" title={t("data.refresh")} disabled={dirty} onClick={refresh}><SmallIcon name="refresh" /></button>
+        <button type="button" className="icon-button" title={t("data.refresh")} disabled={dirty || loading} onClick={refresh}><SmallIcon name="refresh" /></button>
         <button type="button" className="icon-button" title={t("data.stop")} disabled><SmallIcon name="stopSmall" /></button>
+        {loading && <span className="spinner" />}
         {dirty && <span className="data-pending">{t("data.pending", { n: edited.size + newRows.size + deleted.size })}</span>}
         <span className="spacer" />
-        <button type="button" className="icon-button" disabled title={t("data.firstPage")}><SmallIcon name="first" /></button>
-        <button type="button" className="icon-button" disabled title={t("data.prevPage")}><SmallIcon name="prev" /></button>
-        <input className="field page-input" value="1" readOnly aria-label={t("data.page")} />
-        <button type="button" className="icon-button" disabled title={t("data.nextPage")}><SmallIcon name="next" /></button>
+        <button type="button" className="icon-button" disabled={!canPage || page === 0} title={t("data.firstPage")} onClick={() => void loadPage(0, table)}><SmallIcon name="first" /></button>
+        <button type="button" className="icon-button" disabled={!canPage || page === 0} title={t("data.prevPage")} onClick={() => void loadPage(page - 1, table)}><SmallIcon name="prev" /></button>
+        <input className="field page-input" value={page + 1} readOnly aria-label={t("data.page")} />
+        <button type="button" className="icon-button" disabled={!canPage || !hasNext} title={t("data.nextPage")} onClick={() => void loadPage(page + 1, table)}><SmallIcon name="next" /></button>
         <button type="button" className="icon-button" disabled title={t("data.lastPage")}><SmallIcon name="last" /></button>
         <button type="button" className="icon-button" disabled title={t("notImplemented")}><SmallIcon name="settings" /></button>
         <span className="data-gap" />
@@ -224,13 +308,15 @@ export function TableDataDoc({ schema, table, active, production, onStatus }: Pr
       {review !== null && (
         <MessageDialog
           title={t("data.reviewTitle")}
-          message={t("data.reviewMessage")}
+          message={t(backend ? "data.reviewMessageLive" : "data.reviewMessage")}
           sql={review}
           confirmText={production ? table.name : undefined}
           danger={deleted.size > 0}
           okLabel={t("data.apply")}
-          onOk={apply}
-          onCancel={() => setReview(null)}
+          busy={applying}
+          error={applyError ?? undefined}
+          onOk={() => void apply()}
+          onCancel={() => { setApplyError(null); setReview(null); }}
         />
       )}
     </div>

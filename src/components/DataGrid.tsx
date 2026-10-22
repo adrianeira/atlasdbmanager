@@ -54,7 +54,7 @@ export function DataGrid({ columns, rows, readOnly, edited, deletedRows, newRows
   const [widths, setWidths] = useState<number[]>([]);
 
   useEffect(() => {
-    setWidths(columns.map((c) => c.width ?? (c.kind === "number" ? 120 : c.kind === "time" ? 200 : c.kind === "uuid" ? 280 : 150)));
+    setWidths(columns.map((c) => c.width ?? (c.kind === "number" ? 150 : c.kind === "time" ? 200 : c.kind === "uuid" ? 280 : 150)));
     setActiveCol(0);
     setEditing(null);
   }, [columns]);
@@ -156,7 +156,8 @@ export function DataGrid({ columns, rows, readOnly, edited, deletedRows, newRows
           {columns.map((c, i) => (
             <div key={c.name + i} className="dg-th" style={{ width: widths[i] }} role="columnheader" title={`${c.name} (${c.type})`}>
               <div className="dg-th-name">{c.name}</div>
-              <div className="dg-th-type"><span className={`dg-glyph is-${c.kind}`}>{KIND_GLYPH[c.kind]}</span>{c.type}</div>
+              {/* Em lotes com vários comandos o servidor não descreve os tipos: a linha fica vazia. */}
+              <div className="dg-th-type">{c.type && <><span className={`dg-glyph is-${c.kind}`}>{KIND_GLYPH[c.kind]}</span>{c.type}</>}</div>
               <span className="dg-resize" onMouseDown={(e) => startResize(i, e)} />
             </div>
           ))}

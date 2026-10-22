@@ -1,0 +1,166 @@
+//! Testes contra um PostgreSQL real. Rodam só quando as variáveis abaixo existem
+//! (credenciais nunca ficam no repositório):
+//!
+//!   ATLAS_TEST_PG_HOST, ATLAS_TEST_PG_PORT, ATLAS_TEST_PG_USER,
+//!   ATLAS_TEST_PG_PASSWORD, ATLAS_TEST_PG_DB (opcional, padrão "postgres")
+//!
+//! Exemplo (PowerShell):
+//!   $env:ATLAS_TEST_PG_HOST="localhost"; $env:ATLAS_TEST_PG_PORT="5433"; ...
+//!   cargo test -p atlas-pg --test live_postgres -- --nocapture
+//!
+//! Os testes só leem catálogo e usam tabela TEMPORÁRIA; nada persiste no servidor.
+
+use atlas_core::{ConnectionParams, ErrorKind, Secret, SslMode};
+
+fn params() -> Option<ConnectionParams> {
+    let host = std::env::var("ATLAS_TEST_PG_HOST").ok()?;
+    Some(ConnectionParams {
+        host,
+        port: std::env::var("ATLAS_TEST_PG_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(5432),
+        database: std::env::var("ATLAS_TEST_PG_DB").unwrap_or_else(|_| "postgres".into()),
+        user: std::env::var("ATLAS_TEST_PG_USER").unwrap_or_else(|_| "postgres".into()),
+        password: Secret::new(std::env::var("ATLAS_TEST_PG_PASSWORD").unwrap_or_default()),
+        ssl_mode: SslMode::Disable,
+        connect_timeout_secs: 10,
+    })
+}
+
+macro_rules! require_server {
+    () => {
+        match params() {
+            Some(p) => p,
+            None => {
+                eprintln!("ATLAS_TEST_PG_HOST não definido: teste pulado");
+                return;
+            }
+        }
+    };
+}
+
+#[tokio::test]
+async fn connects_and_reads_server_info() {
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    eprintln!("servidor: {:?}", s.server);
+    assert!(s.server.version_num >= 90000);
+    assert_eq!(s.server.current_database, p.database);
+}
+
+#[tokio::test]
+async fn wrong_password_is_typed_error() {
+    let mut p = require_server!();
+    p.password = Secret::new("definitely-wrong-password-atlas");
+    let err = atlas_pg::connect(&p, None).await.err().expect("must fail");
+    eprintln!("erro: {err:?}");
+    // Servidores em "trust" aceitam qualquer senha; aí o teste não se aplica.
+    if err.kind != ErrorKind::AuthenticationFailed {
+        eprintln!("aviso: servidor não rejeitou a senha (kind={:?})", err.kind);
+    }
+    assert!(!err.message.contains("definitely-wrong-password-atlas"), "senha vazou na mensagem");
+}
+
+#[tokio::test]
+async fn lists_catalog() {
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    let dbs = atlas_pg::list_databases(&s).await.expect("databases");
+    assert!(dbs.databases.iter().any(|d| d == &p.database));
+    let schemas = atlas_pg::list_schemas(&s).await.expect("schemas");
+    assert!(!schemas.iter().any(|n| n.starts_with("pg_")));
+    let objs = atlas_pg::list_objects(&s, "public").await.expect("objects");
+    eprintln!("public: {} tabelas, {} views, {} funções", objs.tables.len(), objs.views.len(), objs.functions.len());
+    let roles = atlas_pg::list_roles(&s).await.expect("roles");
+    assert!(!roles.is_empty());
+}
+
+#[tokio::test]
+async fn executes_multi_statement_with_types_nulls_and_limit() {
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+
+    // Comando único: tipos descritos, NULL distinto de vazio, numeric sem perda.
+    let out = atlas_pg::execute(&s, "SELECT 1::int4 AS a, NULL::text AS b, ''::text AS c, 12345678901234567890.1234::numeric AS d", 100)
+        .await
+        .expect("select");
+    let rs = out.statements[0].result.as_ref().expect("result set");
+    assert_eq!(rs.columns[0].type_name.as_deref(), Some("int4"));
+    assert_eq!(rs.rows[0], vec![Some("1".into()), None, Some(String::new()), Some("12345678901234567890.1234".into())]);
+
+    // Lote: o servidor separa os comandos; ';' dentro de literal não quebra nada.
+    let out = atlas_pg::execute(
+        &s,
+        "CREATE TEMP TABLE atlas_t(id int primary key, v text); \
+         INSERT INTO atlas_t SELECT g, 'x;y' FROM generate_series(1, 50) g; \
+         SELECT * FROM atlas_t ORDER BY id",
+        10,
+    )
+    .await
+    .expect("batch");
+    assert_eq!(out.statements.len(), 3);
+    assert_eq!(out.statements[1].rows_affected, Some(50));
+    let rs = out.statements[2].result.as_ref().expect("rows");
+    assert_eq!(rs.rows.len(), 10);
+    assert!(rs.truncated);
+    assert_eq!(rs.rows[0][1].as_deref(), Some("x;y"));
+
+    // Detalhe da tabela temporária: PK identificada.
+    let schema = atlas_pg::execute(&s, "SELECT nspname FROM pg_namespace WHERE oid = pg_my_temp_schema()", 1).await.unwrap();
+    let temp_schema = schema.statements[0].result.as_ref().unwrap().rows[0][0].clone().unwrap();
+    let detail = atlas_pg::table_detail(&s, &temp_schema, "atlas_t").await.expect("detail");
+    assert_eq!(detail.columns[0].key, Some(1));
+    assert_eq!(detail.columns[0].data_type, "int4");
+}
+
+#[tokio::test]
+async fn apply_commits_or_rolls_back_on_conflict() {
+    use atlas_pg::PlannedStatement;
+    let p = require_server!();
+
+    // Commit: UPDATE parametrizado com cast de tipo, afetando exatamente 1 linha.
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    atlas_pg::execute(&s, "CREATE TEMP TABLE atlas_a(id int primary key, v text); INSERT INTO atlas_a VALUES (1,'a'),(2,'b')", 1)
+        .await
+        .unwrap();
+    let ok = atlas_pg::apply_in_transaction(
+        s,
+        &[PlannedStatement {
+            sql: "UPDATE atlas_a SET v = $1::text WHERE id = $2::text::int4 AND v = $3::text".into(),
+            params: vec![Some("O'Brien; DROP".into()), Some("1".into()), Some("a".into())],
+            expect_one_row: true,
+        }],
+    )
+    .await
+    .expect("apply");
+    assert_eq!(ok, vec![1]);
+
+    // Conflito: o valor original não confere (outra sessão mudou) → 0 linhas → rollback de tudo.
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    atlas_pg::execute(&s, "CREATE TEMP TABLE atlas_b(id int primary key, v text); INSERT INTO atlas_b VALUES (1,'a'),(2,'b')", 1)
+        .await
+        .unwrap();
+    let err = atlas_pg::apply_in_transaction(
+        s,
+        &[
+            PlannedStatement { sql: "UPDATE atlas_b SET v = 'changed' WHERE id = 2".into(), params: vec![], expect_one_row: true },
+            PlannedStatement {
+                sql: "UPDATE atlas_b SET v = $1::text WHERE id = $2::text::int4 AND v = $3::text".into(),
+                params: vec![Some("x".into()), Some("1".into()), Some("stale".into())],
+                expect_one_row: true,
+            },
+        ],
+    )
+    .await
+    .err()
+    .expect("must conflict");
+    assert_eq!(err.kind, ErrorKind::ConcurrencyConflict);
+}
+
+#[tokio::test]
+async fn syntax_error_reports_position() {
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    let err = atlas_pg::execute(&s, "SELEC 1", 10).await.err().expect("must fail");
+    assert_eq!(err.kind, ErrorKind::SqlSyntaxError);
+    assert_eq!(err.code.as_deref(), Some("42601"));
+    assert_eq!(err.position, Some(1));
+}

@@ -1,0 +1,193 @@
+use crate::Secret;
+use serde::{Deserialize, Serialize};
+
+/// Modo TLS no estilo do libpq. `VerifyFull` é o recomendado para hosts remotos (spec §42.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum SslMode {
+    #[default]
+    Disable,
+    Prefer,
+    /// Criptografa sem validar o certificado (aviso na UI).
+    Require,
+    /// Valida a cadeia, sem conferir o nome do host.
+    VerifyCa,
+    /// Valida cadeia e nome do host.
+    VerifyFull,
+}
+
+/// Parâmetros para abrir uma conexão. A senha só vive em memória (o cofre do SO chega no próximo passo).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectionParams {
+    pub host: String,
+    pub port: u16,
+    pub database: String,
+    pub user: String,
+    #[serde(default)]
+    pub password: Secret,
+    #[serde(default)]
+    pub ssl_mode: SslMode,
+    #[serde(default = "default_connect_timeout")]
+    pub connect_timeout_secs: u64,
+}
+
+fn default_connect_timeout() -> u64 {
+    15
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerInfo {
+    /// Versão legível (ex.: "18.0").
+    pub version: String,
+    /// Versão numérica (ex.: 90619, 180000) usada nos gates de capacidade.
+    pub version_num: i32,
+    pub current_database: String,
+    pub current_user: String,
+    /// `Some(true)` quando a sessão está usando TLS; `None` se não foi possível verificar.
+    pub tls: Option<bool>,
+    pub latency_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseList {
+    pub databases: Vec<String>,
+    /// Bancos não listáveis (templates/sem permissão de conexão), como "2 items hidden".
+    pub hidden: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ObjectInfo {
+    pub name: String,
+    /// Estimativa do catálogo (não usa COUNT(*) — spec §31.2). `None` se nunca analisada.
+    pub rows: Option<i64>,
+    pub comment: Option<String>,
+    pub owner: Option<String>,
+    pub args: Option<String>,
+    pub return_type: Option<String>,
+    pub language: Option<String>,
+    pub data_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SchemaObjects {
+    pub tables: Vec<ObjectInfo>,
+    pub views: Vec<ObjectInfo>,
+    pub matviews: Vec<ObjectInfo>,
+    pub functions: Vec<ObjectInfo>,
+    pub sequences: Vec<ObjectInfo>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ColumnInfo {
+    pub name: String,
+    /// Nome do tipo base (ex.: `int4`, `varchar`, `numeric`).
+    pub data_type: String,
+    /// Tipo formatado pelo servidor (ex.: `character varying(150)`).
+    pub formatted_type: String,
+    pub length: i32,
+    pub decimal: i32,
+    pub not_null: bool,
+    /// Posição na chave primária (1..n).
+    pub key: Option<i32>,
+    pub default: Option<String>,
+    pub comment: Option<String>,
+    pub collation: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexInfo {
+    pub name: String,
+    pub fields: String,
+    pub method: String,
+    pub unique: bool,
+    pub primary: bool,
+    pub definition: String,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConstraintInfo {
+    pub name: String,
+    /// `f` foreign key, `u` unique, `c` check, `x` exclude.
+    pub kind: String,
+    pub fields: String,
+    pub ref_schema: Option<String>,
+    pub ref_table: Option<String>,
+    pub ref_fields: Option<String>,
+    pub on_delete: Option<String>,
+    pub on_update: Option<String>,
+    pub definition: String,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TriggerInfo {
+    pub name: String,
+    pub definition: String,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TableDetail {
+    pub columns: Vec<ColumnInfo>,
+    pub indexes: Vec<IndexInfo>,
+    pub constraints: Vec<ConstraintInfo>,
+    pub triggers: Vec<TriggerInfo>,
+    pub owner: Option<String>,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleInfo {
+    pub name: String,
+    pub can_login: bool,
+    pub superuser: bool,
+}
+
+/// Coluna de um result set. `type_name` vem do servidor quando a descrição é possível.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResultColumn {
+    pub name: String,
+    pub type_name: Option<String>,
+}
+
+/// Valores em texto exatamente como o servidor os formata: sem perda de precisão
+/// em `numeric`, sem mudança de fuso em `timestamptz` (spec §31.1). `None` = NULL.
+pub type TextRow = Vec<Option<String>>;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResultSet {
+    pub columns: Vec<ResultColumn>,
+    pub rows: Vec<TextRow>,
+    /// Havia mais linhas que o limite pedido; o restante não foi carregado.
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatementOutcome {
+    /// Resultado tabular (SELECT, RETURNING...).
+    pub result: Option<ResultSet>,
+    /// Linhas afetadas/retornadas informadas pelo servidor (CommandComplete).
+    pub rows_affected: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueryOutcome {
+    pub statements: Vec<StatementOutcome>,
+    pub elapsed_ms: u64,
+}

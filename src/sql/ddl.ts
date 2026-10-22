@@ -22,6 +22,11 @@ function fieldList(fields: string): string {
 }
 
 export function createTableSql(schema: string, table: DbObject, nameOverride?: string): string {
+  return createTableStatements(schema, table, nameOverride).join("\n\n");
+}
+
+/** Os mesmos comandos de `createTableSql`, separados para execução um a um na transação. */
+export function createTableStatements(schema: string, table: DbObject, nameOverride?: string): string[] {
   const name = `${quoteIdent(schema)}.${quoteIdent(nameOverride ?? table.name)}`;
   const cols = table.columns ?? [];
   const lines: string[] = cols.map((c) => {
@@ -56,7 +61,7 @@ export function createTableSql(schema: string, table: DbObject, nameOverride?: s
     if (c.comment) out.push(`COMMENT ON COLUMN ${name}.${quoteIdent(c.name)} IS '${c.comment.replace(/'/g, "''")}';`);
   }
   if (table.comment) out.push(`COMMENT ON TABLE ${name} IS '${table.comment.replace(/'/g, "''")}';`);
-  return out.join("\n\n");
+  return out;
 }
 
 export function selectSql(schema: string, table: string, limit: number, offset: number): string {

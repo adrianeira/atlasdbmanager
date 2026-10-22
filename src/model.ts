@@ -25,6 +25,8 @@ export interface ColumnDef {
   default?: string;
   comment?: string;
   collation?: string;
+  /** Tipo completo para casts de parâmetros (ex.: "numeric(19,4)"), quando vindo do servidor. */
+  castType?: string;
 }
 
 export interface IndexDef { name: string; fields: string; method: string; unique: boolean; concurrently: boolean; comment?: string }
@@ -58,8 +60,9 @@ export interface DbObject {
   triggers?: TriggerDef[];
 }
 
-export interface SchemaMock { name: string; objects: Partial<Record<Category, DbObject[]>> }
-export interface DatabaseMock { name: string; schemas: SchemaMock[] }
+/** `loaded` = false indica nível ainda não lido do servidor (carga preguiçosa). */
+export interface SchemaMock { name: string; objects: Partial<Record<Category, DbObject[]>>; loaded?: boolean }
+export interface DatabaseMock { name: string; schemas: SchemaMock[]; loaded?: boolean }
 
 export interface ConnectionMock {
   id: string;
@@ -76,6 +79,9 @@ export interface ConnectionMock {
   roles: DbObject[];
   /** Local | Development | Test | Staging | Production | Custom (spec §42.4). */
   environment?: string;
+  /** Conexão real (app desktop) em vez de dados fictícios. */
+  live?: boolean;
+  sslMode?: "disable" | "prefer" | "require" | "verify-ca" | "verify-full";
 }
 
 const col = (name: string, type: string, length = 0, decimal = 0, notNull = false, extra: Partial<ColumnDef> = {}): ColumnDef =>
@@ -345,7 +351,8 @@ export function buildVisibleTree(
           for (const o of items) {
             if (!matches(o.name)) continue;
             const oId = `obj:${scPath}/${cat}/${seg(o.name)}`;
-            const hasCols = cat === "table" && (o.columns?.length ?? 0) > 0;
+            // Colunas ainda não lidas (conexão real) também deixam a tabela expansível.
+            const hasCols = cat === "table" && (o.columns === undefined || o.columns.length > 0);
             out.push({ id: oId, kind: "object", label: cat === "function" ? functionLabel(o) : o.name, depth: 4, expandable: hasCols, category: cat });
             if (!hasCols || !state.expanded.has(oId)) continue;
             // DECISÃO_ATLAS: tabela expandida mostra suas colunas com o tipo.

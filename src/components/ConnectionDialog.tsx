@@ -3,6 +3,7 @@ import type { MessageKey } from "../i18n";
 import { useT } from "../i18n";
 import { PROVIDER_STYLE, ProviderIcon, ProviderTile, SmallIcon } from "../icons";
 import type { ConnectionMock, ProviderId } from "../model";
+import { errorText, isDesktop, pg, toAtlasError, type ConnectionParams, type SslMode } from "../backend";
 
 /* ---------- Tipos de conexão ---------- */
 
@@ -94,10 +95,36 @@ function defaultForm(p: ProviderOption): ConnectionForm {
 
 export function formFromConnection(c: ConnectionMock): ConnectionForm {
   const p = PROVIDERS.find((x) => x.id === c.provider) ?? PROVIDERS[1];
-  return { ...defaultForm(p), name: c.name, host: c.host, port: String(c.port), initialDatabase: c.initialDatabase, user: c.user };
+  const ssl = c.sslMode && c.sslMode !== "disable";
+  return {
+    ...defaultForm(p), name: c.name, host: c.host, port: String(c.port), initialDatabase: c.initialDatabase, user: c.user,
+    environment: (c.environment as Environment) ?? "development", useSsl: !!ssl, sslMode: ssl ? c.sslMode! : "verify-full",
+  };
 }
 
 type TestState = { kind: "idle" } | { kind: "running" } | { kind: "ok"; version: number } | { kind: "fail"; message: string };
+
+/** Parâmetros para o núcleo Rust. Sem SSL marcado = sem TLS (escolha explícita do usuário). */
+export function formToParams(f: ConnectionForm, fallbackPassword = ""): ConnectionParams {
+  return {
+    host: f.host.trim(),
+    port: Number(f.port) || 5432,
+    database: f.initialDatabase.trim() || "postgres",
+    user: f.user,
+    password: f.password || fallbackPassword,
+    sslMode: f.useSsl ? (f.sslMode as SslMode) : "disable",
+  };
+}
+
+async function liveTest(f: ConnectionForm, fallbackPassword: string, notSupported: string): Promise<TestState> {
+  if (f.provider !== "postgresql") return { kind: "fail", message: notSupported };
+  try {
+    const info = await pg.testConnection(formToParams(f, fallbackPassword));
+    return { kind: "ok", version: info.versionNum };
+  } catch (e) {
+    return { kind: "fail", message: errorText(toAtlasError(e)).replace(/\n/g, " — ") };
+  }
+}
 
 /** Mock do teste de conexão. No M1 vira o comando IPC `connection_test` (driver real, TLS, versão). */
 function mockTest(f: ConnectionForm): Promise<TestState> {
@@ -128,11 +155,13 @@ interface Props {
   /** Conexão existente para editar; ausente = nova conexão (começa no seletor de tipo). */
   editing?: ConnectionMock;
   recentProviders: ProviderId[];
+  /** Senha já conhecida nesta sessão (edição): usada no teste se o campo ficar vazio. */
+  knownPassword?: string;
   onSave: (form: ConnectionForm, serverVersion: number | null) => void;
   onClose: () => void;
 }
 
-export function ConnectionDialog({ editing, recentProviders, onSave, onClose }: Props) {
+export function ConnectionDialog({ editing, recentProviders, knownPassword = "", onSave, onClose }: Props) {
   const t = useT();
   const [step, setStep] = useState<"type" | "form">(editing ? "form" : "type");
   const [picked, setPicked] = useState<ProviderOption>(PROVIDERS.find((p) => p.id === (editing?.provider ?? recentProviders[0] ?? "postgresql")) ?? PROVIDERS[1]);
@@ -162,7 +191,7 @@ export function ConnectionDialog({ editing, recentProviders, onSave, onClose }: 
 
   const runTest = async () => {
     setTest({ kind: "running" });
-    setTest(await mockTest(form));
+    setTest(isDesktop ? await liveTest(form, knownPassword, t("conn.providerNotYet")) : await mockTest(form));
   };
 
   const submit = () => {

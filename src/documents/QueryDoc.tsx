@@ -8,6 +8,7 @@ import { ProviderIcon, SmallIcon, type SmallIconName } from "../icons";
 import { mockRows, type CellValue, type ConnectionMock } from "../model";
 import { columnType } from "../sql/ddl";
 import { beautifySql } from "../sql/format";
+import { errorText, toAtlasError } from "../backend";
 
 export interface QueryContext {
   connectionId?: string;
@@ -25,6 +26,37 @@ interface Props {
   onDirty: (dirty: boolean) => void;
   /** Permite que menus globais (Query/Format) acionem este documento. */
   registerActions: (a: QueryActions | null) => void;
+  /** Banco real; ausente = execução simulada (modo de demonstração). */
+  backend?: QueryBackend;
+}
+
+export interface QueryBackend {
+  /** Abre a conexão se necessário (pode pedir a senha). */
+  ensureOpen: (connectionId: string) => Promise<void>;
+  execute: (connectionId: string, database: string, sql: string, maxRows: number) => Promise<QueryOutcomeLive>;
+  cancel: (connectionId: string, database: string) => Promise<void>;
+}
+
+type QueryOutcomeLive = import("../backend").QueryOutcome;
+
+/** Linhas máximas por result set no editor (o excedente é sinalizado como truncado). */
+const EDITOR_MAX_ROWS = 1000;
+
+function fromLive(sqlText: string, out: QueryOutcomeLive, t: ReturnType<typeof useT>): RunOutcome {
+  const results: ResultSet[] = [];
+  const lines: string[] = [sqlText.trim()];
+  out.statements.forEach((st, i) => {
+    if (st.result) {
+      results.push({
+        columns: st.result.columns.map((c) => ({ name: c.name, type: c.typeName ?? "", kind: typeKind(c.typeName ?? "") })),
+        rows: st.result.rows,
+      });
+      lines.push(`> [${i + 1}] OK — ${t("query.rowsReturned", { n: st.result.rows.length })}${st.result.truncated ? ` (${t("query.truncated", { n: EDITOR_MAX_ROWS })})` : ""}`);
+    } else {
+      lines.push(`> [${i + 1}] OK — ${t("query.rowsAffected", { n: st.rowsAffected ?? 0 })}`);
+    }
+  });
+  return { sql: sqlText.trim(), ms: out.elapsedMs, results, message: lines.join("\n") };
 }
 
 export interface QueryActions {
@@ -89,7 +121,7 @@ function mockExecute(sqlText: string, conn: ConnectionMock | undefined, database
   return { sql: text, ms: ms(), results: [], message: `${text}\n> [M0] Execução simulada: comando aceito, nada foi enviado ao servidor.` };
 }
 
-export function QueryDoc({ connections, openConnections, initial, initialSql, active, onStatus, onDirty, registerActions }: Props) {
+export function QueryDoc({ connections, openConnections, initial, initialSql, active, onStatus, onDirty, registerActions, backend }: Props) {
   const t = useT();
   const editor = useRef<SqlEditorHandle | null>(null);
   const [ctx, setCtx] = useState<QueryContext>(initial);
@@ -120,6 +152,26 @@ export function QueryDoc({ connections, openConnections, initial, initialSql, ac
     const text = (selectionOnly || sel ? sel : "") || (editor.current?.getText() ?? "");
     if (!text.trim()) return;
     setRunning(true);
+    if (backend && conn) {
+      const database = ctx.database ?? conn.initialDatabase;
+      void (async () => {
+        try {
+          await backend.ensureOpen(conn.id);
+          const res = fromLive(text, await backend.execute(conn.id, database, text, EDITOR_MAX_ROWS), t);
+          setOutcome(res);
+          setResultTab(res.results.length ? 1 : 0);
+        } catch (e) {
+          const err = toAtlasError(e);
+          const pos = err.position ? `\n> ${t("query.errorPosition", { n: err.position })}` : "";
+          setOutcome({ sql: text.trim(), ms: 0, results: [], message: "", error: `${errorText(err)}${pos}` });
+          setResultTab(0);
+        } finally {
+          setActiveRow(0);
+          setRunning(false);
+        }
+      })();
+      return;
+    }
     runTimer.current = window.setTimeout(() => {
       const res = mockExecute(text, conn, ctx.database, ctx.schema);
       setOutcome(res);
@@ -127,9 +179,14 @@ export function QueryDoc({ connections, openConnections, initial, initialSql, ac
       setActiveRow(0);
       setRunning(false);
     }, 280);
-  }, [running, conn, ctx.database, ctx.schema]);
+  }, [running, conn, ctx.database, ctx.schema, backend, t]);
 
   const stop = useCallback(() => {
+    if (backend && conn && running) {
+      // Pede o cancelamento ao servidor; o resultado (erro 57014) chega pelo próprio run.
+      void backend.cancel(conn.id, ctx.database ?? conn.initialDatabase).catch(() => undefined);
+      return;
+    }
     if (runTimer.current) window.clearTimeout(runTimer.current);
     runTimer.current = null;
     if (running) {
@@ -137,7 +194,7 @@ export function QueryDoc({ connections, openConnections, initial, initialSql, ac
       setOutcome({ sql: "", ms: 0, results: [], message: t("query.cancelled") });
       setResultTab(0);
     }
-  }, [running, t]);
+  }, [running, t, backend, conn, ctx.database]);
 
   const beautify = useCallback(() => {
     const text = editor.current?.getText() ?? "";
@@ -147,6 +204,26 @@ export function QueryDoc({ connections, openConnections, initial, initialSql, ac
   const explain = useCallback(() => {
     const text = editor.current?.getSelection() || editor.current?.getText() || "";
     if (!text.trim()) return;
+    if (backend && conn) {
+      // EXPLAIN sem ANALYZE: o servidor só planeja, não executa o comando.
+      const sqlText = `EXPLAIN ${text.trim().replace(/;\s*$/, "")}`;
+      setRunning(true);
+      void (async () => {
+        try {
+          await backend.ensureOpen(conn.id);
+          const res = fromLive(sqlText, await backend.execute(conn.id, ctx.database ?? conn.initialDatabase, sqlText, EDITOR_MAX_ROWS), t);
+          setOutcome(res);
+          setResultTab(res.results.length ? 1 : 0);
+        } catch (e) {
+          setOutcome({ sql: sqlText, ms: 0, results: [], message: "", error: errorText(toAtlasError(e)) });
+          setResultTab(0);
+        } finally {
+          setActiveRow(0);
+          setRunning(false);
+        }
+      })();
+      return;
+    }
     setOutcome({
       sql: text, ms: 1,
       results: [{
@@ -156,7 +233,7 @@ export function QueryDoc({ connections, openConnections, initial, initialSql, ac
       message: `EXPLAIN ${text.trim()}\n> OK`,
     });
     setResultTab(1);
-  }, []);
+  }, [backend, conn, ctx.database, t]);
 
   useEffect(() => {
     registerActions(active ? { run, stop, explain, beautify } : null);

@@ -773,6 +773,23 @@ textarea.field.remarks {
   user-select: text;
 }
 
+.msg-error {
+  padding: 6px 8px;
+  background: var(--c-fail-bg);
+  color: var(--c-fail-text);
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+.doc-loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--c-text-muted);
+}
+
 .msg-prompt {
   display: flex;
   flex-direction: column;

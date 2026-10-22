@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { errorText, isDesktop, pg, toAtlasError, type ConnectionParams } from "./backend";
 import { entries, matchesShortcut, sub, type CommandMap, type MenuDef, type MenuEntry } from "./commands";
 import { ConnectionDialog, type ConnectionForm } from "./components/ConnectionDialog";
+import { schemaFromServer, sessionPasswords, tableFromServer } from "./live";
+import type { TableDataBackend } from "./documents/TableDataDoc";
+import type { QueryBackend } from "./documents/QueryDoc";
 import { InfoPane } from "./components/InfoPane";
 import { MainToolbar } from "./components/MainToolbar";
 import { MenuBar } from "./components/MenuBar";
@@ -58,22 +62,30 @@ function writeJson(key: string, value: unknown) {
 }
 
 /** Perfil salvo: NUNCA contém senha (spec SEG-001/ADR-007). */
-interface SavedProfile { id: string; name: string; provider: ProviderId; host: string; port: number; user: string; initialDatabase: string; environment: string }
+interface SavedProfile {
+  id: string; name: string; provider: ProviderId; host: string; port: number; user: string; initialDatabase: string; environment: string;
+  sslMode?: ConnectionMock["sslMode"];
+}
 
+/** No app desktop a conexão é real e os níveis são lidos do servidor sob demanda. */
 function profileToConnection(p: SavedProfile): ConnectionMock {
   return {
-    ...p, serverVersion: "-", serverVersionNum: 0, hiddenDatabases: 0, roles: [],
-    databases: [{ name: p.initialDatabase || "postgres", schemas: [{ name: "public", objects: { table: [], view: [], matview: [], function: [], query: [], backup: [] } }] }],
+    ...p, serverVersion: "-", serverVersionNum: 0, hiddenDatabases: 0, roles: [], live: isDesktop,
+    databases: isDesktop
+      ? []
+      : [{ name: p.initialDatabase || "postgres", schemas: [{ name: "public", objects: { table: [], view: [], matview: [], function: [], query: [], backup: [] } }] }],
   };
 }
 
 function loadConnections(): ConnectionMock[] {
+  // Dados fictícios só no modo de demonstração (navegador).
+  const demo = isDesktop ? [] : INITIAL_CONNECTIONS;
   try {
     const raw = localStorage.getItem(CONNECTIONS_KEY);
     const saved: SavedProfile[] = raw ? JSON.parse(raw) : [];
-    return [...INITIAL_CONNECTIONS, ...saved.map(profileToConnection)];
+    return [...demo, ...saved.map(profileToConnection)];
   } catch {
-    return INITIAL_CONNECTIONS;
+    return demo;
   }
 }
 
@@ -81,8 +93,18 @@ function saveConnections(list: ConnectionMock[]) {
   const builtIn = new Set(INITIAL_CONNECTIONS.map((c) => c.id));
   const profiles: SavedProfile[] = list
     .filter((c) => !builtIn.has(c.id))
-    .map((c) => ({ id: c.id, name: c.name, provider: c.provider, host: c.host, port: c.port, user: c.user, initialDatabase: c.initialDatabase, environment: c.environment ?? "development" }));
+    .map((c) => ({
+      id: c.id, name: c.name, provider: c.provider, host: c.host, port: c.port, user: c.user,
+      initialDatabase: c.initialDatabase, environment: c.environment ?? "development", sslMode: c.sslMode,
+    }));
   writeJson(CONNECTIONS_KEY, profiles);
+}
+
+function paramsFor(c: ConnectionMock): ConnectionParams {
+  return {
+    host: c.host, port: c.port, database: c.initialDatabase || "postgres", user: c.user,
+    password: sessionPasswords.get(c.id) ?? "", sslMode: c.sslMode ?? "disable",
+  };
 }
 
 const CATEGORY_LABEL: Record<Category, MessageKey> = {
@@ -110,6 +132,8 @@ type Dialog =
   | { kind: "connection"; editing?: ConnectionMock }
   | { kind: "deleteConnection"; conn: ConnectionMock }
   | { kind: "closeDirty"; tabId: string }
+  | { kind: "password"; connId: string; retry?: string }
+  | { kind: "error"; title: string; message: string }
   | { kind: "about" };
 
 export default function App() {
@@ -154,10 +178,71 @@ export default function App() {
     return s;
   };
 
+  /* ---------- Banco real: carga preguiçosa por nível ---------- */
+  const [loadingNodes, setLoadingNodes] = useState<Set<string>>(new Set());
+  const connectionsRef = useRef(connections);
+  connectionsRef.current = connections;
+  const openRef = useRef(openConnections);
+  openRef.current = openConnections;
+
+  const showError = (title: string, e: unknown) => setDialog({ kind: "error", title, message: errorText(toAtlasError(e)) });
+
+  const updateConn = (connId: string, fn: (c: ConnectionMock) => ConnectionMock) =>
+    setConnections((list) => list.map((c) => (c.id === connId ? fn(c) : c)));
+
+  const withLoading = async <T,>(nodeId: string, job: () => Promise<T>): Promise<T> => {
+    setLoadingNodes((s) => add(s, nodeId));
+    try {
+      return await job();
+    } finally {
+      setLoadingNodes((s) => remove(s, nodeId));
+    }
+  };
+
+  /** Abre a sessão no servidor e lê bancos/roles. Rejeita se a senha ainda não é conhecida. */
+  const openSession = async (connId: string) => {
+    if (openRef.current.has(connId)) return;
+    const conn = connectionsRef.current.find((c) => c.id === connId);
+    if (!conn) return;
+    const info = await pg.open(connId, paramsFor(conn));
+    const dbs = await pg.listDatabases(connId);
+    const roles = await pg.listRoles(connId).catch(() => []);
+    updateConn(connId, (c) => ({
+      ...c,
+      serverVersion: info.version,
+      serverVersionNum: info.versionNum,
+      hiddenDatabases: dbs.hidden,
+      roles: roles.map((r) => ({ name: r.name, canLogin: r.canLogin, superuser: r.superuser })),
+      databases: dbs.databases.map((name) => c.databases.find((d) => d.name === name) ?? { name, schemas: [], loaded: false }),
+    }));
+    openRef.current = add(openRef.current, connId);
+    setOpenConnections((s) => add(s, connId));
+  };
+
   const connect = (connId: string) => {
     if (connecting.has(connId)) return;
+    const conn = connections.find((c) => c.id === connId);
+    if (conn?.live) {
+      if (!sessionPasswords.has(connId)) {
+        setDialog({ kind: "password", connId });
+        return;
+      }
+      setConnecting((s) => add(s, connId));
+      void openSession(connId)
+        .then(() => setExpanded((s) => add(s, `conn:${seg(connId)}`)))
+        .catch((e) => {
+          const err = toAtlasError(e);
+          // Senha recusada: pede de novo em vez de repetir a tentativa (spec §26.2).
+          if (err.kind === "authenticationFailed") {
+            sessionPasswords.delete(connId);
+            setDialog({ kind: "password", connId, retry: errorText(err) });
+          } else showError(t("cmd.openConnection"), err);
+        })
+        .finally(() => setConnecting((s) => remove(s, connId)));
+      return;
+    }
+    // Modo de demonstração.
     setConnecting((s) => add(s, connId));
-    // Mock: no M1 vira o comando IPC `connection_open` do núcleo Rust.
     window.setTimeout(() => {
       setConnecting((s) => remove(s, connId));
       setOpenConnections((s) => add(s, connId));
@@ -166,27 +251,120 @@ export default function App() {
   };
 
   const disconnect = (connId: string) => {
+    if (connections.find((c) => c.id === connId)?.live) {
+      void pg.close(connId).catch(() => undefined);
+      // Ao reabrir, a estrutura é lida de novo do servidor.
+      updateConn(connId, (c) => ({ ...c, databases: [] }));
+    }
+    openRef.current = remove(openRef.current, connId);
     setOpenConnections((s) => remove(s, connId));
     const prefix = `db:${seg(connId)}/`;
     setOpenDatabases((s) => new Set([...s].filter((x) => !x.startsWith(prefix))));
   };
 
+  const loadDatabase = async (connId: string, dbName: string, force = false) => {
+    const conn = connectionsRef.current.find((c) => c.id === connId);
+    const db = conn?.databases.find((d) => d.name === dbName);
+    if (!conn?.live || !db || (db.loaded && !force)) return;
+    const names = await withLoading(`db:${seg(connId)}/${seg(dbName)}`, () => pg.listSchemas(connId, dbName));
+    updateConn(connId, (c) => ({
+      ...c,
+      databases: c.databases.map((d) => (d.name !== dbName ? d : {
+        ...d, loaded: true,
+        schemas: names.map((n) => (force ? undefined : d.schemas.find((s) => s.name === n)) ?? { name: n, objects: {}, loaded: false }),
+      })),
+    }));
+  };
+
+  const loadSchema = async (connId: string, dbName: string, schemaName: string, force = false) => {
+    const conn = connectionsRef.current.find((c) => c.id === connId);
+    const sc = conn?.databases.find((d) => d.name === dbName)?.schemas.find((s) => s.name === schemaName);
+    if (!conn?.live || !sc || (sc.loaded && !force)) return;
+    const objs = await withLoading(`schema:${seg(connId)}/${seg(dbName)}/${seg(schemaName)}`, () => pg.listObjects(connId, dbName, schemaName));
+    const fresh = schemaFromServer(schemaName, objs);
+    updateConn(connId, (c) => ({
+      ...c,
+      databases: c.databases.map((d) => (d.name !== dbName ? d : { ...d, schemas: d.schemas.map((s) => (s.name === schemaName ? fresh : s)) })),
+    }));
+  };
+
+  const loadTableColumns = async (connId: string, dbName: string, schemaName: string, table: string) => {
+    const detail = await withLoading(`obj:${seg(connId)}/${seg(dbName)}/${seg(schemaName)}/table/${seg(table)}`, () =>
+      pg.tableDetail(connId, dbName, schemaName, table),
+    );
+    updateConn(connId, (c) => ({
+      ...c,
+      databases: c.databases.map((d) => (d.name !== dbName ? d : {
+        ...d,
+        schemas: d.schemas.map((s) => (s.name !== schemaName ? s : {
+          ...s,
+          objects: { ...s.objects, table: (s.objects.table ?? []).map((o) => (o.name === table ? tableFromServer(o, detail) : o)) },
+        })),
+      })),
+    }));
+  };
+
   const toggle = (node: TreeNode) => {
+    const c = resolveNode(node.id, connections);
     if (node.kind === "connection") {
       const connId = connIdOf(node.id);
       if (!openConnections.has(connId)) return connect(connId);
     }
     if (node.kind === "database" && !openDatabases.has(node.id)) {
-      setOpenDatabases((s) => add(s, node.id));
-      setExpanded((s) => add(s, node.id));
+      const open = () => {
+        setOpenDatabases((s) => add(s, node.id));
+        setExpanded((s) => add(s, node.id));
+      };
+      if (c.connection?.live && c.database) {
+        void loadDatabase(c.connection.id, c.database.name).then(open).catch((e) => showError(t("cmd.openDatabase"), e));
+      } else open();
       return;
     }
+    const expanding = !expanded.has(node.id);
+    if (expanding && c.connection?.live && c.database) {
+      if (node.kind === "schema" && c.schema && !c.schema.loaded) {
+        void loadSchema(c.connection.id, c.database.name, c.schema.name)
+          .then(() => setExpanded((s) => add(s, node.id)))
+          .catch((e) => showError(c.schema!.name, e));
+        return;
+      }
+      if (node.kind === "object" && node.category === "table" && c.schema && c.objectName && !c.object?.columns) {
+        void loadTableColumns(c.connection.id, c.database.name, c.schema.name, c.objectName)
+          .then(() => setExpanded((s) => add(s, node.id)))
+          .catch((e) => showError(c.objectName!, e));
+        return;
+      }
+    }
     setExpanded((s) => (s.has(node.id) ? remove(s, node.id) : add(s, node.id)));
+  };
+
+  const refreshNode = (node: TreeNode) => {
+    const c = resolveNode(node.id, connections);
+    if (!c.connection?.live) return;
+    const connId = c.connection.id;
+    const fail = (e: unknown) => showError(t("cmd.refresh"), e);
+    if (node.kind === "connection") {
+      void withLoading(node.id, async () => {
+        const dbs = await pg.listDatabases(connId);
+        updateConn(connId, (cc) => ({
+          ...cc, hiddenDatabases: dbs.hidden,
+          databases: dbs.databases.map((name) => cc.databases.find((d) => d.name === name) ?? { name, schemas: [], loaded: false }),
+        }));
+      }).catch(fail);
+    } else if (node.kind === "database" && c.database) {
+      void loadDatabase(connId, c.database.name, true).catch(fail);
+    } else if ((node.kind === "schema" || node.kind === "folder") && c.database && c.schema) {
+      void loadSchema(connId, c.database.name, c.schema.name, true).catch(fail);
+    }
   };
 
   const selectNode = (id: string) => {
     setSelectedNode(id);
     const c = resolveNode(id, connections);
+    // Selecionar schema/pasta de uma conexão real já carrega a lista de objetos (como a referência).
+    if ((id.startsWith("schema:") || id.startsWith("folder:")) && c.connection?.live && c.database && c.schema && !c.schema.loaded) {
+      void loadSchema(c.connection.id, c.database.name, c.schema.name).catch((e) => showError(c.schema!.name, e));
+    }
     if (id.startsWith("folder:") && c.category) {
       setCategory(c.category);
       setSelectedObjects([]);
@@ -333,11 +511,19 @@ export default function App() {
     const base = {
       name: form.name, provider: form.provider, host: form.host, port: Number(form.port) || 0, user: form.user,
       initialDatabase: form.initialDatabase, environment: form.environment,
+      sslMode: (form.useSsl ? form.sslMode : "disable") as ConnectionMock["sslMode"],
+    };
+    // "Salvar senha": por enquanto só em memória até fechar o app (o cofre do SO vem no próximo passo).
+    const rememberPassword = (id: string) => {
+      if (form.savePassword && form.password) sessionPasswords.set(id, form.password);
+      else if (!form.savePassword) sessionPasswords.delete(id);
     };
     if (editing) {
+      rememberPassword(editing.id);
       setConnections((list) => list.map((c) => (c.id === editing.id ? { ...c, ...base } : c)));
     } else {
       const id = `c${Date.now().toString(36)}`;
+      rememberPassword(id);
       const conn = profileToConnection({ id, ...base });
       if (version) {
         conn.serverVersionNum = version;
@@ -369,19 +555,32 @@ export default function App() {
         sep,
         item("cmd.newQuery", isOpen ? () => newQuery() : undefined),
         sep,
-        item("cmd.refresh"),
+        item("cmd.refresh", isOpen && conn.live ? () => refreshNode(node) : undefined),
       );
     }
     if (node.kind === "database") {
       const isOpen = openDatabases.has(node.id);
+      const live = c.connection?.live;
       items.push(
-        isOpen ? item("cmd.closeDatabase", () => setOpenDatabases((s) => remove(s, node.id))) : item("cmd.openDatabase", () => toggle(node)),
+        isOpen
+          ? item("cmd.closeDatabase", () => {
+              setOpenDatabases((s) => remove(s, node.id));
+              if (live && c.connection && c.database) void pg.closeDatabase(c.connection.id, c.database.name).catch(() => undefined);
+            })
+          : item("cmd.openDatabase", () => toggle(node)),
         sep,
         item("cmd.newQuery", () => newQuery()),
+        sep,
+        item("cmd.refresh", isOpen && live ? () => refreshNode(node) : undefined),
       );
     }
     if (node.kind === "schema" || (node.kind === "folder" && node.category === "table")) {
-      items.push(item("act.newTable", newTable), item("cmd.newQuery", () => newQuery()));
+      items.push(
+        item("act.newTable", newTable),
+        item("cmd.newQuery", () => newQuery()),
+        sep,
+        item("cmd.refresh", c.connection?.live ? () => refreshNode(node) : undefined),
+      );
     }
     if (node.kind === "object" && node.category === "table" && c.objectName) {
       const name = c.objectName;
@@ -625,6 +824,36 @@ export default function App() {
   const highlight: Category = active.kind === "query" ? "query" : active.kind === "data" || active.kind === "designer" ? "table" : category;
   const toolbarProvider = ctx.connection?.provider ?? connections.find((c) => c.id === active.connectionId)?.provider;
 
+  /* ---------- Backends reais por documento (estáveis por aba) ---------- */
+  const queryBackend = useRef<QueryBackend>({
+    ensureOpen: async (connId) => {
+      if (openRef.current.has(connId)) return;
+      if (!sessionPasswords.has(connId)) {
+        throw { kind: "sessionNotFound", code: null, message: t("conn.needOpen"), detail: null, position: null };
+      }
+      await openSession(connId);
+    },
+    execute: (connId, db, sqlText, max) => pg.execute(connId, db, sqlText, max),
+    cancel: (connId, db) => pg.cancel(connId, db),
+  }).current;
+
+  const dataBackends = useRef<Record<string, TableDataBackend>>({});
+  const tableBackendFor = (tab: DocTab, base: DbObject): TableDataBackend => {
+    const connId = tab.connectionId ?? "";
+    const db = tab.database ?? "";
+    const schema = tab.schema ?? "";
+    return (dataBackends.current[tab.id] ??= {
+      loadDetail: async () => tableFromServer(base, await pg.tableDetail(connId, db, schema, tab.object ?? base.name)),
+      loadRows: async (orderBy, limit, offset) => {
+        const r = await pg.tableRows(connId, db, schema, tab.object ?? base.name, orderBy, limit, offset);
+        return { sql: r.sql, rows: r.outcome.statements[0]?.result?.rows ?? [] };
+      },
+      apply: async (statements) => {
+        await pg.apply(connId, db, statements);
+      },
+    });
+  };
+
   /* ---------- Render dos documentos ---------- */
   const lookupTable = (tab: DocTab): { conn?: ConnectionMock; table?: DbObject; tables: DbObject[] } => {
     const conn = connections.find((c) => c.id === tab.connectionId);
@@ -646,16 +875,28 @@ export default function App() {
           onStatus={statusFor(tab.id)}
           onDirty={(d) => setTabDirty(tab.id, d)}
           registerActions={(a) => { if (isActive) queryActions.current = a; }}
+          backend={connections.find((c) => c.id === tab.connectionId)?.live ? queryBackend : undefined}
         />
       );
     }
     if (tab.kind === "data") {
       const { conn, table } = lookupTable(tab);
-      if (!table) return <div className="doc-placeholder">{t("placeholder.missing")}</div>;
-      return <TableDataDoc schema={tab.schema ?? ""} table={table} active={isActive} production={conn?.environment === "production"} onStatus={statusFor(tab.id)} />;
+      const base = table ?? (conn?.live && tab.object ? { name: tab.object } : undefined);
+      if (!base) return <div className="doc-placeholder">{t("placeholder.missing")}</div>;
+      return (
+        <TableDataDoc
+          schema={tab.schema ?? ""}
+          table={base}
+          active={isActive}
+          production={conn?.environment === "production"}
+          onStatus={statusFor(tab.id)}
+          backend={conn?.live ? tableBackendFor(tab, base) : undefined}
+        />
+      );
     }
     if (tab.kind === "designer") {
       const { conn, table, tables } = lookupTable(tab);
+      const liveBackend = conn?.live ? tableBackendFor(tab, table ?? { name: tab.object ?? "" }) : undefined;
       return (
         <TableDesignerDoc
           schema={tab.schema ?? "public"}
@@ -666,7 +907,15 @@ export default function App() {
           active={isActive}
           production={conn?.environment === "production"}
           onStatus={statusFor(tab.id)}
-          onSaved={(obj, prev) => saveTable(tab, obj, prev)}
+          onSaved={(obj, prev) => {
+            saveTable(tab, obj, prev);
+            // Relê o schema do servidor para a árvore refletir o DDL aplicado.
+            if (conn?.live && tab.database && tab.schema) void loadSchema(conn.id, tab.database, tab.schema, true).catch(() => undefined);
+          }}
+          loadDetail={liveBackend && tab.object ? liveBackend.loadDetail : undefined}
+          applyDdl={conn?.live ? async (statements) => {
+            await pg.apply(conn.id, tab.database ?? "", statements.map((sql) => ({ sql, params: [], expectOneRow: false })));
+          } : undefined}
         />
       );
     }
@@ -701,6 +950,7 @@ export default function App() {
                   openConnections={openConnections}
                   openDatabases={openDatabases}
                   connecting={connecting}
+                  loading={loadingNodes}
                   filter={filter}
                   onFilter={setFilter}
                   onSelect={selectNode}
@@ -763,6 +1013,7 @@ export default function App() {
       {dialog?.kind === "connection" && (
         <ConnectionDialog
           editing={dialog.editing}
+          knownPassword={dialog.editing ? sessionPasswords.get(dialog.editing.id) : undefined}
           recentProviders={recentProviders}
           onSave={(form, version) => saveConnection(form, version, dialog.editing)}
           onClose={() => setDialog(null)}
@@ -789,6 +1040,28 @@ export default function App() {
           onOk={() => { doCloseTab(dialog.tabId); setDialog(null); }}
           onCancel={() => setDialog(null)}
         />
+      )}
+      {dialog?.kind === "password" && (() => {
+        const conn = connections.find((c) => c.id === dialog.connId);
+        return (
+          <MessageDialog
+            title={t("conn.passwordTitle", { name: conn?.name ?? "" })}
+            message={dialog.retry ?? t("conn.passwordMessage", { user: conn?.user ?? "", host: `${conn?.host}:${conn?.port}` })}
+            prompt={{ label: t("conn.password"), initial: "" }}
+            secret
+            danger={!!dialog.retry}
+            okLabel={t("cmd.openConnection")}
+            onOk={(pw) => {
+              sessionPasswords.set(dialog.connId, pw ?? "");
+              setDialog(null);
+              connect(dialog.connId);
+            }}
+            onCancel={() => setDialog(null)}
+          />
+        );
+      })()}
+      {dialog?.kind === "error" && (
+        <MessageDialog title={dialog.title} message={dialog.message} danger onOk={() => setDialog(null)} onCancel={() => setDialog(null)} />
       )}
       {dialog?.kind === "about" && (
         <MessageDialog title={t("cmd.about")} message={t("msg.about")} onOk={() => setDialog(null)} onCancel={() => setDialog(null)} />

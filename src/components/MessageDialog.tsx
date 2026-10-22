@@ -13,11 +13,17 @@ interface Props {
   prompt?: { label: string; initial: string };
   danger?: boolean;
   okLabel?: string;
+  /** Operação em andamento (OK desabilitado, spinner). */
+  busy?: boolean;
+  /** Erro devolvido pelo servidor ao confirmar; o diálogo continua aberto. */
+  error?: string;
+  /** Campo de prompt como senha (mascarado). */
+  secret?: boolean;
   onOk: (value?: string) => void;
   onCancel: () => void;
 }
 
-export function MessageDialog({ title, message, sql, confirmText, prompt, danger, okLabel, onOk, onCancel }: Props) {
+export function MessageDialog({ title, message, sql, confirmText, prompt, danger, okLabel, busy, error, secret, onOk, onCancel }: Props) {
   const t = useT();
   const [typed, setTyped] = useState("");
   const [value, setValue] = useState(prompt?.initial ?? "");
@@ -31,8 +37,8 @@ export function MessageDialog({ title, message, sql, confirmText, prompt, danger
     return () => window.removeEventListener("keydown", onKey);
   }, [onCancel]);
 
-  const canOk = (!confirmText || typed === confirmText) && (!prompt || value.trim() !== "");
-  const ok = () => canOk && onOk(prompt ? value.trim() : undefined);
+  const canOk = !busy && (!confirmText || typed === confirmText) && (!prompt || secret || value.trim() !== "");
+  const ok = () => canOk && onOk(prompt ? (secret ? value : value.trim()) : undefined);
 
   return (
     <div className="modal-overlay" role="presentation">
@@ -48,7 +54,7 @@ export function MessageDialog({ title, message, sql, confirmText, prompt, danger
           {prompt && (
             <label className="msg-prompt">
               <span>{prompt.label}</span>
-              <input ref={inputRef} className="field" value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => e.key === "Enter" && ok()} spellCheck={false} />
+              <input ref={inputRef} className="field" type={secret ? "password" : "text"} autoComplete="off" value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => e.key === "Enter" && ok()} spellCheck={false} />
             </label>
           )}
           {confirmText && (
@@ -57,8 +63,10 @@ export function MessageDialog({ title, message, sql, confirmText, prompt, danger
               <input ref={inputRef} className="field" value={typed} onChange={(e) => setTyped(e.target.value)} onKeyDown={(e) => e.key === "Enter" && ok()} spellCheck={false} />
             </label>
           )}
+          {error && <div className="msg-error" role="alert">{error}</div>}
         </div>
         <div className="window-footer">
+          {busy && <span className="spinner" />}
           <span className="spacer" />
           <button ref={okRef} type="button" className={`btn btn-primary${danger ? " btn-danger" : ""}`} disabled={!canOk} onClick={ok}>{okLabel ?? "OK"}</button>
           <button type="button" className="btn" onClick={onCancel}>{t("conn.cancel")}</button>
