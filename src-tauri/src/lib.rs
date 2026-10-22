@@ -86,6 +86,14 @@ pub fn run() {
                 .minimizable(false)
                 .always_on_top(true)
                 .center()
+                .visible(false)
+                .background_color(tauri::window::Color(233, 241, 251, 255))
+                .on_page_load(|window, payload| {
+                    // Só mostra a splash depois de a página (e a imagem) carregar: evita a janela preta inicial.
+                    if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+                        let _ = window.show();
+                    }
+                })
                 .additional_browser_args(&args)
                 .build()?;
 
