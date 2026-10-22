@@ -1475,6 +1475,10 @@ select.et-input {
   padding: 0 2px;
 }
 
+.et tr.is-alt td:not(.et-rowhead) {
+  background: var(--c-grid-alt-row);
+}
+
 .et tr.is-selected td.is-primary {
   background: var(--c-selected);
 }

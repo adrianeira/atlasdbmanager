@@ -41,9 +41,13 @@ interface DesignState {
   comment: string;
 }
 
+/** Tipos internos do PostgreSQL oferecidos no designer (lista fixa, em ordem alfabética como a referência). */
 const PG_TYPES = [
-  "bool", "int2", "int4", "int8", "numeric", "float4", "float8", "money", "varchar", "bpchar", "text", "uuid",
-  "date", "time", "timetz", "timestamp", "timestamptz", "interval", "json", "jsonb", "bytea", "inet", "cidr", "xml",
+  "bit", "bool", "box", "bpchar", "bytea", "char", "cidr", "circle", "date", "daterange", "float4", "float8",
+  "inet", "int2", "int4", "int4range", "int8", "int8range", "interval", "json", "jsonb", "line", "lseg",
+  "macaddr", "macaddr8", "money", "name", "numeric", "numrange", "oid", "path", "point", "polygon", "text",
+  "time", "timestamp", "timestamptz", "timetz", "tsquery", "tsrange", "tstzrange", "tsvector", "uuid",
+  "varbit", "varchar", "xml",
 ];
 const FK_ACTIONS = ["NO ACTION", "RESTRICT", "CASCADE", "SET NULL", "SET DEFAULT"];
 const INDEX_METHODS = ["btree", "hash", "gist", "gin", "spgist", "brin"];
@@ -449,7 +453,8 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, serverVer
 
   const fieldCols: EditColumn<FieldRow>[] = [
     { key: "name", label: t("col.name"), width: 200, kind: "text" },
-    { key: "type", label: t("des.type"), width: 120, kind: "select", free: true, options: PG_TYPES },
+    // Lista fixa: sem texto livre no tipo (evita tipo inválido ou SQL injetado no DDL).
+    { key: "type", label: t("des.type"), width: 120, kind: "select", options: PG_TYPES },
     { key: "length", label: t("des.length"), width: 60, kind: "number" },
     { key: "decimal", label: t("des.decimal"), width: 60, kind: "number" },
     { key: "notNull", label: t("des.notNull"), width: 60, kind: "check" },

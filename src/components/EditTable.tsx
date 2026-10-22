@@ -41,7 +41,8 @@ export function EditTable<T>({ columns, rows, selected, onSelect, onChange, read
         <tbody>
           {display ? (
             display.map((r, ri) => (
-              <tr key={ri} className={ri === selected ? "is-selected" : undefined} onMouseDown={() => onSelect(ri)}>
+              // Linhas zebradas, como o grid de dados e a referência.
+              <tr key={ri} className={`${ri % 2 === 1 ? "is-alt" : ""}${ri === selected ? " is-selected" : ""}`.trim() || undefined} onMouseDown={() => onSelect(ri)}>
                 <td className="et-rowhead">{ri === selected ? "▸" : ""}</td>
                 {columns.map((c, ci) => {
                   const v = r[c.key];
@@ -57,10 +58,15 @@ export function EditTable<T>({ columns, rows, selected, onSelect, onChange, read
                     return <td key={c.key} className="et-td">{v ? <span className="et-key"><SmallIcon name="key" />{String(v)}</span> : null}</td>;
                   }
                   if (c.kind === "select" && !c.free) {
+                    // Lista fixa. Um valor atual fora da lista (ex.: tipo de array/enum/domínio lido
+                    // do servidor) entra como opção para não ser trocado em silêncio pela primeira.
+                    const cur = String(v ?? "");
+                    const opts = c.options ?? [];
                     return (
                       <td key={c.key} className={cellCls}>
-                        <select className="et-input" value={String(v ?? "")} disabled={readOnly} onChange={(e) => onChange(ri, c.key, e.target.value as T[keyof T])}>
-                          {(c.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
+                        <select className="et-input" value={cur} disabled={readOnly} onChange={(e) => onChange(ri, c.key, e.target.value as T[keyof T])}>
+                          {!opts.includes(cur) && <option value={cur}>{cur}</option>}
+                          {opts.map((o) => <option key={o} value={o}>{o}</option>)}
                         </select>
                       </td>
                     );
