@@ -179,9 +179,11 @@ interface Props {
   selected: string[];
   onSelect: (names: string[]) => void;
   onAction: (kind: "open" | "design" | "new", objects: string[]) => void;
+  /** Botão direito: `name` do objeto, ou null na área vazia (menu da pasta). */
+  onContextMenu?: (name: string | null, x: number, y: number) => void;
 }
 
-export function ObjectsView({ category, ctx, connectionOpen, viewMode, lang, selected, onSelect, onAction }: Props) {
+export function ObjectsView({ category, ctx, connectionOpen, viewMode, lang, selected, onSelect, onAction, onContextMenu }: Props) {
   const t = useT();
   const [search, setSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -227,6 +229,8 @@ export function ObjectsView({ category, ctx, connectionOpen, viewMode, lang, sel
   };
 
   const clickRow = (e: ReactMouseEvent, name: string) => {
+    // Botão direito sobre um item já selecionado mantém a seleção (como no Explorer).
+    if (e.button === 2 && selected.includes(name)) return;
     if (e.ctrlKey || e.metaKey) {
       onSelect(selected.includes(name) ? selected.filter((s) => s !== name) : [...selected, name]);
     } else if (e.shiftKey && selected.length) {
@@ -319,7 +323,20 @@ export function ObjectsView({ category, ctx, connectionOpen, viewMode, lang, sel
         </button>
       </div>
 
-      <div className="object-list" tabIndex={0} onKeyDown={onKeyDown} onMouseDown={(e) => e.target === e.currentTarget && onSelect([])}>
+      <div
+        className="object-list"
+        tabIndex={0}
+        onKeyDown={onKeyDown}
+        onMouseDown={(e) => e.target === e.currentTarget && onSelect([])}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          if (!hasContext || !onContextMenu) return;
+          const item = (e.target as HTMLElement).closest("[data-name]");
+          const name = item?.getAttribute("data-name") ?? null;
+          if (!name) onSelect([]);
+          onContextMenu(name, e.clientX, e.clientY);
+        }}
+      >
         {viewMode === "detail" && (
           <table className="grid-table" role="grid">
             <colgroup>
@@ -346,6 +363,7 @@ export function ObjectsView({ category, ctx, connectionOpen, viewMode, lang, sel
               {objects.map((o) => (
                 <tr
                   key={o.name}
+                  data-name={o.name}
                   className={selected.includes(o.name) ? "is-selected" : undefined}
                   onMouseDown={(e) => clickRow(e, o.name)}
                   onDoubleClick={() => openDefault(o.name)}
@@ -374,6 +392,7 @@ export function ObjectsView({ category, ctx, connectionOpen, viewMode, lang, sel
             {objects.map((o) => (
               <div
                 key={o.name}
+                data-name={o.name}
                 className={`list-item${selected.includes(o.name) ? " is-selected" : ""}`}
                 onMouseDown={(e) => clickRow(e, o.name)}
                 onDoubleClick={() => openDefault(o.name)}
@@ -390,6 +409,7 @@ export function ObjectsView({ category, ctx, connectionOpen, viewMode, lang, sel
             {objects.map((o) => (
               <div
                 key={o.name}
+                data-name={o.name}
                 className={`icon-item${selected.includes(o.name) ? " is-selected" : ""}`}
                 onMouseDown={(e) => clickRow(e, o.name)}
                 onDoubleClick={() => openDefault(o.name)}

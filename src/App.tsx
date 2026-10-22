@@ -1552,6 +1552,15 @@ export default function App() {
                   selected={selectedObjects}
                   onSelect={setSelectedObjects}
                   onAction={(kind, names) => openObjects(kind, names)}
+                  onContextMenu={(name, x, y) => {
+                    // Mesmo menu da árvore: monta o nó equivalente (objeto ou pasta da categoria).
+                    if (!ctx.connection || !ctx.database || !ctx.schema) return;
+                    const scPath = `${seg(ctx.connection.id)}/${seg(ctx.database.name)}/${seg(ctx.schema.name)}`;
+                    const node: TreeNode = name
+                      ? { id: `obj:${scPath}/${category}/${seg(name)}`, kind: "object", label: name, depth: 4, expandable: false, category }
+                      : { id: `folder:${scPath}/${category}`, kind: "folder", label: "", depth: 3, expandable: false, category };
+                    showContextMenu(node, x, y);
+                  }}
                 />
               </div>
               {tabs.filter((x) => x.kind !== "objects").map((tab) => (
