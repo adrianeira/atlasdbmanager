@@ -27,8 +27,14 @@ interface Props {
   onDirty: (dirty: boolean) => void;
   /** Permite que menus globais (Query/Format) acionem este documento. */
   registerActions: (a: QueryActions | null) => void;
-  /** Banco real; ausente = execução simulada (modo de demonstração). */
+  /** Acesso ao banco real; só é usado quando a conexão escolhida é real (senão, execução simulada). */
   backend?: QueryBackend;
+  /** Conexões em processo de abertura (mostra o indicador de carregamento). */
+  connecting?: Set<string>;
+  /** Escolheu uma conexão real fechada: abre (pedindo a senha se preciso) e lista os bancos. */
+  onOpenConnection?: (connectionId: string) => void;
+  /** Escolheu um banco ainda sem schemas lidos: busca no servidor. */
+  onLoadSchemas?: (connectionId: string, database: string) => void;
 }
 
 export interface QueryBackend {
@@ -122,7 +128,9 @@ function mockExecute(sqlText: string, conn: ConnectionMock | undefined, database
   return { sql: text, ms: ms(), results: [], message: `${text}\n> [M0] Execução simulada: comando aceito, nada foi enviado ao servidor.` };
 }
 
-export function QueryDoc({ connections, openConnections, initial, initialSql, active, onStatus, onDirty, registerActions, backend }: Props) {
+export function QueryDoc({
+  connections, openConnections, initial, initialSql, active, onStatus, onDirty, registerActions, backend: backendProp, connecting, onOpenConnection, onLoadSchemas,
+}: Props) {
   const t = useT();
   const editor = useRef<SqlEditorHandle | null>(null);
   const [ctx, setCtx] = useState<QueryContext>(initial);
@@ -139,6 +147,54 @@ export function QueryDoc({ connections, openConnections, initial, initialSql, ac
   const conn = connections.find((c) => c.id === ctx.connectionId);
   const db = conn?.databases.find((d) => d.name === ctx.database);
   const schemaMock = db?.schemas.find((s) => s.name === ctx.schema);
+  // Banco real só para conexão real: a escolha atual manda, não a conexão com que a aba foi aberta.
+  const backend = conn?.live ? backendProp : undefined;
+
+  /* ----- Seletores em cascata: conexão → banco → schema. Cada nível busca o seguinte no servidor. ----- */
+  const requested = useRef(new Set<string>());
+
+  const pickConnection = (id: string) => {
+    const c = connections.find((x) => x.id === id);
+    setCtx({ connectionId: c?.id });
+    // Conexão real fechada: abre e lista os bancos (os efeitos abaixo escolhem o resto).
+    if (c?.live && !openConnections.has(c.id)) onOpenConnection?.(c.id);
+  };
+
+  const pickDatabase = (name: string) => {
+    if (conn) requested.current.delete(`${conn.id}/${name}`); // reescolher o banco tenta de novo se a leitura falhou
+    setCtx({ ...ctx, database: name, schema: undefined });
+  };
+
+  // Com os bancos conhecidos, escolhe um: o inicial da conexão ou o primeiro.
+  useEffect(() => {
+    if (!conn || conn.databases.length === 0) return;
+    if (ctx.database && conn.databases.some((d) => d.name === ctx.database)) return;
+    const pick = conn.databases.find((d) => d.name === conn.initialDatabase) ?? conn.databases[0];
+    setCtx((c) => ({ ...c, database: pick.name, schema: undefined }));
+  }, [conn, ctx.database]);
+
+  // Banco escolhido sem schemas lidos: busca no servidor (uma vez por abertura).
+  useEffect(() => {
+    if (!conn?.live || !db) return;
+    const key = `${conn.id}/${db.name}`;
+    if (db.loaded) {
+      requested.current.delete(key);
+      return;
+    }
+    if (requested.current.has(key)) return;
+    requested.current.add(key);
+    onLoadSchemas?.(conn.id, db.name);
+  }, [conn, db, onLoadSchemas]);
+
+  // Com os schemas conhecidos, escolhe um: "public" se existir, senão o primeiro.
+  useEffect(() => {
+    if (!db || db.schemas.length === 0) return;
+    if (ctx.schema && db.schemas.some((s) => s.name === ctx.schema)) return;
+    const pick = db.schemas.find((s) => s.name === "public") ?? db.schemas[0];
+    setCtx((c) => ({ ...c, schema: pick.name }));
+  }, [db, ctx.schema]);
+
+  const loadingCtx = !!conn && (!!connecting?.has(conn.id) || (!!conn.live && !!db && !db.loaded));
 
   const completionSchema = useMemo(() => {
     const out: Record<string, string[]> = {};
@@ -301,11 +357,7 @@ export function QueryDoc({ connections, openConnections, initial, initialSql, ac
           leftIcon={conn ? <ProviderIcon provider={conn.provider} open={connOpen} /> : <SmallIcon name="myConnections" />}
           value={ctx.connectionId ?? ""}
           items={[{ value: "", label: t("query.noConnection") }, ...connections.map((c) => ({ value: c.id, label: c.name }))]}
-          onChange={(v) => {
-            const c = connections.find((x) => x.id === v);
-            const d0 = c?.databases[0];
-            setCtx({ connectionId: c?.id, database: d0?.name, schema: d0?.schemas[0]?.name });
-          }}
+          onChange={pickConnection}
         />
         <Dropdown
           className="ctx-dd ctx-dd-db"
@@ -314,10 +366,8 @@ export function QueryDoc({ connections, openConnections, initial, initialSql, ac
           value={ctx.database ?? ""}
           items={(conn?.databases ?? []).map((d) => ({ value: d.name, label: d.name }))}
           disabled={!conn}
-          onChange={(v) => {
-            const d1 = conn?.databases.find((x) => x.name === v);
-            setCtx({ ...ctx, database: d1?.name, schema: d1?.schemas[0]?.name });
-          }}
+          placeholder={conn && conn.databases.length === 0 ? t(connecting?.has(conn.id) ? "nav.connecting" : conn.live ? "query.ctx.closed" : "query.ctx.noDatabases") : undefined}
+          onChange={pickDatabase}
         />
         <Dropdown
           className="ctx-dd"
@@ -328,6 +378,7 @@ export function QueryDoc({ connections, openConnections, initial, initialSql, ac
           disabled={!db}
           onChange={(v) => setCtx({ ...ctx, schema: v })}
         />
+        {loadingCtx && <span className="spinner" aria-label={t("common.loading")} />}
         <div className="split-button">
           <button type="button" className="ot-button run-button" disabled={!conn || running} onClick={() => run(false)} title="Ctrl+R / F5">
             <SmallIcon name="run" />

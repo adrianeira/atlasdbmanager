@@ -1467,7 +1467,10 @@ export default function App() {
           onStatus={statusFor(tab.id)}
           onDirty={(d) => setTabDirty(tab.id, d)}
           registerActions={(a) => { if (isActive) queryActions.current = a; }}
-          backend={connections.find((c) => c.id === tab.connectionId)?.live ? queryBackend : undefined}
+          backend={queryBackend}
+          connecting={connecting}
+          onOpenConnection={connect}
+          onLoadSchemas={(connId, dbName) => { void loadDatabase(connId, dbName).catch((e) => showError(dbName, e)); }}
         />
       );
     }
