@@ -276,7 +276,7 @@ body.is-resizing-v {
   height: 24px;
   min-width: 74px;
   padding: 0 12px;
-  border: 1px solid #adadad;
+  border: 1px solid var(--c-border-strong);
   background: #e1e1e1;
   color: var(--c-text);
   cursor: default;
@@ -289,7 +289,7 @@ body.is-resizing-v {
 
 .btn:disabled {
   color: var(--c-text-disabled);
-  border-color: #cfcfcf;
+  border-color: var(--c-border);
   background: #ececec;
 }
 
@@ -344,7 +344,7 @@ body.is-resizing-v {
   height: 22px;
   min-width: 0;
   padding: 0 4px;
-  border: 1px solid #7a7a7a;
+  border: 1px solid var(--c-border-strong);
   background: var(--c-surface);
   color: var(--c-text);
   font: inherit;
@@ -357,7 +357,7 @@ body.is-resizing-v {
 
 .field:disabled {
   background: var(--c-field-disabled);
-  border-color: #cccccc;
+  border-color: var(--c-border);
   color: var(--c-text-disabled);
 }
 
