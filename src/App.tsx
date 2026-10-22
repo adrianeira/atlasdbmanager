@@ -171,6 +171,26 @@ const OBJECTS_TAB: DocTab = { id: "objects", kind: "objects", title: "" };
 
 interface RecentItem { label: string; tab: Omit<DocTab, "id"> }
 
+/** Comando de estrutura disparado pelos menus de contexto: sempre revisado antes de executar. */
+interface DdlRequest {
+  title: string;
+  statements: string[];
+  connId: string;
+  database: string;
+  schema?: string;
+  /** O que reler na árvore depois de executar. */
+  refresh: "connection" | "database" | "schema";
+  danger?: boolean;
+  /** `false` para comandos que o PostgreSQL não aceita em transação (CREATE/DROP DATABASE). */
+  transactional?: boolean;
+  /** Exige digitar este nome para confirmar. */
+  confirmText?: string;
+  /** Fecha a conexão do Atlas com este banco antes (DROP DATABASE falha se houver sessões nele). */
+  closeDbFirst?: string;
+  note?: string;
+  after?: () => void;
+}
+
 type Dialog =
   | { kind: "connection"; editing?: ConnectionMock }
   | { kind: "deleteConnection"; conn: ConnectionMock }
@@ -179,6 +199,8 @@ type Dialog =
   | { kind: "error"; title: string; message: string }
   | { kind: "info"; title: string; message: string }
   | { kind: "newDatabase"; connId: string; name?: string; busy?: boolean; error?: string }
+  | ({ kind: "ddl"; busy?: boolean; error?: string } & DdlRequest)
+  | { kind: "name"; title: string; label: string; initial: string; onSubmit: (value: string) => void }
   | { kind: "execFile"; connId: string; database: string; fileName: string; size: number; sql: string; busy?: boolean; error?: string }
   | { kind: "about" };
 
@@ -469,7 +491,7 @@ export default function App() {
       }).catch(fail);
     } else if (node.kind === "database" && c.database) {
       void loadDatabase(connId, c.database.name, true).catch(fail);
-    } else if ((node.kind === "schema" || node.kind === "folder") && c.database && c.schema) {
+    } else if ((node.kind === "schema" || node.kind === "folder" || node.kind === "object") && c.database && c.schema) {
       void loadSchema(connId, c.database.name, c.schema.name, true).catch(fail);
     }
   };
@@ -589,6 +611,34 @@ export default function App() {
     } catch (e) {
       // Sem transação explícita no arquivo, comandos anteriores ao erro já foram efetivados.
       setDialog({ ...d, busy: false, error: `${errorText(toAtlasError(e))}\n\n${t("msg.execFilePartial")}` });
+    }
+  };
+
+  const askDdl = (req: DdlRequest) => setDialog({ kind: "ddl", ...req });
+  const askName = (title: string, label: string, initial: string, onSubmit: (value: string) => void) =>
+    setDialog({ kind: "name", title, label, initial, onSubmit });
+
+  const runDdl = async (d: Extract<Dialog, { kind: "ddl" }>) => {
+    setDialog({ ...d, busy: true, error: undefined });
+    try {
+      if (d.closeDbFirst) await pg.closeDatabase(d.connId, d.closeDbFirst);
+      if (d.transactional === false) {
+        for (const sql of d.statements) await pg.execute(d.connId, d.database, sql, 1);
+      } else {
+        // Vários comandos (ex.: duplicar estrutura + dados) entram numa transação só.
+        await pg.apply(d.connId, d.database, d.statements.map((sql) => ({ sql, params: [], expectOneRow: false })));
+      }
+      setDialog(null);
+      d.after?.();
+      const fail = (e: unknown) => showError(t("cmd.refresh"), e);
+      if (d.refresh === "schema" && d.schema) void loadSchema(d.connId, d.database, d.schema, true).catch(fail);
+      else if (d.refresh === "database") void loadDatabase(d.connId, d.database, true).catch(fail);
+      else {
+        const node = nodes.find((n) => n.id === `conn:${seg(d.connId)}`);
+        if (node) refreshNode(node);
+      }
+    } catch (e) {
+      setDialog({ ...d, busy: false, error: errorText(toAtlasError(e)) });
     }
   };
 
@@ -794,42 +844,132 @@ export default function App() {
         item("cmd.refresh", isOpen && live ? () => refreshNode(node) : undefined),
       );
     }
-    if (node.kind === "database") {
+    // Menus de banco/schema/tabela: estrutura da linha 17 da referência, ainda sem captura
+    // para conferir (DECISÃO_ATLAS) — ordem e nomes serão ajustados quando houver as imagens.
+    const live = !!c.connection?.live;
+    const prod = c.connection?.environment === "production";
+    const dumpSub: MenuEntry = { kind: "sub", label: "sub.dumpSql", items: [{ kind: "item", text: t("cmd.dumpStructData") }, { kind: "item", text: t("cmd.dumpStructOnly") }] };
+
+    if (node.kind === "database" && c.connection && c.database) {
+      const conn = c.connection;
+      const dbName = c.database.name;
       const isOpen = openDatabases.has(node.id);
-      const live = c.connection?.live;
+      const isInitial = dbName === (conn.initialDatabase || "postgres");
       items.push(
         isOpen
           ? item("cmd.closeDatabase", () => {
               setOpenDatabases((s) => remove(s, node.id));
-              if (live && c.connection && c.database) void pg.closeDatabase(c.connection.id, c.database.name).catch(() => undefined);
+              if (live) void pg.closeDatabase(conn.id, dbName).catch(() => undefined);
             })
           : item("cmd.openDatabase", () => toggle(node)),
         sep,
+        item("cmd.newDatabase", live ? () => setDialog({ kind: "newDatabase", connId: conn.id }) : undefined),
+        item("cmd.editDatabase"),
+        // O banco inicial da conexão não pode ser excluído por ela mesma (a sessão está nele).
+        item("cmd.deleteDatabase", live && !isInitial ? () => askDdl({
+          title: t("cmd.deleteDatabase"), statements: [`DROP DATABASE ${quoteIdent(dbName)};`],
+          connId: conn.id, database: conn.initialDatabase || "postgres", refresh: "connection",
+          danger: true, transactional: false, confirmText: dbName, closeDbFirst: dbName,
+          after: () => setOpenDatabases((s) => remove(s, node.id)),
+        }) : undefined),
+        sep,
         item("cmd.newQuery", () => newQuery()),
-        item("cmd.executeSqlFile", isOpen && live && c.connection && c.database ? () => pickSqlFile(c.connection!.id, c.database!.name) : undefined),
+        item("cmd.console"),
+        item("cmd.executeSqlFile", isOpen && live ? () => pickSqlFile(conn.id, dbName) : undefined),
+        dumpSub,
+        sep,
+        item("cmd.reverseToModel"),
+        item("cmd.findInDatabase"),
         sep,
         item("cmd.refresh", isOpen && live ? () => refreshNode(node) : undefined),
       );
     }
-    if (node.kind === "schema" || (node.kind === "folder" && node.category === "table")) {
+
+    if (node.kind === "schema" && c.connection && c.database && c.schema) {
+      const conn = c.connection;
+      const dbName = c.database.name;
+      const scName = c.schema.name;
+      items.push(
+        item("cmd.newSchema", live ? () => askName(t("cmd.newSchema"), t("msg.schemaName"), "", (name) => askDdl({
+          title: t("cmd.newSchema"), statements: [`CREATE SCHEMA ${quoteIdent(name)};`],
+          connId: conn.id, database: dbName, refresh: "database",
+        })) : undefined),
+        item("cmd.editSchema"),
+        item("cmd.deleteSchema", live ? () => askDdl({
+          title: t("cmd.deleteSchema"), statements: [`DROP SCHEMA ${quoteIdent(scName)};`],
+          connId: conn.id, database: dbName, refresh: "database", danger: true, confirmText: prod ? scName : undefined,
+          note: t("msg.dropSchemaRestrict"),
+        }) : undefined),
+        sep,
+        item("act.newTable", newTable),
+        item("cmd.newQuery", () => newQuery()),
+        item("cmd.executeSqlFile", live ? () => pickSqlFile(conn.id, dbName) : undefined),
+        dumpSub,
+        sep,
+        item("cmd.reverseToModel"),
+        sep,
+        item("cmd.refresh", live ? () => refreshNode(node) : undefined),
+      );
+    }
+
+    if (node.kind === "folder" && node.category === "table") {
       items.push(
         item("act.newTable", newTable),
         item("cmd.newQuery", () => newQuery()),
         sep,
-        item("cmd.refresh", c.connection?.live ? () => refreshNode(node) : undefined),
+        item("cmd.refresh", live ? () => refreshNode(node) : undefined),
       );
     }
-    if (node.kind === "object" && node.category === "table" && c.objectName) {
+
+    if (node.kind === "object" && node.category === "table" && c.connection && c.database && c.schema && c.objectName) {
+      const conn = c.connection;
+      const dbName = c.database.name;
+      const scName = c.schema.name;
       const name = c.objectName;
+      const target = `${quoteIdent(scName)}.${quoteIdent(name)}`;
+      const scope = { connId: conn.id, database: dbName, schema: scName, refresh: "schema" as const };
+      const duplicate = (withData: boolean) => askName(t("sub.duplicateTable"), t("msg.copyTableName"), `${name}_copy`, (copy) => askDdl({
+        ...scope, title: t("sub.duplicateTable"),
+        statements: [
+          `CREATE TABLE ${quoteIdent(scName)}.${quoteIdent(copy)} (LIKE ${target} INCLUDING ALL);`,
+          ...(withData ? [`INSERT INTO ${quoteIdent(scName)}.${quoteIdent(copy)} SELECT * FROM ${target};`] : []),
+        ],
+        note: t("msg.duplicateSequences"),
+      }));
       items.push(
         item("act.openTable", () => openObjects("open", [name], "table", c)),
         item("act.designTable", () => openObjects("design", [name], "table", c)),
         item("act.newTable", newTable),
-        item("act.deleteTable"),
+        item("act.deleteTable", live ? () => askDdl({
+          ...scope, title: t("act.deleteTable"), statements: [`DROP TABLE ${target};`], danger: true, confirmText: prod ? name : undefined,
+        }) : undefined),
+        item("cmd.emptyTable", live ? () => askDdl({
+          ...scope, title: t("cmd.emptyTable"), statements: [`DELETE FROM ${target};`], danger: true, confirmText: prod ? name : undefined,
+        }) : undefined),
+        item("cmd.truncateTable", live ? () => askDdl({
+          ...scope, title: t("cmd.truncateTable"), statements: [`TRUNCATE TABLE ${target};`], danger: true, confirmText: prod ? name : undefined,
+        }) : undefined),
+        {
+          kind: "sub", label: "sub.duplicateTable",
+          items: [
+            { kind: "item", text: t("cmd.dupStructData"), run: live ? () => duplicate(true) : undefined },
+            { kind: "item", text: t("cmd.dupStructure"), run: live ? () => duplicate(false) : undefined },
+          ],
+        },
+        sep,
+        item("act.importWizard"),
+        item("act.exportWizard"),
+        dumpSub,
         sep,
         item("cmd.copyName", () => { void navigator.clipboard?.writeText(name).catch(() => undefined); }),
+        item("cmd.renameTable", live ? () => askName(t("cmd.renameTable"), t("msg.newName"), name, (newName) => askDdl({
+          ...scope, title: t("cmd.renameTable"), statements: [`ALTER TABLE ${target} RENAME TO ${quoteIdent(newName)};`],
+        })) : undefined),
         sep,
-        item("cmd.newQuery", () => newQuery(`SELECT * FROM ${c.schema ? `"${c.schema.name.replace(/"/g, '""')}".` : ""}"${name.replace(/"/g, '""')}" LIMIT 100;`)),
+        item("cmd.newQuery", () => newQuery(`SELECT * FROM ${target} LIMIT 100;`)),
+        sep,
+        item("cmd.refresh", live ? () => refreshNode(node) : undefined),
+        item("cmd.objectInfo", () => patchLayout({ infoVisible: true })),
       );
     }
     if (items.length) setCtxMenu({ x, y, items });
@@ -1304,6 +1444,28 @@ export default function App() {
       })()}
       {dialog?.kind === "error" && (
         <MessageDialog title={dialog.title} message={dialog.message} danger onOk={() => setDialog(null)} onCancel={() => setDialog(null)} />
+      )}
+      {dialog?.kind === "name" && (
+        <MessageDialog
+          title={dialog.title}
+          prompt={{ label: dialog.label, initial: dialog.initial }}
+          onOk={(value) => value && dialog.onSubmit(value)}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+      {dialog?.kind === "ddl" && (
+        <MessageDialog
+          title={dialog.title}
+          message={[dialog.danger ? t("msg.ddlDanger") : t("des.reviewMessage"), dialog.note].filter(Boolean).join("\n\n")}
+          sql={dialog.statements.join("\n")}
+          danger={dialog.danger}
+          confirmText={dialog.confirmText}
+          okLabel={t("msg.execute")}
+          busy={dialog.busy}
+          error={dialog.error}
+          onOk={() => void runDdl(dialog)}
+          onCancel={() => setDialog(null)}
+        />
       )}
       {dialog?.kind === "info" && (
         <MessageDialog title={dialog.title} message={dialog.message} onOk={() => setDialog(null)} onCancel={() => setDialog(null)} />

@@ -797,6 +797,10 @@ textarea.field.remarks {
   user-select: text;
 }
 
+.msg-text {
+  white-space: pre-wrap;
+}
+
 .msg-error {
   padding: 6px 8px;
   background: var(--c-fail-bg);
