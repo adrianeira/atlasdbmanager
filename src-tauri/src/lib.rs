@@ -1,7 +1,8 @@
 mod commands;
+mod local;
 mod sessions;
 
-use tauri::{WebviewUrl, WebviewWindowBuilder};
+use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// Argumentos padrão que o Tauri usa no WebView2 do Windows.
 const DEFAULT_WEBVIEW2_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection";
@@ -14,6 +15,12 @@ pub fn run() {
             if cfg!(debug_assertions) {
                 app.handle().plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Info).build())?;
             }
+
+            // Pasta de dados do app no perfil do usuário (sem admin): %LocalAppData%\dev.atlas.dbmanager
+            // no Windows. Não usa %LocalAppData%\Atlas\DBManager porque essa pasta pertence ao
+            // protótipo .NET anterior (schema diferente) e não deve ser tocada.
+            let data_dir = app.path().app_local_data_dir()?;
+            app.manage(local::Local::open(data_dir.join("atlas.db")));
 
             let mut args = DEFAULT_WEBVIEW2_ARGS.to_string();
             // Porta de depuração para testes automatizados da UI: só em build de debug
@@ -48,6 +55,12 @@ pub fn run() {
             commands::pg_cancel,
             commands::pg_table_rows,
             commands::pg_apply,
+            local::local_status,
+            local::profiles_list,
+            local::profile_save,
+            local::profile_delete,
+            local::pref_get,
+            local::pref_set,
         ])
         .run(tauri::generate_context!())
         .expect("falha ao iniciar o Atlas DB Manager");

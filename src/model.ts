@@ -86,6 +86,8 @@ export interface ConnectionMock {
   color?: ConnectionColor;
   /** Favorita (menu "Adicionar estrela"). */
   starred?: boolean;
+  /** Há senha salva no cofre de credenciais do sistema para este perfil. */
+  hasPassword?: boolean;
 }
 
 export type ConnectionColor = "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "gray";

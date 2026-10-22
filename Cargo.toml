@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["src-tauri", "crates/atlas-core", "crates/atlas-pg"]
+members = ["src-tauri", "crates/atlas-core", "crates/atlas-pg", "crates/atlas-local"]
 
 [workspace.package]
 version = "0.1.0"
@@ -12,6 +12,7 @@ authors = ["Atlas DB Manager contributors"]
 [workspace.dependencies]
 atlas-core = { path = "crates/atlas-core" }
 atlas-pg = { path = "crates/atlas-pg" }
+atlas-local = { path = "crates/atlas-local" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"

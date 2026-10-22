@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { errorText, isDesktop, pg, toAtlasError, type ConnectionParams } from "./backend";
+import { errorText, isDesktop, local, pg, toAtlasError, type ConnectionParams, type ProfileRecord } from "./backend";
 import { entries, matchesShortcut, sub, type CommandMap, type MenuDef, type MenuEntry } from "./commands";
 import { ConnectionDialog, type ConnectionForm } from "./components/ConnectionDialog";
 import { schemaFromServer, sessionPasswords, tableFromServer } from "./live";
@@ -87,17 +87,49 @@ function profileToConnection(p: SavedProfile): ConnectionMock {
   };
 }
 
-function loadConnections(): ConnectionMock[] {
-  // Dados fictícios só no modo de demonstração (navegador).
-  const demo = isDesktop ? [] : INITIAL_CONNECTIONS;
+function readLegacyProfiles(): SavedProfile[] {
   try {
     const raw = localStorage.getItem(CONNECTIONS_KEY);
-    const saved: SavedProfile[] = raw ? JSON.parse(raw) : [];
-    return [...demo, ...saved.map(profileToConnection)];
+    return raw ? JSON.parse(raw) : [];
   } catch {
-    return demo;
+    return [];
   }
 }
+
+function loadConnections(): ConnectionMock[] {
+  // App desktop: os perfis vêm do atlas.db (carregados de forma assíncrona na abertura).
+  if (isDesktop) return [];
+  // Modo de demonstração (navegador): dados fictícios + perfis criados nesta máquina.
+  return [...INITIAL_CONNECTIONS, ...readLegacyProfiles().map(profileToConnection)];
+}
+
+/** Conexão → registro do atlas.db. Opções visuais vão em `options`; a senha nunca. */
+function toRecord(c: ConnectionMock, sortOrder: number): ProfileRecord {
+  const options: Record<string, unknown> = { sslMode: c.sslMode ?? "disable" };
+  if (c.color) options.color = c.color;
+  if (c.starred) options.starred = true;
+  return {
+    id: c.id, name: c.name, provider: c.provider, host: c.host, port: c.port, initialDatabase: c.initialDatabase,
+    user: c.user, environment: c.environment ?? "development", options, sortOrder, hasPassword: !!c.hasPassword,
+  };
+}
+
+function fromRecord(r: ProfileRecord): ConnectionMock {
+  const o = r.options;
+  return {
+    ...profileToConnection({
+      id: r.id, name: r.name, provider: r.provider as ProviderId, host: r.host, port: r.port, user: r.user,
+      initialDatabase: r.initialDatabase, environment: r.environment,
+      sslMode: (o.sslMode as ConnectionMock["sslMode"]) ?? "disable",
+      color: o.color as ConnectionColor | undefined,
+      starred: o.starred === true,
+    }),
+    hasPassword: r.hasPassword,
+  };
+}
+
+/** Identidade do conteúdo persistido (sem `hasPassword`, que é derivado do cofre). */
+const profileKey = (r: ProfileRecord) => JSON.stringify({ ...r, hasPassword: undefined });
 
 function saveConnections(list: ConnectionMock[]) {
   const builtIn = new Set(INITIAL_CONNECTIONS.map((c) => c.id));
@@ -165,7 +197,74 @@ export default function App() {
 
   /* ---------- Conexões e árvore ---------- */
   const [connections, setConnections] = useState<ConnectionMock[]>(loadConnections);
-  useEffect(() => saveConnections(connections), [connections]);
+  /* ---------- Perfis no atlas.db (app desktop) ---------- */
+  const [profilesLoaded, setProfilesLoaded] = useState(!isDesktop);
+  const persistedProfiles = useRef(new Map<string, string>());
+
+  useEffect(() => {
+    if (!isDesktop) return;
+    void (async () => {
+      try {
+        const status = await local.status();
+        if (status.error) {
+          setDialog({ kind: "error", title: t("local.unavailableTitle"), message: `${status.error}\n\n${status.path}` });
+          return;
+        }
+        let records = await local.profiles();
+        // Migração única dos perfis antigos (guardados no WebView, sem senha) para o atlas.db.
+        const legacy = readLegacyProfiles();
+        if (!records.length && legacy.length) {
+          for (const [i, p] of legacy.entries()) await local.saveProfile(toRecord(profileToConnection(p), i), null, false);
+          records = await local.profiles();
+        }
+        try {
+          localStorage.removeItem(CONNECTIONS_KEY);
+        } catch {
+          /* sem armazenamento do WebView: nada a limpar */
+        }
+        const conns = records.map(fromRecord);
+        persistedProfiles.current = new Map(conns.map((c, i) => [c.id, profileKey(toRecord(c, i))]));
+        setConnections(conns);
+        const savedLayout = await local.getPref<Partial<Layout>>("layout");
+        if (savedLayout) setLayout((l) => ({ ...l, ...savedLayout }));
+      } catch (e) {
+        setDialog({ kind: "error", title: t("local.unavailableTitle"), message: errorText(toAtlasError(e)) });
+      } finally {
+        setProfilesLoaded(true);
+      }
+    })();
+    // Uma vez na abertura do app.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Sincroniza mudanças de perfil (nome, cor, estrela, ordem...) com o atlas.db. A senha não
+  // passa por aqui: só o diálogo de conexão grava ou remove credenciais.
+  useEffect(() => {
+    if (!isDesktop) {
+      saveConnections(connections);
+      return;
+    }
+    if (!profilesLoaded) return;
+    const next = new Map(connections.map((c, i) => [c.id, toRecord(c, i)]));
+    for (const [id, rec] of next) {
+      const key = profileKey(rec);
+      if (persistedProfiles.current.get(id) === key) continue;
+      persistedProfiles.current.set(id, key);
+      void local.saveProfile(rec, null, true).catch((e) => setDialog({ kind: "error", title: rec.name, message: errorText(toAtlasError(e)) }));
+    }
+    for (const id of [...persistedProfiles.current.keys()]) {
+      if (next.has(id)) continue;
+      persistedProfiles.current.delete(id);
+      void local.deleteProfile(id).catch((e) => setDialog({ kind: "error", title: t("cmd.deleteConnection"), message: errorText(toAtlasError(e)) }));
+    }
+  }, [connections, profilesLoaded, t]);
+
+  // Layout também vai para o atlas.db (o localStorage fica só como cópia para abrir sem piscar).
+  useEffect(() => {
+    if (!isDesktop || !profilesLoaded) return;
+    const timer = window.setTimeout(() => void local.setPref("layout", layout).catch(() => undefined), 400);
+    return () => window.clearTimeout(timer);
+  }, [layout, profilesLoaded]);
 
   const [selectedNode, setSelectedNode] = useState<string | null>("root");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -219,7 +318,8 @@ export default function App() {
     if (openRef.current.has(connId)) return;
     const conn = connectionsRef.current.find((c) => c.id === connId);
     if (!conn) return;
-    const info = await pg.open(connId, paramsFor(conn));
+    // Sem senha digitada nesta sessão, o núcleo usa a do cofre (profileId); ela não vem para a UI.
+    const info = await pg.open(connId, paramsFor(conn), conn.id);
     const dbs = await pg.listDatabases(connId);
     const roles = await pg.listRoles(connId).catch(() => []);
     updateConn(connId, (c) => ({
@@ -238,7 +338,7 @@ export default function App() {
     if (connecting.has(connId)) return;
     const conn = connections.find((c) => c.id === connId);
     if (conn?.live) {
-      if (!sessionPasswords.has(connId)) {
+      if (!sessionPasswords.has(connId) && !conn.hasPassword) {
         setDialog({ kind: "password", connId });
         return;
       }
@@ -249,8 +349,9 @@ export default function App() {
           const err = toAtlasError(e);
           // Senha recusada: pede de novo em vez de repetir a tentativa (spec §26.2).
           if (err.kind === "authenticationFailed") {
+            const usedSaved = !sessionPasswords.has(connId) && !!conn.hasPassword;
             sessionPasswords.delete(connId);
-            setDialog({ kind: "password", connId, retry: errorText(err) });
+            setDialog({ kind: "password", connId, retry: usedSaved ? `${errorText(err)}\n\n${t("conn.savedPasswordRejected")}` : errorText(err) });
           } else showError(t("cmd.openConnection"), err);
         })
         .finally(() => setConnecting((s) => remove(s, connId)));
@@ -443,6 +544,8 @@ export default function App() {
     const copy: ConnectionMock = {
       ...conn, id, name: t("conn.copyName", { name: conn.name }),
       databases: conn.live ? [] : conn.databases, starred: false,
+      // A credencial no cofre é por perfil: a cópia começa sem senha salva.
+      hasPassword: false,
     };
     const pw = sessionPasswords.get(conn.id);
     if (pw !== undefined) sessionPasswords.set(id, pw);
@@ -603,27 +706,44 @@ export default function App() {
       initialDatabase: form.initialDatabase, environment: form.environment,
       sslMode: (form.useSsl ? form.sslMode : "disable") as ConnectionMock["sslMode"],
     };
-    // "Salvar senha": por enquanto só em memória até fechar o app (o cofre do SO vem no próximo passo).
-    const rememberPassword = (id: string) => {
-      if (form.savePassword && form.password) sessionPasswords.set(id, form.password);
-      else if (!form.savePassword) sessionPasswords.delete(id);
+    const id = editing?.id ?? `c${Date.now().toString(36)}`;
+    // "Salvar senha" marcado: vai para o cofre do sistema (app desktop). Desmarcado: só na memória
+    // desta sessão, para conectar agora sem gravar em lugar nenhum.
+    const keepInMemory = () => {
+      if (!isDesktop && form.savePassword && form.password) sessionPasswords.set(id, form.password);
+      else if (!form.savePassword && form.password) sessionPasswords.set(id, form.password);
+      else sessionPasswords.delete(id);
     };
-    if (editing) {
-      rememberPassword(editing.id);
-      setConnections((list) => list.map((c) => (c.id === editing.id ? { ...c, ...base } : c)));
-    } else {
-      const id = `c${Date.now().toString(36)}`;
-      rememberPassword(id);
-      const conn = profileToConnection({ id, ...base });
-      if (version) {
-        conn.serverVersionNum = version;
-        conn.serverVersion = `${Math.floor(version / 10000)}.${version % 100}`;
+    const hasPassword = form.savePassword && (!!form.password || !!editing?.hasPassword);
+    const apply = () => {
+      keepInMemory();
+      if (editing) {
+        setConnections((list) => list.map((c) => (c.id === id ? { ...c, ...base, hasPassword } : c)));
+      } else {
+        const conn = { ...profileToConnection({ id, ...base }), hasPassword };
+        if (version) {
+          conn.serverVersionNum = version;
+          conn.serverVersion = `${Math.floor(version / 10000)}.${version % 100}`;
+        }
+        setConnections((list) => [...list, conn]);
+        setSelectedNode(`conn:${seg(id)}`);
       }
-      setConnections((list) => [...list, conn]);
-      setSelectedNode(`conn:${seg(id)}`);
-    }
-    setRecentProviders((r) => [form.provider, ...r.filter((p) => p !== form.provider)].slice(0, 3));
-    setDialog(null);
+      setRecentProviders((r) => [form.provider, ...r.filter((p) => p !== form.provider)].slice(0, 3));
+      setDialog(null);
+    };
+    if (!isDesktop) return apply();
+
+    const current = connections.find((c) => c.id === id);
+    const record = toRecord({ ...(current ?? profileToConnection({ id, ...base })), ...base, hasPassword }, current ? connections.indexOf(current) : connections.length);
+    // Marca como persistido antes de atualizar o estado, para a sincronização não regravar sem a senha.
+    persistedProfiles.current.set(id, profileKey(record));
+    void local
+      .saveProfile(record, form.savePassword ? form.password || null : null, form.savePassword)
+      .then(apply)
+      .catch((e) => {
+        persistedProfiles.current.delete(id);
+        showError(t("cmd.editConnection"), e);
+      });
   };
 
   /* ---------- Menus de contexto ---------- */
@@ -945,7 +1065,8 @@ export default function App() {
   const queryBackend = useRef<QueryBackend>({
     ensureOpen: async (connId) => {
       if (openRef.current.has(connId)) return;
-      if (!sessionPasswords.has(connId)) {
+      const conn = connectionsRef.current.find((c) => c.id === connId);
+      if (!sessionPasswords.has(connId) && !conn?.hasPassword) {
         throw { kind: "sessionNotFound", code: null, message: t("conn.needOpen"), detail: null, position: null };
       }
       await openSession(connId);

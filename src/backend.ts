@@ -126,9 +126,38 @@ const call = async <T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
   }
 };
 
+/* ---------- Armazenamento local (atlas.db + cofre de credenciais) ---------- */
+
+/** Perfil salvo. Nunca contém senha: `hasPassword` só diz que há credencial no cofre do sistema. */
+export interface ProfileRecord {
+  id: string;
+  name: string;
+  provider: string;
+  host: string;
+  port: number;
+  initialDatabase: string;
+  user: string;
+  environment: string;
+  options: Record<string, unknown>;
+  sortOrder: number;
+  hasPassword: boolean;
+}
+
+export const local = {
+  status: () => call<{ path: string; schemaVersion: number | null; error: string | null }>("local_status"),
+  profiles: () => call<ProfileRecord[]>("profiles_list"),
+  /** `password` null/vazio + `savePassword` = mantém a senha já salva; `savePassword` false = remove do cofre. */
+  saveProfile: (profile: ProfileRecord, password: string | null, savePassword: boolean) =>
+    call<void>("profile_save", { profile, password, savePassword }),
+  deleteProfile: (id: string) => call<void>("profile_delete", { id }),
+  getPref: <T>(key: string) => call<T | null>("pref_get", { key }),
+  setPref: (key: string, value: unknown) => call<void>("pref_set", { key, value }),
+};
+
 export const pg = {
-  testConnection: (params: ConnectionParams) => call<ServerInfo>("pg_test_connection", { params }),
-  open: (sessionId: string, params: ConnectionParams) => call<ServerInfo>("pg_open", { sessionId, params }),
+  /** `profileId`: com senha vazia, o núcleo usa a senha salva no cofre (a senha nunca vem para a UI). */
+  testConnection: (params: ConnectionParams, profileId?: string) => call<ServerInfo>("pg_test_connection", { params, profileId }),
+  open: (sessionId: string, params: ConnectionParams, profileId?: string) => call<ServerInfo>("pg_open", { sessionId, params, profileId }),
   close: (sessionId: string) => call<void>("pg_close", { sessionId }),
   closeDatabase: (sessionId: string, database: string) => call<void>("pg_close_database", { sessionId, database }),
   listDatabases: (sessionId: string) => call<{ databases: string[]; hidden: number }>("pg_list_databases", { sessionId }),

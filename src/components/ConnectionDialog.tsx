@@ -99,6 +99,8 @@ export function formFromConnection(c: ConnectionMock): ConnectionForm {
   return {
     ...defaultForm(p), name: c.name, host: c.host, port: String(c.port), initialDatabase: c.initialDatabase, user: c.user,
     environment: (c.environment as Environment) ?? "development", useSsl: !!ssl, sslMode: ssl ? c.sslMode! : "verify-full",
+    // Marcado por padrão (como a referência). Com o campo de senha vazio, nada muda no cofre.
+    savePassword: true,
   };
 }
 
@@ -116,10 +118,11 @@ export function formToParams(f: ConnectionForm, fallbackPassword = ""): Connecti
   };
 }
 
-async function liveTest(f: ConnectionForm, fallbackPassword: string, notSupported: string): Promise<TestState> {
+async function liveTest(f: ConnectionForm, fallbackPassword: string, notSupported: string, profileId?: string): Promise<TestState> {
   if (f.provider !== "postgresql") return { kind: "fail", message: notSupported };
   try {
-    const info = await pg.testConnection(formToParams(f, fallbackPassword));
+    // Campo de senha vazio na edição: o núcleo usa a senha salva no cofre (via profileId).
+    const info = await pg.testConnection(formToParams(f, fallbackPassword), profileId);
     return { kind: "ok", version: info.versionNum };
   } catch (e) {
     return { kind: "fail", message: errorText(toAtlasError(e)).replace(/\n/g, " — ") };
@@ -191,7 +194,7 @@ export function ConnectionDialog({ editing, recentProviders, knownPassword = "",
 
   const runTest = async () => {
     setTest({ kind: "running" });
-    setTest(isDesktop ? await liveTest(form, knownPassword, t("conn.providerNotYet")) : await mockTest(form));
+    setTest(isDesktop ? await liveTest(form, knownPassword, t("conn.providerNotYet"), editing?.id) : await mockTest(form));
   };
 
   const submit = () => {
@@ -369,7 +372,19 @@ export function ConnectionDialog({ editing, recentProviders, knownPassword = "",
           {row("conn.port", text("port", { width: 48 }))}
           {row("conn.initialDb", text("initialDatabase"))}
           {row("conn.user", text("user", { width: 200 }))}
-          {row("conn.password", text("password", { width: 200, type: "password" }))}
+          {row("conn.password", (
+            <input
+              className="field"
+              type="password"
+              style={{ width: 200 }}
+              value={form.password}
+              // Senha salva não volta para a tela: o campo vazio significa "manter a atual".
+              placeholder={editing?.hasPassword ? "••••••••" : ""}
+              title={editing?.hasPassword ? t("conn.keepSavedPassword") : undefined}
+              onChange={(e) => set("password", e.target.value)}
+              autoComplete="off"
+            />
+          ))}
           <div className="form-row"><label /><div className="form-control">{check("savePassword", "conn.savePassword")}</div></div>
         </>
       )}
@@ -382,7 +397,9 @@ export function ConnectionDialog({ editing, recentProviders, knownPassword = "",
         </select>
       ))}
       {form.environment === "production" && <div className="form-note form-note-warn">{t("conn.productionNote")}</div>}
-      {form.savePassword && form.provider !== "sqlite" && <div className="form-note">{t("conn.vaultNote")}</div>}
+      {form.provider !== "sqlite" && (
+        <div className="form-note">{t(!isDesktop ? "conn.demoNote" : form.savePassword ? "conn.vaultNote" : "conn.noSaveNote")}</div>
+      )}
     </div>
   );
 

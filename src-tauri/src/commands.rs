@@ -1,6 +1,7 @@
 //! Comandos IPC chamados pela interface (`invoke("pg_...")`).
 //! Erros voltam tipados (`DatabaseError`); nenhum comando registra parâmetros em log.
 
+use crate::local::Local;
 use crate::sessions::Sessions;
 use atlas_core::{
     ConnectionParams, DatabaseError, DatabaseList, QueryOutcome, RoleInfo, SchemaObjects, ServerInfo, TableDetail,
@@ -11,14 +12,27 @@ use tauri::State;
 /// Limite de linhas por result set no editor (o resto é descartado e sinalizado como truncado).
 const MAX_ROWS_CAP: usize = 100_000;
 
+/// `profile_id`: usa a senha salva no cofre quando `params.password` vier vazia.
 #[tauri::command]
-pub async fn pg_test_connection(params: ConnectionParams) -> Result<ServerInfo, DatabaseError> {
+pub async fn pg_test_connection(
+    local: State<'_, Local>,
+    params: ConnectionParams,
+    profile_id: Option<String>,
+) -> Result<ServerInfo, DatabaseError> {
+    let params = local.resolve_password(params, profile_id.as_deref())?;
     let session = atlas_pg::connect(&params, None).await?;
     Ok(session.server.clone())
 }
 
 #[tauri::command]
-pub async fn pg_open(sessions: State<'_, Sessions>, session_id: String, params: ConnectionParams) -> Result<ServerInfo, DatabaseError> {
+pub async fn pg_open(
+    sessions: State<'_, Sessions>,
+    local: State<'_, Local>,
+    session_id: String,
+    params: ConnectionParams,
+    profile_id: Option<String>,
+) -> Result<ServerInfo, DatabaseError> {
+    let params = local.resolve_password(params, profile_id.as_deref())?;
     let s = sessions.open(&session_id, params).await?;
     Ok(s.server.clone())
 }
