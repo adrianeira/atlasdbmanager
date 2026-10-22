@@ -57,6 +57,15 @@
   --c-field-disabled: #f0f0f0;
   --c-window: #f0f0f0;
 
+  /* Grid de dados (calibrado pela captura da referência) */
+  --c-grid-line: #e4e4e4;
+  --c-grid-type: #7f7f7f;
+  --c-grid-null: #a6a6a6;
+  --c-grid-active-row: #ddebf7;
+  --c-grid-active-col: #cce4f7;
+  --c-grid-focus: #c1dcf3;
+  --c-grid-focus-border: #7eb4ea;
+
   /* Editor SQL */
   --sql-keyword: #0b5fd6;
   --sql-type: #0b5fd6;
@@ -98,6 +107,13 @@
     --c-deleted-row: #45222a;
     --c-field-disabled: #2b2b2b;
     --c-window: #262626;
+    --c-grid-line: #353535;
+    --c-grid-type: #9a9a9a;
+    --c-grid-null: #7c7c7c;
+    --c-grid-active-row: #23364a;
+    --c-grid-active-col: #264f78;
+    --c-grid-focus: #2f5a85;
+    --c-grid-focus-border: #4ca0e0;
     --sql-keyword: #6cb6ff;
     --sql-type: #6cb6ff;
     --sql-string: #f48fb1;
@@ -137,6 +153,13 @@
   --c-deleted-row: #45222a;
   --c-field-disabled: #2b2b2b;
   --c-window: #262626;
+  --c-grid-line: #353535;
+  --c-grid-type: #9a9a9a;
+  --c-grid-null: #7c7c7c;
+  --c-grid-active-row: #23364a;
+  --c-grid-active-col: #264f78;
+  --c-grid-focus: #2f5a85;
+  --c-grid-focus-border: #4ca0e0;
   --sql-keyword: #6cb6ff;
   --sql-type: #6cb6ff;
   --sql-string: #f48fb1;

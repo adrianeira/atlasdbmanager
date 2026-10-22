@@ -846,48 +846,53 @@ textarea.field.remarks {
   z-index: 2;
   display: flex;
   background: var(--c-surface);
-  border-bottom: 1px solid var(--c-border);
+  border-bottom: 1px solid var(--c-grid-line);
 }
 
 .dg-rowhead {
   flex: none;
-  width: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 9px;
-  color: var(--c-text-muted);
-  border-right: 1px solid var(--c-border);
+  border-right: 1px solid var(--c-grid-line);
+  border-bottom: 1px solid var(--c-grid-line);
   background: var(--c-surface);
+}
+
+.dg-header .dg-rowhead {
+  border-bottom: 0;
 }
 
 .dg-th {
   position: relative;
   flex: none;
-  padding: 3px 6px 0;
-  border-right: 1px solid var(--c-border);
+  padding: 4px 6px 0;
+  border-right: 1px solid var(--c-grid-line);
   overflow: hidden;
+}
+
+/* Coluna da célula ativa: cabeçalho em azul-claro, como na referência. */
+.dg-th.is-active-col {
+  background: var(--c-grid-active-col);
 }
 
 .dg-th-name {
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 16px;
 }
 
 .dg-th-type {
   display: flex;
   align-items: center;
-  gap: 4px;
-  color: var(--c-text-muted);
+  gap: 3px;
+  height: 17px;
+  color: var(--c-grid-type);
   white-space: nowrap;
+  overflow: hidden;
 }
 
-.dg-glyph {
-  font-size: 10px;
-  min-width: 14px;
-  color: var(--c-accent);
+.dg-type-icon {
+  flex: none;
+  color: var(--c-grid-type);
 }
 
 .dg-resize {
@@ -909,7 +914,7 @@ textarea.field.remarks {
 
 .dg-row.is-active,
 .dg-row.is-active .dg-rowhead {
-  background: var(--c-selected);
+  background: var(--c-grid-active-row);
 }
 
 .dg-row.is-new {
@@ -922,16 +927,16 @@ textarea.field.remarks {
   color: var(--c-text-muted);
 }
 
+/* Texto longo é cortado na borda da célula (sem "…"), como na referência. */
 .dg-td {
   flex: none;
   display: flex;
   align-items: center;
-  padding: 0 6px;
-  border-right: 1px solid var(--c-border);
-  border-bottom: 1px solid var(--c-border);
-  white-space: nowrap;
+  padding: 0 5px;
+  border-right: 1px solid var(--c-grid-line);
+  border-bottom: 1px solid var(--c-grid-line);
+  white-space: pre;
   overflow: hidden;
-  text-overflow: ellipsis;
   user-select: text;
 }
 
@@ -943,22 +948,17 @@ textarea.field.remarks {
   background: var(--c-edited);
 }
 
-.dg:focus .dg-td.is-focus {
-  background: #0078d7;
-  color: #fff;
-}
-
-.dg:focus .dg-td.is-focus .dg-null {
-  color: #e0e0e0;
-}
-
+/* Célula ativa: um tom mais forte que a linha, texto preto (não invertido). */
 .dg-td.is-focus {
-  box-shadow: inset 0 0 0 1px #0078d7;
+  background: var(--c-grid-focus);
+}
+
+.dg:focus .dg-td.is-focus {
+  box-shadow: inset 0 0 0 1px var(--c-grid-focus-border);
 }
 
 .dg-null {
-  color: var(--c-text-disabled);
-  font-style: italic;
+  color: var(--c-grid-null);
 }
 
 .dg-editor {
