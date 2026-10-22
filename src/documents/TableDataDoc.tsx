@@ -152,7 +152,14 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
 
   const onEdit = (r: number, c: number, v: CellValue) => {
     setRows((rs) => rs.map((row, i) => (i === r ? row.map((x, j) => (j === c ? v : x)) : row)));
-    if (!newRows.has(r)) setEdited((s) => new Set(s).add(`${r}:${c}`));
+    if (newRows.has(r)) return;
+    // Voltou ao valor original (ex.: checkbox clicado duas vezes): deixa de ser alteração.
+    setEdited((s) => {
+      const n = new Set(s);
+      if (original[r]?.[c] === v) n.delete(`${r}:${c}`);
+      else n.add(`${r}:${c}`);
+      return n;
+    });
   };
 
   const addRow = () => {

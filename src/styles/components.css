@@ -953,6 +953,12 @@ textarea.field.remarks {
   background: var(--c-edited);
 }
 
+/* Booleano exibido como checkbox. */
+.dg-check {
+  margin: 0;
+  vertical-align: middle;
+}
+
 /* Campo obrigatório (NOT NULL) em branco: fundo e borda vermelhos. */
 .dg-td.is-required {
   background: var(--c-fail-bg);

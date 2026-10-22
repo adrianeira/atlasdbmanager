@@ -199,9 +199,21 @@ export function DataGrid({
     else if (top + rowHeight > el.scrollTop + bodyHeight) el.scrollTop = top + rowHeight - bodyHeight;
   };
 
+  /** Booleano: alterna true/false (NULL vira true), no formato do servidor ("t"/"f"). */
+  const toggleBool = (row: number, col: number) => {
+    if (readOnly || !onEdit || deletedRows?.has(row)) return;
+    const v = rows[row][col];
+    onEdit(row, col, v === "t" || v === "true" ? "f" : "t");
+  };
+
   const startEdit = (row: number, col: number, initial?: string) => {
     // Binários não são editados como texto no grid (editor próprio de BLOB — spec §31.6).
     if (readOnly || !onEdit || deletedRows?.has(row) || columns[col]?.kind === "binary") return;
+    // Booleano é checkbox: Enter/F2/espaço alternam em vez de abrir o editor de texto.
+    if (columns[col]?.kind === "bool") {
+      if (initial === undefined || initial === " ") toggleBool(row, col);
+      return;
+    }
     const v = rows[row][col];
     setEditing({ row, col, value: initial ?? v ?? "", isNull: initial === undefined && v === null });
   };
@@ -249,7 +261,10 @@ export function DataGrid({
       case "F2":
       case "Enter": e.preventDefault(); startEdit(activeRow, activeCol); break;
       default:
-        if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) startEdit(activeRow, activeCol, e.key);
+        if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          if (e.key === " ") e.preventDefault();
+          startEdit(activeRow, activeCol, e.key);
+        }
     }
   };
 
@@ -453,6 +468,22 @@ export function DataGrid({
                           // Ctrl+0 grava NULL explicitamente (NULL ≠ texto vazio); recusado em obrigatório.
                           else if (e.key === "0" && e.ctrlKey) { e.preventDefault(); commitEdit(true); }
                         }}
+                      />
+                    ) : c.kind === "bool" ? (
+                      // Checkbox: marcado = true, desmarcado = false; NULL fica indeterminado.
+                      <input
+                        type="checkbox"
+                        className="dg-check"
+                        checked={v === "t" || v === "true"}
+                        ref={(el) => { if (el) el.indeterminate = v === null; }}
+                        title={v === null ? "(Null)" : undefined}
+                        aria-readonly={readOnly || !onEdit}
+                        onMouseDown={(e) => { onActiveRow(ri); setActiveCol(ci); e.stopPropagation(); }}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          toggleBool(ri, ci);
+                        }}
+                        onChange={() => undefined}
                       />
                     ) : v === null ? (
                       <span className="dg-null">(Null)</span>
