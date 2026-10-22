@@ -1,4 +1,4 @@
-# Capturas de referência (referência Premium 17)
+# Capturas de referência
 
 Coloque aqui as capturas de tela usadas como referência visual. Qualquer formato de imagem serve (PNG, JPG, WEBP).
 
@@ -15,4 +15,4 @@ Nomes sugeridos, para facilitar a comparação tela a tela:
 
 Inclua a resolução e a escala do Windows no nome quando puder (ex.: `01-shell-1920x1080-100.png`).
 
-> As imagens são só para consulta interna e não vão para o Git, porque o `.gitignore` desta pasta as exclui. Nenhum ícone ou asset da referência será copiado para o Atlas.
+> As imagens são só para consulta interna e não vão para o Git, porque o `.gitignore` desta pasta as exclui. Nenhum ícone ou asset de terceiros será copiado para o Atlas.
