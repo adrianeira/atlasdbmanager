@@ -40,7 +40,7 @@ interface Props {
 export interface QueryBackend {
   /** Abre a conexão se necessário (pode pedir a senha). */
   ensureOpen: (connectionId: string) => Promise<void>;
-  execute: (connectionId: string, database: string, sql: string, maxRows: number) => Promise<QueryOutcomeLive>;
+  execute: (connectionId: string, database: string, sql: string, maxRows: number, schema?: string) => Promise<QueryOutcomeLive>;
   cancel: (connectionId: string, database: string) => Promise<void>;
 }
 
@@ -213,7 +213,7 @@ export function QueryDoc({
       void (async () => {
         try {
           await backend.ensureOpen(conn.id);
-          const res = fromLive(text, await backend.execute(conn.id, database, text, EDITOR_MAX_ROWS), t);
+          const res = fromLive(text, await backend.execute(conn.id, database, text, EDITOR_MAX_ROWS, ctx.schema), t);
           setOutcome(res);
           setResultTab(res.results.length ? 1 : 0);
         } catch (e) {
@@ -267,7 +267,7 @@ export function QueryDoc({
       void (async () => {
         try {
           await backend.ensureOpen(conn.id);
-          const res = fromLive(sqlText, await backend.execute(conn.id, ctx.database ?? conn.initialDatabase, sqlText, EDITOR_MAX_ROWS), t);
+          const res = fromLive(sqlText, await backend.execute(conn.id, ctx.database ?? conn.initialDatabase, sqlText, EDITOR_MAX_ROWS, ctx.schema), t);
           setOutcome(res);
           setResultTab(res.results.length ? 1 : 0);
         } catch (e) {
@@ -289,7 +289,7 @@ export function QueryDoc({
       message: `EXPLAIN ${text.trim()}\n> OK`,
     });
     setResultTab(1);
-  }, [backend, conn, ctx.database, t]);
+  }, [backend, conn, ctx.database, ctx.schema, t]);
 
   useEffect(() => {
     registerActions(active ? { run, stop, explain, beautify } : null);

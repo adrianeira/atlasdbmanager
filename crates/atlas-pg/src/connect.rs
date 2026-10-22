@@ -7,6 +7,9 @@ use tokio_postgres::{CancelToken, Client, Config, NoTls};
 /// Uma conexão física aberta com um banco PostgreSQL.
 pub struct PgSession {
     pub client: Client,
+    /// Serializa as execuções do editor que trocam o `search_path`: sem isso duas abas na mesma
+    /// conexão física poderiam se atropelar entre o `SET` e a consulta.
+    pub(crate) exec_lock: tokio::sync::Mutex<()>,
     cancel: CancelToken,
     tls: Option<MakeTlsConnector>,
     pub server: ServerInfo,
@@ -133,5 +136,5 @@ pub async fn connect(params: &ConnectionParams, database: Option<&str>) -> Resul
         latency_ms,
     };
     let cancel = client.cancel_token();
-    Ok(PgSession { client, cancel, tls, server })
+    Ok(PgSession { client, exec_lock: tokio::sync::Mutex::new(()), cancel, tls, server })
 }

@@ -50,7 +50,7 @@ async fn connects_and_reads_server_info() {
 async fn wrong_password_is_typed_error() {
     let mut p = require_server!();
     p.password = Secret::new("definitely-wrong-password-atlas");
-    let err = atlas_pg::connect(&p, None).await.err().expect("must fail");
+    let Err(err) = atlas_pg::connect(&p, None).await else { panic!("must fail") };
     eprintln!("erro: {err:?}");
     // Servidores em "trust" aceitam qualquer senha; aí o teste não se aplica.
     if err.kind != ErrorKind::AuthenticationFailed {
@@ -150,8 +150,7 @@ async fn apply_commits_or_rolls_back_on_conflict() {
         ],
     )
     .await
-    .err()
-    .expect("must conflict");
+    .expect_err("must conflict");
     assert_eq!(err.kind, ErrorKind::ConcurrencyConflict);
 }
 
@@ -159,7 +158,7 @@ async fn apply_commits_or_rolls_back_on_conflict() {
 async fn syntax_error_reports_position() {
     let p = require_server!();
     let s = atlas_pg::connect(&p, None).await.expect("connect");
-    let err = atlas_pg::execute(&s, "SELEC 1", 10).await.err().expect("must fail");
+    let err = atlas_pg::execute(&s, "SELEC 1", 10).await.expect_err("must fail");
     assert_eq!(err.kind, ErrorKind::SqlSyntaxError);
     assert_eq!(err.code.as_deref(), Some("42601"));
     assert_eq!(err.position, Some(1));
@@ -276,4 +275,93 @@ async fn stream_rows_reads_in_order_reports_types_and_can_stop_early() {
     let mut described = false;
     let n = atlas_pg::stream_rows(&s, "SELECT id FROM atlas_stream WHERE false", |c| { described = !c.is_empty(); Ok(()) }, |_| Ok(true)).await.expect("empty");
     assert!(n == 0 && described);
+}
+
+#[tokio::test]
+async fn editor_schema_resolves_unqualified_names_and_restores_the_path() {
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    let first = |o: &atlas_core::QueryOutcome, i: usize| o.statements[i].result.as_ref().unwrap().rows[0][0].clone();
+    let before = first(&atlas_pg::execute(&s, "SHOW search_path", 1).await.unwrap(), 0);
+
+    // Tudo numa transação que termina em ROLLBACK: nada persiste no servidor.
+    atlas_pg::execute(&s, "BEGIN", 1).await.unwrap();
+    atlas_pg::execute(
+        &s,
+        "CREATE SCHEMA atlas_sp_a; CREATE SCHEMA \"Atlas.Sp B\"; \
+         CREATE TABLE atlas_sp_a.somente_aqui (id int); INSERT INTO atlas_sp_a.somente_aqui VALUES (7); \
+         CREATE TABLE \"Atlas.Sp B\".t (v text); INSERT INTO \"Atlas.Sp B\".t VALUES ('b'); \
+         CREATE TABLE public.atlas_sp_fallback (z int); INSERT INTO public.atlas_sp_fallback VALUES (5)",
+        1,
+    )
+    .await
+    .expect("setup");
+
+    // O nome sem schema passa a valer no schema escolhido (o cenário do editor).
+    let out = atlas_pg::execute_in_schema(&s, "SELECT id FROM somente_aqui", 10, Some("atlas_sp_a")).await.expect("unqualified in chosen schema");
+    assert_eq!(first(&out, 0).as_deref(), Some("7"));
+    // Schema com ponto e maiúsculas (precisa de aspas).
+    let out = atlas_pg::execute_in_schema(&s, "SELECT v FROM t", 10, Some("Atlas.Sp B")).await.expect("quoted schema name");
+    assert_eq!(first(&out, 0).as_deref(), Some("b"));
+    // `public` continua valendo depois do schema escolhido (funções de extensões, por exemplo).
+    let out = atlas_pg::execute_in_schema(&s, "SELECT z FROM atlas_sp_fallback", 10, Some("atlas_sp_a")).await.expect("public fallback");
+    assert_eq!(first(&out, 0).as_deref(), Some("5"));
+    // current_schema() reflete a escolha e vários comandos mantêm a ordem dos resultados.
+    let out = atlas_pg::execute_in_schema(&s, "SELECT current_schema(); SELECT id FROM somente_aqui", 10, Some("atlas_sp_a")).await.unwrap();
+    assert_eq!(out.statements.len(), 2);
+    assert_eq!(first(&out, 0).as_deref(), Some("atlas_sp_a"));
+    // Depois de cada execução o caminho volta ao padrão da conexão.
+    assert_eq!(first(&atlas_pg::execute(&s, "SHOW search_path", 1).await.unwrap(), 0), before);
+
+    // Sem schema escolhido, o mesmo nome não existe: o comportamento antigo continua.
+    atlas_pg::execute(&s, "SAVEPOINT sp1", 1).await.unwrap();
+    let err = atlas_pg::execute_in_schema(&s, "SELECT id FROM somente_aqui", 10, None).await.expect_err("must not resolve");
+    assert_eq!(err.code.as_deref(), Some("42P01"));
+    atlas_pg::execute(&s, "ROLLBACK TO sp1", 1).await.unwrap();
+
+    // A posição do erro não desloca: o SET vai numa mensagem à parte.
+    atlas_pg::execute(&s, "SAVEPOINT sp2", 1).await.unwrap();
+    let err = atlas_pg::execute_in_schema(&s, "SELEC 1", 10, Some("atlas_sp_a")).await.expect_err("syntax error");
+    assert_eq!(err.position, Some(1));
+    // Transação abortada: o ROLLBACK TO do usuário precisa rodar mesmo com um schema escolhido (o SET é recusado
+    // nesse estado e não pode bloquear o comando).
+    atlas_pg::execute_in_schema(&s, "ROLLBACK TO sp2", 1, Some("atlas_sp_a")).await.expect("rollback com schema escolhido");
+    // E a conexão volta a funcionar normalmente, com o caminho padrão restaurado.
+    atlas_pg::execute_in_schema(&s, "SELECT id FROM somente_aqui", 10, Some("atlas_sp_a")).await.expect("depois do rollback");
+    assert_eq!(first(&atlas_pg::execute(&s, "SHOW search_path", 1).await.unwrap(), 0), before);
+
+    atlas_pg::execute(&s, "ROLLBACK", 1).await.unwrap();
+}
+
+#[test]
+fn search_path_puts_the_chosen_schema_first_and_keeps_public() {
+    assert_eq!(atlas_pg::search_path_for("public"), "\"public\"");
+    assert_eq!(atlas_pg::search_path_for("admin"), "\"admin\", \"public\"");
+    assert_eq!(atlas_pg::search_path_for("Weird.Schema"), "\"Weird.Schema\", \"public\"");
+    assert_eq!(atlas_pg::search_path_for("a\"b"), "\"a\"\"b\", \"public\"");
+}
+
+#[tokio::test]
+async fn execute_reports_types_and_never_breaks_an_open_transaction() {
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+
+    // Um único comando traz o tipo de cada coluna (o grid usa isso para os ícones e a formatação).
+    let out = atlas_pg::execute(&s, "SELECT 1::int4 AS a, 'x'::text AS b, true AS c", 10).await.unwrap();
+    let types: Vec<_> = out.statements[0].result.as_ref().unwrap().columns.iter().map(|c| c.type_name.clone()).collect();
+    assert_eq!(types, vec![Some("int4".to_string()), Some("text".to_string()), Some("bool".to_string())]);
+
+    // Vários comandos: sem tipos (o servidor não descreve lotes), mas os dados vêm.
+    let out = atlas_pg::execute(&s, "SELECT 1 AS a; SELECT 2 AS b", 10).await.unwrap();
+    assert_eq!(out.statements.len(), 2);
+    assert!(out.statements[0].result.as_ref().unwrap().columns[0].type_name.is_none());
+
+    // Dentro de uma transação aberta pelo usuário, um lote não pode abortá-la...
+    atlas_pg::execute(&s, "BEGIN", 1).await.unwrap();
+    atlas_pg::execute(&s, "SELECT 1; SELECT 2", 10).await.expect("lote dentro da transacao");
+    atlas_pg::execute(&s, "SELECT 3", 10).await.expect("a transacao continua utilizavel");
+    // ...e um erro real continua sendo o erro real (não "current transaction is aborted").
+    let err = atlas_pg::execute(&s, "SELECT * FROM atlas_tabela_que_nao_existe", 10).await.expect_err("must fail");
+    assert_eq!(err.code.as_deref(), Some("42P01"));
+    atlas_pg::execute(&s, "ROLLBACK", 1).await.unwrap();
 }

@@ -113,9 +113,11 @@ pub async fn pg_execute(
     database: String,
     sql: String,
     max_rows: usize,
+    // Schema escolhido no editor: nomes sem schema na consulta passam a valer nele.
+    schema: Option<String>,
 ) -> Result<QueryOutcome, DatabaseError> {
     let s = sessions.get(&session_id, Some(&database)).await?;
-    atlas_pg::execute(&s, &sql, max_rows.clamp(1, MAX_ROWS_CAP)).await
+    atlas_pg::execute_in_schema(&s, &sql, max_rows.clamp(1, MAX_ROWS_CAP), schema.as_deref()).await
 }
 
 #[tauri::command]

@@ -188,8 +188,9 @@ export const pg = {
   viewDetail: (sessionId: string, database: string, schema: string, view: string) =>
     call<ViewDetail>("pg_view_detail", { sessionId, database, schema, view }),
   listRoles: (sessionId: string) => call<RoleInfo[]>("pg_list_roles", { sessionId }),
-  execute: (sessionId: string, database: string, sql: string, maxRows: number) =>
-    call<QueryOutcome>("pg_execute", { sessionId, database, sql, maxRows }),
+  /** `schema`: onde os nomes sem schema da consulta são procurados (o schema escolhido no editor). */
+  execute: (sessionId: string, database: string, sql: string, maxRows: number, schema?: string) =>
+    call<QueryOutcome>("pg_execute", { sessionId, database, sql, maxRows, schema: schema || null }),
   cancel: (sessionId: string, database: string) => call<void>("pg_cancel", { sessionId, database }),
   /** `limit = null`: tabela inteira (até o teto do backend; o excedente vem como `truncated`). */
   tableRows: (sessionId: string, database: string, schema: string, table: string, orderBy: OrderBy[], filter: TableFilter | null, limit: number | null, offset: number) =>

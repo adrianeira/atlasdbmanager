@@ -1374,7 +1374,7 @@ export default function App() {
       }
       await openSession(connId);
     },
-    execute: (connId, db, sqlText, max) => pg.execute(connId, db, sqlText, max),
+    execute: (connId, db, sqlText, max, schema) => pg.execute(connId, db, sqlText, max, schema),
     cancel: (connId, db) => pg.cancel(connId, db),
   }).current;
 
@@ -1447,7 +1447,8 @@ export default function App() {
     const db = tab.database ?? "";
     return (viewBackends.current[tab.id] ??= {
       loadDetail: () => pg.viewDetail(conn.id, db, tab.schema ?? "", tab.object ?? ""),
-      execute: (sqlText, maxRows) => pg.execute(conn.id, db, sqlText, maxRows),
+      // A prévia da view enxerga as tabelas do schema dela sem qualificar.
+      execute: (sqlText, maxRows) => pg.execute(conn.id, db, sqlText, maxRows, tab.schema),
       apply: async (statements) => {
         await pg.apply(conn.id, db, statements.map((sql) => ({ sql, params: [], expectOneRow: false })));
       },

@@ -21,13 +21,10 @@ pub fn quote_ident(name: &str) -> String {
 pub async fn execute(s: &PgSession, sql: &str, max_rows: usize) -> Result<QueryOutcome, DatabaseError> {
     let started = Instant::now();
 
-    // Tipos das colunas: só é possível descrever quando o texto é um único comando.
-    // Falha aqui não é erro para o usuário (ex.: lote com vários comandos).
-    let described: Option<Vec<String>> = match s.client.prepare(sql).await {
-        Ok(stmt) => Some(stmt.columns().iter().map(|c| c.type_().name().to_string()).collect()),
-        Err(_) => None,
-    };
-
+    // Os tipos das colunas vêm de descrever o comando (`prepare`), mas só DEPOIS de executá-lo: descrever antes
+    // faz o servidor recusar textos com vários comandos ou com erro, e dentro de uma transação aberta pelo
+    // usuário essa recusa a abortaria — o erro real seria trocado por "current transaction is aborted". Com o
+    // comando já executado com sucesso, descrevê-lo não falha.
     let stream = s.client.simple_query_raw(sql).await.map_err(|e| map_error(&e))?;
     pin_mut!(stream);
 
@@ -36,13 +33,8 @@ pub async fn execute(s: &PgSession, sql: &str, max_rows: usize) -> Result<QueryO
     while let Some(msg) = stream.next().await {
         match msg.map_err(|e| map_error(&e))? {
             SimpleQueryMessage::RowDescription(cols) => {
-                let single = described.as_ref().filter(|d| d.len() == cols.len() && statements.is_empty());
                 current = Some(ResultSet {
-                    columns: cols
-                        .iter()
-                        .enumerate()
-                        .map(|(i, c)| ResultColumn { name: c.name().to_string(), type_name: single.map(|d| d[i].clone()) })
-                        .collect(),
+                    columns: cols.iter().map(|c| ResultColumn { name: c.name().to_string(), type_name: None }).collect(),
                     rows: Vec::new(),
                     truncated: false,
                 });
@@ -62,7 +54,145 @@ pub async fn execute(s: &PgSession, sql: &str, max_rows: usize) -> Result<QueryO
             _ => {}
         }
     }
+    // Tipos: só para um único comando com um único conjunto de linhas (com vários comandos o servidor recusa o
+    // `prepare`). Qualquer falha aqui é ignorada: os dados já foram lidos.
+    if is_single_statement(sql)
+        && statements.iter().filter(|st| st.result.is_some()).count() == 1
+        && let Ok(stmt) = s.client.prepare(sql).await
+    {
+        let types: Vec<String> = stmt.columns().iter().map(|c| c.type_().name().to_string()).collect();
+        if let Some(rs) = statements.iter_mut().find_map(|st| st.result.as_mut())
+            && rs.columns.len() == types.len()
+        {
+            for (col, ty) in rs.columns.iter_mut().zip(types) {
+                col.type_name = Some(ty);
+            }
+        }
+    }
     Ok(QueryOutcome { statements, elapsed_ms: started.elapsed().as_millis() as u64 })
+}
+
+/// `true` se o texto tem no máximo um comando, isto é, nenhum `;` seguido de mais código fora de aspas,
+/// `$tag$...$tag$` e comentários. Não separa comandos (ADR-016): só decide se vale descrever o texto antes de
+/// executá-lo. Na dúvida erra para o lado seguro (não descrever).
+pub(crate) fn is_single_statement(sql: &str) -> bool {
+    let b = sql.as_bytes();
+    let is_ident = |c: u8| c.is_ascii_alphanumeric() || c == b'_' || c >= 0x80;
+    let mut i = 0;
+    let mut after_semicolon = false;
+    while i < b.len() {
+        match b[i] {
+            c if c.is_ascii_whitespace() => i += 1,
+            b'-' if b.get(i + 1) == Some(&b'-') => {
+                while i < b.len() && b[i] != b'\n' {
+                    i += 1;
+                }
+            }
+            b'/' if b.get(i + 1) == Some(&b'*') => {
+                // Comentários de bloco aninham no PostgreSQL.
+                let mut depth = 0;
+                while i < b.len() {
+                    if b[i] == b'/' && b.get(i + 1) == Some(&b'*') {
+                        depth += 1;
+                        i += 2;
+                    } else if b[i] == b'*' && b.get(i + 1) == Some(&b'/') {
+                        depth -= 1;
+                        i += 2;
+                        if depth == 0 {
+                            break;
+                        }
+                    } else {
+                        i += 1;
+                    }
+                }
+            }
+            b';' => {
+                after_semicolon = true;
+                i += 1;
+            }
+            q @ (b'\'' | b'"') => {
+                if after_semicolon {
+                    return false;
+                }
+                // E'...' aceita \ como escape.
+                let escapes = q == b'\'' && i > 0 && matches!(b[i - 1], b'e' | b'E') && (i < 2 || !is_ident(b[i - 2]));
+                i += 1;
+                while i < b.len() {
+                    if escapes && b[i] == b'\\' {
+                        i += 2;
+                    } else if b[i] == q {
+                        if b.get(i + 1) == Some(&q) {
+                            i += 2; // aspa dobrada
+                        } else {
+                            i += 1;
+                            break;
+                        }
+                    } else {
+                        i += 1;
+                    }
+                }
+            }
+            b'$' => {
+                if after_semicolon {
+                    return false;
+                }
+                // $$ ou $tag$ abre um bloco de texto; $1 é só um parâmetro.
+                let mut j = i + 1;
+                while j < b.len() && (b[j].is_ascii_alphanumeric() || b[j] == b'_') {
+                    j += 1;
+                }
+                let tag_ok = b.get(j) == Some(&b'$') && (j == i + 1 || !b[i + 1].is_ascii_digit());
+                if tag_ok {
+                    let tag = &b[i..=j];
+                    i = j + 1;
+                    while i < b.len() && !b[i..].starts_with(tag) {
+                        i += 1;
+                    }
+                    i = (i + tag.len()).min(b.len());
+                } else {
+                    i += 1;
+                }
+            }
+            _ => {
+                if after_semicolon {
+                    return false;
+                }
+                i += 1;
+            }
+        }
+    }
+    true
+}
+
+/// `search_path` para o schema escolhido no editor: o schema primeiro e `public` depois (o padrão do
+/// PostgreSQL), para que funções de extensões instaladas em `public` continuem valendo. `pg_catalog`
+/// é sempre procurado antes, implicitamente.
+pub fn search_path_for(schema: &str) -> String {
+    if schema == "public" {
+        "\"public\"".to_string()
+    } else {
+        format!("{}, \"public\"", quote_ident(schema))
+    }
+}
+
+/// Como `execute`, mas resolvendo nomes sem schema no `schema` escolhido no editor (`None` = padrão da
+/// conexão). O `SET` vai numa mensagem à parte antes do texto do usuário: o texto não muda (as posições de
+/// erro continuam certas) e comandos que não aceitam bloco de transação (`VACUUM`, `CREATE DATABASE`) seguem
+/// funcionando. Depois da execução o caminho volta ao padrão, e a trava impede que outra aba do editor use a
+/// mesma conexão entre o `SET` e o `RESET`.
+pub async fn execute_in_schema(s: &PgSession, sql: &str, max_rows: usize, schema: Option<&str>) -> Result<QueryOutcome, DatabaseError> {
+    let Some(schema) = schema.filter(|x| !x.is_empty()) else {
+        return execute(s, sql, max_rows).await;
+    };
+    let _turn = s.exec_lock.lock().await;
+    // O `SET` nunca pode impedir o comando do usuário: numa transação abortada ele é recusado (25P02), e o
+    // que o usuário precisa rodar é justamente o `ROLLBACK`/`ROLLBACK TO`. Se falhar, o comando roda do mesmo
+    // jeito (com o caminho padrão) e devolve o seu próprio resultado ou erro.
+    let _ = s.client.simple_query(&format!("SET search_path TO {}", search_path_for(schema))).await;
+    let outcome = execute(s, sql, max_rows).await;
+    // Se o script deixou a transação abortada o RESET falha; o próximo SET/consulta já lida com isso.
+    let _ = s.client.simple_query("RESET search_path").await;
+    outcome
 }
 
 /// `SELECT` de uma tabela com o filtro e a ordenação do grid, sem `LIMIT`. `columns` vazio = `*`.
@@ -94,9 +224,13 @@ where
     B: FnOnce(&[ResultColumn]) -> Result<(), DatabaseError>,
     R: FnMut(&[Option<&str>]) -> Result<bool, DatabaseError>,
 {
-    let described: Option<Vec<String>> = match s.client.prepare(sql).await {
-        Ok(stmt) => Some(stmt.columns().iter().map(|c| c.type_().name().to_string()).collect()),
-        Err(_) => None,
+    let described: Option<Vec<String>> = if is_single_statement(sql) {
+        match s.client.prepare(sql).await {
+            Ok(stmt) => Some(stmt.columns().iter().map(|c| c.type_().name().to_string()).collect()),
+            Err(_) => None,
+        }
+    } else {
+        None
     };
     let stream = s.client.simple_query_raw(sql).await.map_err(|e| map_error(&e))?;
     pin_mut!(stream);
@@ -188,7 +322,21 @@ pub async fn table_count(
 
 #[cfg(test)]
 mod tests {
-    use super::quote_ident;
+    use super::{is_single_statement, quote_ident};
+
+    #[test]
+    fn single_statement_detection() {
+        for one in [
+            "select 1", "select 1;", "  select 1 ;  ", "select 1; -- fim", "select 1; /* fim */", "select ';'", "select \"a;b\"",
+            "select $$a;b$$", "select $tag$ a ; b $tag$;", "select 1 -- ; x", "/* ; */ select 1", "select 'it''s;'", "select E'\\';' ",
+            "select $1, $2", "", "   ", "begin", "select 'ç;ã'",
+        ] {
+            assert!(is_single_statement(one), "deveria ser único: {one:?}");
+        }
+        for many in ["select 1; select 2", "begin; select 1", "select 1;select 2;", "update t set a = 1; commit", "select 1; 'x'", "select 1; \"y\"", "select 1; $$z$$"] {
+            assert!(!is_single_statement(many), "deveria ser lote: {many:?}");
+        }
+    }
 
     #[test]
     fn quoting_escapes_embedded_quotes() {
