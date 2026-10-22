@@ -262,19 +262,29 @@ pub async fn table_detail(s: &PgSession, schema: &str, table: &str) -> Result<Ta
 
 /// Definição da view para o designer. Erro 42P01 (como o servidor) se não existir ou não for view.
 pub async fn view_detail(s: &PgSession, schema: &str, view: &str) -> Result<ViewDetail, DatabaseError> {
+    relation_detail(s, schema, view, false).await
+}
+
+/// Definição de uma view materializada (PostgreSQL 9.3+), com o estado "preenchida".
+pub async fn matview_detail(s: &PgSession, schema: &str, view: &str) -> Result<ViewDetail, DatabaseError> {
+    relation_detail(s, schema, view, true).await
+}
+
+async fn relation_detail(s: &PgSession, schema: &str, view: &str, materialized: bool) -> Result<ViewDetail, DatabaseError> {
+    let kind = if materialized { "m" } else { "v" };
     let row = s
         .client
         .query_opt(
             "SELECT c.oid, pg_get_viewdef(c.oid, true), pg_get_userbyid(c.relowner)::text, \
                     obj_description(c.oid, 'pg_class'), array_to_string(c.reloptions, E'\\n') \
                FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
-              WHERE n.nspname = $1 AND c.relname = $2 AND c.relkind = 'v'",
-            &[&schema, &view],
+              WHERE n.nspname = $1 AND c.relname = $2 AND c.relkind = $3::text::\"char\"",
+            &[&schema, &view, &kind],
         )
         .await
         .map_err(|e| map_error(&e))?;
     let Some(row) = row else {
-        let mut err = DatabaseError::new(ErrorKind::Server, format!("view \"{schema}\".\"{view}\" does not exist"));
+        let mut err = DatabaseError::new(ErrorKind::Server, format!("{} \"{schema}\".\"{view}\" does not exist", if materialized { "materialized view" } else { "view" }));
         err.code = Some("42P01".into());
         return Err(err);
     };
@@ -301,6 +311,17 @@ pub async fn view_detail(s: &PgSession, schema: &str, view: &str) -> Result<View
         .await
         .map_err(|e| map_error(&e))?;
     let rules = rrows.iter().map(|r| RuleInfo { name: r.get(0), definition: r.get(1) }).collect();
+    // `relispopulated` só existe a partir do 9.3 (o mesmo que introduziu as views materializadas).
+    let populated = if materialized {
+        let r = s
+            .client
+            .query_one("SELECT relispopulated FROM pg_catalog.pg_class WHERE oid = $1", &[&oid])
+            .await
+            .map_err(|e| map_error(&e))?;
+        r.get(0)
+    } else {
+        true
+    };
 
     Ok(ViewDetail {
         definition: definition.trim().trim_end_matches(';').trim_end().to_string(),
@@ -309,6 +330,7 @@ pub async fn view_detail(s: &PgSession, schema: &str, view: &str) -> Result<View
         check_option,
         security_barrier,
         rules,
+        populated,
     })
 }
 

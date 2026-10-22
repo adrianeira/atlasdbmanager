@@ -8,7 +8,9 @@ import { useT, type MessageKey } from "../i18n";
 import { SmallIcon, type SmallIconName } from "../icons";
 import type { CellValue } from "../model";
 import { beautifySql } from "../sql/format";
-import { alterViewStatements, cleanDefinition, createViewStatements, emptyView, type ViewState } from "../sql/view";
+import {
+  alterMatviewStatements, alterViewStatements, cleanDefinition, createMatviewStatements, createViewStatements, emptyView, refreshMatviewSql, type ViewState,
+} from "../sql/view";
 
 /** Acesso ao banco real; ausente = modo de demonstração. */
 export interface ViewBackend {
@@ -22,6 +24,8 @@ interface Props {
   schema: string;
   /** Ausente = nova view. */
   viewName?: string;
+  /** View materializada (PostgreSQL 9.3+): outro DDL, sem regras/check option e com "Atualizar dados". */
+  materialized?: boolean;
   /** Definição de demonstração (sem banco). */
   mock?: Partial<ViewState>;
   owners: string[];
@@ -62,11 +66,12 @@ function fromDetail(v: ViewDetail): ViewState {
     comment: v.comment ?? "",
     checkOption: v.checkOption === "local" ? "LOCAL" : v.checkOption === "cascaded" ? "CASCADED" : "",
     securityBarrier: v.securityBarrier,
+    withData: v.populated,
   };
 }
 
 export function ViewDesignerDoc({
-  schema, viewName, mock, owners, serverVersionNum, active, production, completionSchema, onStatus, onDirty, onSaved, backend,
+  schema, viewName, materialized, mock, owners, serverVersionNum, active, production, completionSchema, onStatus, onDirty, onSaved, backend,
 }: Props) {
   const t = useT();
   const editor = useRef<SqlEditorHandle | null>(null);
@@ -110,8 +115,10 @@ export function ViewDesignerDoc({
   const patch = (p: Partial<ViewState>) => setD((x) => ({ ...x, ...p }));
   const isNew = !name;
   const alterStatements = useMemo(
-    () => (name && original ? alterViewStatements(schema, name, original, d, serverVersionNum) : []),
-    [name, original, d, schema, serverVersionNum],
+    () => (name && original
+      ? materialized ? alterMatviewStatements(schema, name, original, d) : alterViewStatements(schema, name, original, d, serverVersionNum)
+      : []),
+    [name, original, d, schema, serverVersionNum, materialized],
   );
   const dirty = isNew ? cleanDefinition(d.definition) !== "" : alterStatements.length > 0;
 
@@ -173,6 +180,29 @@ export function ViewDesignerDoc({
     if (text.trim()) editor.current?.replaceAll(beautifySql(text));
   };
 
+  const createStatements = (n: string) => (materialized ? createMatviewStatements(schema, n, d) : createViewStatements(schema, n, d, serverVersionNum));
+
+  /** REFRESH MATERIALIZED VIEW; o resultado aparece na área de mensagens. */
+  const refreshData = (concurrently: boolean) => {
+    if (!name || !backend || running) return;
+    const sqlText = refreshMatviewSql(schema, name, concurrently);
+    setTab("definition");
+    setRunning(true);
+    void (async () => {
+      try {
+        const out = await backend.execute(sqlText, 1);
+        setOutcome({ sql: sqlText, ms: out.elapsedMs, message: `${sqlText}\n> OK — ${t("vw.refreshed")}` });
+        setOriginal((o) => (o ? { ...o, withData: true } : o));
+        setD((x) => ({ ...x, withData: true }));
+      } catch (e) {
+        setOutcome({ sql: sqlText, ms: 0, message: "", error: errorText(toAtlasError(e)) });
+      } finally {
+        setResultTab(0);
+        setRunning(false);
+      }
+    })();
+  };
+
   const save = () => {
     if (!cleanDefinition(d.definition)) return setDialog({ kind: "empty" });
     if (isNew) return setDialog({ kind: "name" });
@@ -231,7 +261,7 @@ export function ViewDesignerDoc({
               value={d.definition}
               schema={completionSchema}
               defaultSchema={schema}
-              placeholder={t("vw.placeholder")}
+              placeholder={t(materialized ? "vw.matPlaceholder" : "vw.placeholder")}
               onChange={(v) => patch({ definition: v })}
               onRun={() => run(false)}
               handleRef={(h) => { editor.current = h; }}
@@ -263,7 +293,7 @@ export function ViewDesignerDoc({
         </div>
       );
     }
-    if (tab === "rules") {
+    if (tab === "rules" && !materialized) {
       const text = rules.length ? rules.map((r) => r.definition).join("\n\n") : t("vw.noRules");
       return <SqlEditor value={text} readOnly />;
     }
@@ -276,6 +306,12 @@ export function ViewDesignerDoc({
               {[...new Set([...(d.owner ? [d.owner] : []), ...owners])].map((o) => <option key={o}>{o}</option>)}
             </select>
           ))}
+          {materialized ? (
+            <label className={`check-row${isNew ? "" : " is-disabled"}`} title={isNew ? undefined : t("vw.withDataExisting")}>
+              <input type="checkbox" checked={d.withData} disabled={!isNew} onChange={(e) => patch({ withData: e.target.checked })} />
+              <span>{t("vw.withData")}</span>
+            </label>
+          ) : (<>
           {prop("vw.checkOption", (
             <select className="field prop-field" value={d.checkOption} disabled={!!checkNote} onChange={(e) => patch({ checkOption: e.target.value as ViewState["checkOption"] })}>
               <option value="" />
@@ -287,12 +323,13 @@ export function ViewDesignerDoc({
             <input type="checkbox" checked={d.securityBarrier} disabled={!!barrierNote} onChange={(e) => patch({ securityBarrier: e.target.checked })} />
             <span>{t("vw.securityBarrier")}</span>
           </label>
+          </>)}
         </div>
       );
     }
     if (tab === "comment") return <textarea className="comment-area" value={d.comment} onChange={(e) => patch({ comment: e.target.value })} aria-label={t("des.comment")} />;
     const statements = previewMode === "saveAs" || !name
-      ? createViewStatements(schema, name ?? "Untitled", d, serverVersionNum)
+      ? createStatements(name ?? "Untitled")
       : alterStatements;
     const text = hasDef && statements.length ? statements.join("\n\n") : t("des.noChanges");
     return <SqlEditor value={text} readOnly />;
@@ -307,6 +344,11 @@ export function ViewDesignerDoc({
         {tool("preview", "vw.preview", hasDef && !running ? () => run(false) : undefined)}
         {tool("explain", "query.explain", hasDef && !running ? () => run(true) : undefined)}
         <span className="ot-sep" />
+        {materialized && !isNew && (<>
+          {tool("refresh", "act.refreshMatview", backend && !running ? () => refreshData(false) : undefined)}
+          {tool("refresh", "act.refreshMatviewConcurrently", backend && !running ? () => refreshData(true) : undefined)}
+          <span className="ot-sep" />
+        </>)}
         {tool("queryBuilder", "vw.builder")}
         {tool("beautify", "query.beautify", tab === "definition" && hasDef ? beautify : undefined)}
         {running && <span className="spinner" />}
@@ -315,7 +357,7 @@ export function ViewDesignerDoc({
       </div>
 
       <div className="dlg-tabs des-tabs" role="tablist">
-        {SUBTABS.map((x) => (
+        {SUBTABS.filter((x) => !(materialized && x.id === "rules")).map((x) => (
           <button key={x.id} type="button" role="tab" aria-selected={tab === x.id} className={`dlg-tab${tab === x.id ? " is-active" : ""}`} onClick={() => setTab(x.id)}>
             {t(x.label)}
           </button>
@@ -335,16 +377,16 @@ export function ViewDesignerDoc({
       </div>
 
       {dialog?.kind === "empty" && (
-        <MessageDialog title={t("vw.saveTitle")} message={t("vw.empty")} onOk={() => setDialog(null)} onCancel={() => setDialog(null)} />
+        <MessageDialog title={t(materialized ? "vw.matSaveTitle" : "vw.saveTitle")} message={t("vw.empty")} onOk={() => setDialog(null)} onCancel={() => setDialog(null)} />
       )}
       {dialog?.kind === "name" && (
         <MessageDialog
-          title={t("vw.saveTitle")}
-          prompt={{ label: t("vw.viewName"), initial: "" }}
+          title={t(materialized ? "vw.matSaveTitle" : "vw.saveTitle")}
+          prompt={{ label: t(materialized ? "vw.matViewName" : "vw.viewName"), initial: "" }}
           onOk={(value) => {
             const n = value?.trim();
             if (!n) return;
-            setDialog({ kind: "review", statements: createViewStatements(schema, n, d, serverVersionNum), newName: n });
+            setDialog({ kind: "review", statements: createStatements(n), newName: n });
           }}
           onCancel={() => setDialog(null)}
         />
@@ -352,7 +394,7 @@ export function ViewDesignerDoc({
       {dialog?.kind === "review" && (
         <MessageDialog
           title={t("des.reviewTitle")}
-          message={t("des.reviewMessage")}
+          message={t(materialized && !dialog.newName && dialog.statements.some((x) => x.startsWith("DROP ")) ? "vw.matRecreate" : "des.reviewMessage")}
           sql={dialog.statements.join("\n\n")}
           confirmText={production && !dialog.newName ? name : undefined}
           okLabel={t("des.save")}

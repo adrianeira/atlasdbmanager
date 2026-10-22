@@ -79,6 +79,16 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [x] Pontos de entrada: botão **Exportar** do grid, **Salvar dados como...** (menu da célula),
       **Assistente de exportação** no menu da árvore e na barra da lista de objetos
 
+### Views materializadas (PostgreSQL 9.3+)
+- [x] Menu da árvore (abrir, projetar, nova, excluir, renomear, exportar, **Atualizar dados** e **Atualizar
+      dados (concorrente)**) e pasta com "Nova view materializada"
+- [x] **Abrir dados** (grade somente leitura, com filtro/ordenação/colunas/exportação como numa tabela)
+- [x] **Designer**: definição (SELECT) com prévia e Explain, dono, comentário, "Preencher com dados" na criação
+      e **Atualizar dados** na barra; mudar o SELECT mostra `DROP` + `CREATE` na revisão, com aviso de que os
+      índices e as views dependentes precisam ser refeitos
+      *(`src/documents/ViewDesignerDoc.tsx`, `src/sql/view.ts`, `crates/atlas-pg/src/meta.rs`)*
+- Ainda não há: gerenciar os índices da view materializada no designer.
+
 ### Navegação / Árvore
 - [x] **Fechar schema** no menu de contexto (colapsa + marca como não-carregado para rebuscar
       na próxima abertura) *(`src/App.tsx`)*
@@ -177,7 +187,7 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [ ] Preview de dados no designer
 
 ## 6. Tipos de objeto não implementados
-- [ ] Materialized View (designer + refresh)
+- [x] Materialized View: designer, abrir dados, atualizar dados (ver "Views materializadas" em Entregues)
 - [ ] Function / Procedure designer com debugger de PL/pgSQL
 - [ ] Type (ENUM, composite, domain)
 - [ ] Sequence (manage, reset, cache)

@@ -119,6 +119,8 @@ export interface ViewDetail {
   checkOption: "local" | "cascaded" | null;
   securityBarrier: boolean;
   rules: { name: string; definition: string }[];
+  /** View materializada já preenchida com dados. Views comuns: sempre true. */
+  populated: boolean;
 }
 
 export interface ResultSet {
@@ -190,6 +192,8 @@ export const pg = {
     call<TableDetail>("pg_table_detail", { sessionId, database, schema, table }),
   viewDetail: (sessionId: string, database: string, schema: string, view: string) =>
     call<ViewDetail>("pg_view_detail", { sessionId, database, schema, view }),
+  matviewDetail: (sessionId: string, database: string, schema: string, view: string) =>
+    call<ViewDetail>("pg_matview_detail", { sessionId, database, schema, view }),
   listRoles: (sessionId: string) => call<RoleInfo[]>("pg_list_roles", { sessionId }),
   /** `schema`: onde os nomes sem schema da consulta são procurados (o schema escolhido no editor). */
   execute: (sessionId: string, database: string, sql: string, maxRows: number, schema?: string) =>

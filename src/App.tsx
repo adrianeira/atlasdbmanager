@@ -21,6 +21,7 @@ import { QueryDoc, type QueryActions } from "./documents/QueryDoc";
 import { TableDataDoc } from "./documents/TableDataDoc";
 import { TableDesignerDoc } from "./documents/TableDesignerDoc";
 import { ViewDesignerDoc, type ViewBackend } from "./documents/ViewDesignerDoc";
+import { refreshMatviewSql } from "./sql/view";
 import { detectLang, I18nContext, makeTranslator, type Lang, type MessageKey } from "./i18n";
 import { ProviderIcon, SmallIcon } from "./icons";
 import {
@@ -701,11 +702,28 @@ export default function App() {
     openTab({ kind: "viewDesigner", title, windowTitle: title, icon: "view", connectionId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name });
   };
 
+  const newMatview = () => {
+    if (!ctx.connection || !ctx.database || !ctx.schema) return;
+    const title = objectTitle(t("des.untitled"), "tb.matview");
+    openTab({ kind: "viewDesigner", objectKind: "matview", title, windowTitle: title, icon: "matview", connectionId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name });
+  };
+
+  /** REFRESH MATERIALIZED VIEW (revisão do comando antes de executar). */
+  const refreshMatview = (c: NodeContext, name: string, concurrently: boolean) => {
+    if (!c.connection || !c.database || !c.schema) return;
+    askDdl({
+      connId: c.connection.id, database: c.database.name, schema: c.schema.name, refresh: "schema",
+      title: t(concurrently ? "act.refreshMatviewConcurrently" : "act.refreshMatview"),
+      statements: [refreshMatviewSql(c.schema.name, name, concurrently)],
+    });
+  };
+
   /** Assistente de exportação de uma tabela/view (todos os registros). Só com conexão real. */
   const exportTablesOf = (schema: { objects: Partial<Record<Category, DbObject[]>> } | undefined, also?: string) => {
     const tables = (schema?.objects.table ?? []).map((o) => ({ name: o.name, view: false }));
     const views = (schema?.objects.view ?? []).map((o) => ({ name: o.name, view: true }));
-    const all = [...tables, ...views];
+    const matviews = (schema?.objects.matview ?? []).map((o) => ({ name: o.name, view: true }));
+    const all = [...tables, ...views, ...matviews];
     return also && !all.some((x) => x.name === also) ? [...all, { name: also, view: false }] : all;
   };
 
@@ -716,13 +734,14 @@ export default function App() {
 
   const openObjects = (kind: "open" | "design" | "new" | "export", names: string[], cat: Category = category, c = ctx) => {
     if (kind === "export") {
-      if ((cat === "table" || cat === "view") && names[0]) startExport(c, names[0]);
+      if ((cat === "table" || cat === "view" || cat === "matview") && names[0]) startExport(c, names[0]);
       return;
     }
     if (kind === "new") {
       if (cat === "query") return newQuery();
       if (cat === "table") return newTable();
       if (cat === "view") return newView();
+      if (cat === "matview") return newMatview();
       return openTab({ kind: "placeholder", title: `${t("act.new")} ${t(CATEGORY_LABEL[cat])}`, icon: cat, note: t("placeholder.designer") });
     }
     for (const name of names) {
@@ -739,6 +758,12 @@ export default function App() {
       } else if (cat === "view" && kind === "design") {
         const title = objectTitle(name, "tb.view", c);
         openTab({ ...base, kind: "viewDesigner", title, windowTitle: title, icon: "view" }, `${t("act.designView")} - ${name}`);
+      } else if (cat === "matview" && kind === "open") {
+        const title = objectTitle(name, "tb.matview", c);
+        openTab({ ...base, kind: "data", objectKind: "matview", title, windowTitle: title, icon: "matview" }, `${t("act.openMatview")} - ${name}`);
+      } else if (cat === "matview" && kind === "design") {
+        const title = objectTitle(name, "tb.matview", c);
+        openTab({ ...base, kind: "viewDesigner", objectKind: "matview", title, windowTitle: title, icon: "matview" }, `${t("act.designMatview")} - ${name}`);
       } else {
         const title = objectTitle(name, CATEGORY_LABEL[cat], c);
         openTab({ ...base, kind: "placeholder", title, windowTitle: title, icon: cat, note: kind === "open" && (cat === "view" || cat === "matview") ? t("placeholder.viewData") : t("placeholder.designer") });
@@ -821,17 +846,18 @@ export default function App() {
           ...d,
           schemas: d.schemas.map((s) => {
             if (s.name !== tab.schema) return s;
-            const views = s.objects.view ?? [];
+            const key = tab.objectKind === "matview" ? "matview" : "view";
+            const views = s.objects[key] ?? [];
             const prev = views.find((x) => x.name === name);
             const merged: DbObject = { ...prev, name, definition, comment, owner: owner || prev?.owner };
             const next = prev ? views.map((x) => (x.name === name ? merged : x)) : [...views, merged];
-            return { ...s, objects: { ...s.objects, view: next.sort((a, b) => a.name.localeCompare(b.name)) } };
+            return { ...s, objects: { ...s.objects, [key]: next.sort((a, b) => a.name.localeCompare(b.name)) } };
           }),
         }),
       };
     }));
     const c = resolveNode(`schema:${seg(tab.connectionId ?? "")}/${seg(tab.database ?? "")}/${seg(tab.schema ?? "")}`, connections);
-    const title = objectTitle(name, "tb.view", c);
+    const title = objectTitle(name, tab.objectKind === "matview" ? "tb.matview" : "tb.view", c);
     setTabs((ts) => ts.map((x) => (x.id === tab.id ? { ...x, object: name, title, windowTitle: title } : x)));
   };
 
@@ -1086,6 +1112,45 @@ export default function App() {
       );
     }
 
+    if (node.kind === "folder" && node.category === "matview") {
+      items.push(
+        item("act.newMatview", newMatview),
+        item("cmd.newQuery", () => newQuery()),
+        sep,
+        item("cmd.refresh", live ? () => refreshNode(node) : undefined),
+      );
+    }
+
+    if (node.kind === "object" && node.category === "matview" && c.connection && c.database && c.schema && c.objectName) {
+      const scName = c.schema.name;
+      const name = c.objectName;
+      const target = `${quoteIdent(scName)}.${quoteIdent(name)}`;
+      const scope = { connId: c.connection.id, database: c.database.name, schema: scName, refresh: "schema" as const };
+      items.push(
+        item("act.openMatview", () => openObjects("open", [name], "matview", c)),
+        item("act.designMatview", () => openObjects("design", [name], "matview", c)),
+        item("act.newMatview", newMatview),
+        item("act.deleteMatview", live ? () => askDdl({
+          ...scope, title: t("act.deleteMatview"), statements: [`DROP MATERIALIZED VIEW ${target};`], danger: true, confirmText: prod ? name : undefined,
+        }) : undefined),
+        sep,
+        item("act.refreshMatview", live ? () => refreshMatview(c, name, false) : undefined),
+        item("act.refreshMatviewConcurrently", live ? () => refreshMatview(c, name, true) : undefined),
+        sep,
+        item("act.exportWizard", live ? () => startExport(c, name) : undefined),
+        sep,
+        item("cmd.copyName", () => { void navigator.clipboard?.writeText(name).catch(() => undefined); }),
+        item("cmd.renameView", live ? () => askName(t("cmd.renameView"), t("msg.newName"), name, (newName) => askDdl({
+          ...scope, title: t("cmd.renameView"), statements: [`ALTER MATERIALIZED VIEW ${target} RENAME TO ${quoteIdent(newName)};`],
+        })) : undefined),
+        sep,
+        item("cmd.newQuery", () => newQuery(`SELECT * FROM ${target} LIMIT 100;`)),
+        sep,
+        item("cmd.refresh", live ? () => refreshNode(node) : undefined),
+        item("cmd.objectInfo", () => patchLayout({ infoVisible: true })),
+      );
+    }
+
     if (node.kind === "object" && node.category === "view" && c.connection && c.database && c.schema && c.objectName) {
       const scName = c.schema.name;
       const name = c.objectName;
@@ -1156,7 +1221,7 @@ export default function App() {
     newTableNormal: { id: "newTableNormal", label: "cmd.newTableNormal", run: hasSchema ? newTable : undefined },
     newTableForeign: { id: "newTableForeign", label: "cmd.newTableForeign" },
     newView: { id: "newView", label: "cmd.newView", run: hasSchema ? newView : undefined },
-    newMatview: { id: "newMatview", label: "cmd.newMatview" },
+    newMatview: { id: "newMatview", label: "cmd.newMatview", run: hasSchema ? newMatview : undefined },
     newFunction: { id: "newFunction", label: "cmd.newFunction" },
     newRole: { id: "newRole", label: "cmd.newRole" },
     newTablespace: { id: "newTablespace", label: "cmd.newTablespace" },
@@ -1374,6 +1439,7 @@ export default function App() {
 
   const tabsForBar = tabs.map((x) => (x.kind === "objects" ? { ...x, title: t("tab.objects") } : x));
   const highlight: Category = active.kind === "query" ? "query"
+    : active.objectKind === "matview" ? "matview"
     : active.kind === "viewDesigner" || (active.kind === "data" && active.objectKind === "view") ? "view"
     : active.kind === "data" || active.kind === "designer" ? "table" : category;
   const toolbarProvider = ctx.connection?.provider ?? connections.find((c) => c.id === active.connectionId)?.provider;
@@ -1465,7 +1531,8 @@ export default function App() {
     const conn = connections.find((c) => c.id === tab.connectionId);
     const sc = conn?.databases.find((d) => d.name === tab.database)?.schemas.find((s) => s.name === tab.schema);
     const tables = sc?.objects.table ?? [];
-    const own = tab.objectKind === "view" || tab.kind === "viewDesigner" ? sc?.objects.view ?? [] : tables;
+    const own = tab.objectKind === "matview" ? sc?.objects.matview ?? []
+      : tab.objectKind === "view" || tab.kind === "viewDesigner" ? sc?.objects.view ?? [] : tables;
     return { conn, table: own.find((x) => x.name === tab.object), tables };
   };
 
@@ -1473,7 +1540,9 @@ export default function App() {
   const viewBackendFor = (tab: DocTab, conn: ConnectionMock): ViewBackend => {
     const db = tab.database ?? "";
     return (viewBackends.current[tab.id] ??= {
-      loadDetail: () => pg.viewDetail(conn.id, db, tab.schema ?? "", tab.object ?? ""),
+      loadDetail: () => (tab.objectKind === "matview"
+        ? pg.matviewDetail(conn.id, db, tab.schema ?? "", tab.object ?? "")
+        : pg.viewDetail(conn.id, db, tab.schema ?? "", tab.object ?? "")),
       // A prévia da view enxerga as tabelas do schema dela sem qualificar.
       execute: (sqlText, maxRows) => pg.execute(conn.id, db, sqlText, maxRows, tab.schema),
       apply: async (statements) => {
@@ -1520,8 +1589,8 @@ export default function App() {
           production={conn?.environment === "production"}
           onStatus={statusFor(tab.id)}
           backend={conn?.live ? tableBackendFor(tab, base) : undefined}
-          lookup={tab.objectKind === "view" ? undefined : lookupSourceFor(tab, conn)}
-          isView={tab.objectKind === "view"}
+          lookup={tab.objectKind === "view" || tab.objectKind === "matview" ? undefined : lookupSourceFor(tab, conn)}
+          isView={tab.objectKind === "view" || tab.objectKind === "matview"}
           onDirty={(d) => setTabDirty(tab.id, d)}
           onExport={conn?.live && tab.database ? (scope) => {
             const table = tab.object ?? base.name;
@@ -1542,6 +1611,7 @@ export default function App() {
         <ViewDesignerDoc
           schema={tab.schema ?? "public"}
           viewName={tab.object}
+          materialized={tab.objectKind === "matview"}
           mock={view ? { definition: view.definition ?? "", comment: view.comment ?? "", owner: view.owner ?? "" } : undefined}
           owners={conn?.roles.map((r) => r.name) ?? []}
           serverVersionNum={conn?.serverVersionNum ?? 0}

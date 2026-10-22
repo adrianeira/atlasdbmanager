@@ -101,6 +101,18 @@ pub async fn pg_view_detail(
 }
 
 #[tauri::command]
+pub async fn pg_matview_detail(
+    sessions: State<'_, Sessions>,
+    session_id: String,
+    database: String,
+    schema: String,
+    view: String,
+) -> Result<ViewDetail, DatabaseError> {
+    let s = sessions.get(&session_id, Some(&database)).await?;
+    atlas_pg::matview_detail(&s, &schema, &view).await
+}
+
+#[tauri::command]
 pub async fn pg_list_roles(sessions: State<'_, Sessions>, session_id: String) -> Result<Vec<RoleInfo>, DatabaseError> {
     let s = sessions.get(&session_id, None).await?;
     atlas_pg::list_roles(&s).await

@@ -190,6 +190,8 @@ pub struct ViewDetail {
     pub security_barrier: bool,
     /// Regras além da `_RETURN` implícita da view.
     pub rules: Vec<RuleInfo>,
+    /// View materializada já preenchida com dados (`false` após `WITH NO DATA`). Views comuns: sempre `true`.
+    pub populated: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

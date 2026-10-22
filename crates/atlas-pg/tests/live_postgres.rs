@@ -204,6 +204,50 @@ async fn manual_transaction_keeps_batches_until_commit() {
 }
 
 #[tokio::test]
+async fn matview_detail_reads_definition_and_populated_state() {
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    if s.server.version_num < 90300 {
+        return; // views materializadas: PostgreSQL 9.3+
+    }
+    let ns = format!("atlas_mv_{}", std::process::id());
+    atlas_pg::execute(
+        &s,
+        &format!(
+            "DROP SCHEMA IF EXISTS {ns} CASCADE; CREATE SCHEMA {ns}; CREATE TABLE {ns}.t(id int); INSERT INTO {ns}.t VALUES (1),(2); \
+             CREATE MATERIALIZED VIEW {ns}.mv_full AS SELECT id FROM {ns}.t; \
+             CREATE MATERIALIZED VIEW {ns}.mv_empty AS SELECT id FROM {ns}.t WITH NO DATA; \
+             COMMENT ON MATERIALIZED VIEW {ns}.mv_full IS 'resumo'"
+        ),
+        1,
+    )
+    .await
+    .unwrap();
+
+    let full = atlas_pg::matview_detail(&s, &ns, "mv_full").await.expect("matview detail");
+    assert!(full.definition.to_lowercase().contains("select"));
+    assert_eq!(full.comment.as_deref(), Some("resumo"));
+    assert!(full.populated);
+    assert!(!atlas_pg::matview_detail(&s, &ns, "mv_empty").await.unwrap().populated);
+
+    // Refresh (inclusive o concorrente, que exige índice único) e leitura dos dados.
+    atlas_pg::execute(&s, &format!("REFRESH MATERIALIZED VIEW {ns}.mv_empty"), 1).await.unwrap();
+    assert!(atlas_pg::matview_detail(&s, &ns, "mv_empty").await.unwrap().populated);
+    atlas_pg::execute(&s, &format!("CREATE UNIQUE INDEX ON {ns}.mv_full(id); REFRESH MATERIALIZED VIEW CONCURRENTLY {ns}.mv_full"), 1)
+        .await
+        .unwrap();
+
+    // Uma tabela ou uma view comum não é view materializada, e vice-versa.
+    atlas_pg::execute(&s, &format!("CREATE VIEW {ns}.v AS SELECT 1 AS x"), 1).await.unwrap();
+    assert!(atlas_pg::matview_detail(&s, &ns, "v").await.is_err());
+    assert!(atlas_pg::view_detail(&s, &ns, "mv_full").await.is_err());
+    // A leitura de dados e a estrutura (colunas) funcionam como numa tabela.
+    let detail = atlas_pg::table_detail(&s, &ns, "mv_full").await.expect("columns of a matview");
+    assert_eq!(detail.columns.len(), 1);
+    atlas_pg::execute(&s, &format!("DROP SCHEMA {ns} CASCADE"), 1).await.unwrap();
+}
+
+#[tokio::test]
 async fn syntax_error_reports_position() {
     let p = require_server!();
     let s = atlas_pg::connect(&p, None).await.expect("connect");
