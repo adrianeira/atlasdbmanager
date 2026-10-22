@@ -634,6 +634,13 @@ export default function App() {
   const askName = (title: string, label: string, initial: string, onSubmit: (value: string) => void) =>
     setDialog({ kind: "name", title, label, initial, onSubmit });
 
+  /** Novo schema no banco: pede o nome e mostra o `CREATE SCHEMA` para revisão antes de executar. */
+  const promptNewSchema = (connId: string, dbName: string) =>
+    askName(t("cmd.newSchema"), t("msg.schemaName"), "", (name) => askDdl({
+      title: t("cmd.newSchema"), statements: [`CREATE SCHEMA ${quoteIdent(name)};`],
+      connId, database: dbName, refresh: "database",
+    }));
+
   const runDdl = async (d: Extract<Dialog, { kind: "ddl" }>) => {
     setDialog({ ...d, busy: true, error: undefined });
     try {
@@ -934,6 +941,7 @@ export default function App() {
           : item("cmd.openDatabase", () => toggle(node)),
         sep,
         item("cmd.newDatabase", live ? () => setDialog({ kind: "newDatabase", connId: conn.id }) : undefined),
+        item("cmd.newSchema", isOpen && live ? () => promptNewSchema(conn.id, dbName) : undefined),
         item("cmd.editDatabase"),
         // O banco inicial da conexão não pode ser excluído por ela mesma (a sessão está nele).
         item("cmd.deleteDatabase", live && !isInitial ? () => askDdl({
@@ -981,10 +989,7 @@ export default function App() {
       items.push(
         item("cmd.closeSchema", closeSchema),
         sep,
-        item("cmd.newSchema", live ? () => askName(t("cmd.newSchema"), t("msg.schemaName"), "", (name) => askDdl({
-          title: t("cmd.newSchema"), statements: [`CREATE SCHEMA ${quoteIdent(name)};`],
-          connId: conn.id, database: dbName, refresh: "database",
-        })) : undefined),
+        item("cmd.newSchema", live ? () => promptNewSchema(conn.id, dbName) : undefined),
         item("cmd.editSchema"),
         item("cmd.deleteSchema", live ? () => askDdl({
           title: t("cmd.deleteSchema"), statements: [`DROP SCHEMA ${quoteIdent(scName)};`],
