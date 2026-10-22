@@ -249,6 +249,16 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
     setActiveRow((r) => Math.min(r, Math.max(0, kept.length - 1)));
   };
 
+  /**
+   * Aplicar: grava direto, como a referência. Só pede confirmação (com o SQL) quando há
+   * registros marcados para exclusão ou a conexão é de produção.
+   */
+  const requestApply = () => {
+    if (!dirty || applying) return;
+    if (deleted.size > 0 || production) setReview(buildPreview());
+    else void apply();
+  };
+
   const refresh = () => {
     if (dirty) return;
     if (backend) void loadPage(page, table, limit);
@@ -363,11 +373,11 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
       <div className="data-footer">
         <button type="button" className="icon-button" title={t("data.addRecord")} disabled={readOnly || loading} onClick={addRow}><SmallIcon name="addRow" /></button>
         <button type="button" className="icon-button" title={t("data.deleteRecord")} disabled={readOnly || !rows.length} onClick={() => deleteRow()}><SmallIcon name="removeRow" /></button>
-        <button type="button" className="icon-button" title={t("data.apply")} disabled={!dirty} onClick={() => setReview(buildPreview())}><SmallIcon name="apply" /></button>
+        <button type="button" className="icon-button" title={t("data.apply")} disabled={!dirty || applying} onClick={requestApply}><SmallIcon name="apply" /></button>
         <button type="button" className="icon-button" title={t("data.discard")} disabled={!dirty} onClick={discard}><SmallIcon name="discard" /></button>
         <button type="button" className="icon-button" title={t("data.refresh")} disabled={dirty || loading} onClick={refresh}><SmallIcon name="refresh" /></button>
         <button type="button" className="icon-button" title={t("data.stop")} disabled><SmallIcon name="stopSmall" /></button>
-        {loading && <span className="spinner" />}
+        {(loading || applying) && <span className="spinner" />}
         {dirty && <span className="data-pending">{t("data.pending", { n: edited.size + newRows.size + deleted.size })}</span>}
         <span className="spacer" />
         {limitPanel ? (
@@ -433,6 +443,16 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
         />
       )}
 
+      {/* Erro ao aplicar sem a janela de revisão: as alterações continuam na tela. */}
+      {review === null && applyError && (
+        <MessageDialog
+          title={t("data.applyFailed")}
+          message={applyError}
+          danger
+          onOk={() => setApplyError(null)}
+          onCancel={() => setApplyError(null)}
+        />
+      )}
       {review !== null && (
         <MessageDialog
           title={t("data.reviewTitle")}
