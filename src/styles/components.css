@@ -2033,3 +2033,11 @@ select.et-input {
   padding: 0; border: 0; background: transparent; color: var(--c-text-muted); cursor: default;
 }
 .combo-arrow:hover { color: var(--c-text); }
+
+/* Designer de função: tabela de parâmetros e formulário de execução. */
+.fn-params { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; min-height: 0; }
+.fn-params-bar { display: flex; align-items: center; gap: 6px; }
+.fn-params-bar > span { font-weight: 600; margin-right: 6px; }
+.fn-run-form { display: flex; flex-direction: column; gap: 6px; }
+.fn-run-form .prop-row { display: flex; align-items: center; gap: 8px; }
+.fn-run-form .prop-row > span { width: 140px; flex: none; }

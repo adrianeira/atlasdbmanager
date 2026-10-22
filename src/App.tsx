@@ -22,6 +22,8 @@ import { TableDataDoc } from "./documents/TableDataDoc";
 import { TableDesignerDoc } from "./documents/TableDesignerDoc";
 import { ViewDesignerDoc, type ViewBackend } from "./documents/ViewDesignerDoc";
 import { refreshMatviewSql } from "./sql/view";
+import { dropFuncSql } from "./sql/func";
+import { FunctionDesignerDoc, type FunctionBackend } from "./documents/FunctionDesignerDoc";
 import { detectLang, I18nContext, makeTranslator, type Lang, type MessageKey } from "./i18n";
 import { ProviderIcon, SmallIcon } from "./icons";
 import {
@@ -702,6 +704,12 @@ export default function App() {
     openTab({ kind: "viewDesigner", title, windowTitle: title, icon: "view", connectionId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name });
   };
 
+  const newFunction = () => {
+    if (!ctx.connection || !ctx.database || !ctx.schema) return;
+    const title = objectTitle(t("des.untitled"), "tb.function");
+    openTab({ kind: "functionDesigner", title, windowTitle: title, icon: "function", connectionId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name });
+  };
+
   const newMatview = () => {
     if (!ctx.connection || !ctx.database || !ctx.schema) return;
     const title = objectTitle(t("des.untitled"), "tb.matview");
@@ -742,6 +750,7 @@ export default function App() {
       if (cat === "table") return newTable();
       if (cat === "view") return newView();
       if (cat === "matview") return newMatview();
+      if (cat === "function") return newFunction();
       return openTab({ kind: "placeholder", title: `${t("act.new")} ${t(CATEGORY_LABEL[cat])}`, icon: cat, note: t("placeholder.designer") });
     }
     for (const name of names) {
@@ -758,6 +767,10 @@ export default function App() {
       } else if (cat === "view" && kind === "design") {
         const title = objectTitle(name, "tb.view", c);
         openTab({ ...base, kind: "viewDesigner", title, windowTitle: title, icon: "view" }, `${t("act.designView")} - ${name}`);
+      } else if (cat === "function" && c.connection?.live) {
+        const fn = c.schema?.objects.function?.find((o) => o.name === name);
+        const title = objectTitle(fn?.fnName ?? name, "tb.function", c);
+        openTab({ ...base, kind: "functionDesigner", fnName: fn?.fnName, fnIdentity: fn?.args, title, windowTitle: title, icon: "function" }, `${t("act.designFunction")} - ${name}`);
       } else if (cat === "matview" && kind === "open") {
         const title = objectTitle(name, "tb.matview", c);
         openTab({ ...base, kind: "data", objectKind: "matview", title, windowTitle: title, icon: "matview" }, `${t("act.openMatview")} - ${name}`);
@@ -1112,6 +1125,33 @@ export default function App() {
       );
     }
 
+    if (node.kind === "folder" && node.category === "function") {
+      items.push(
+        item("act.newFunction", newFunction),
+        item("cmd.newQuery", () => newQuery()),
+        sep,
+        item("cmd.refresh", live ? () => refreshNode(node) : undefined),
+      );
+    }
+
+    if (node.kind === "object" && node.category === "function" && c.connection && c.database && c.schema && c.objectName && c.object?.fnName) {
+      const scName = c.schema.name;
+      const fn = c.object;
+      const scope = { connId: c.connection.id, database: c.database.name, schema: scName, refresh: "schema" as const };
+      items.push(
+        item("act.designFunction", () => openObjects("design", [fn.name], "function", c)),
+        item("act.newFunction", newFunction),
+        item("act.deleteFunction", live ? () => askDdl({
+          ...scope, title: t("act.deleteFunction"), statements: [dropFuncSql(scName, fn.fnName ?? fn.name, fn.args ?? "", !!fn.procedure)], danger: true, confirmText: prod ? fn.fnName : undefined,
+        }) : undefined),
+        sep,
+        item("cmd.copyName", () => { void navigator.clipboard?.writeText(fn.fnName ?? fn.name).catch(() => undefined); }),
+        sep,
+        item("cmd.refresh", live ? () => refreshNode(node) : undefined),
+        item("cmd.objectInfo", () => patchLayout({ infoVisible: true })),
+      );
+    }
+
     if (node.kind === "folder" && node.category === "matview") {
       items.push(
         item("act.newMatview", newMatview),
@@ -1222,7 +1262,7 @@ export default function App() {
     newTableForeign: { id: "newTableForeign", label: "cmd.newTableForeign" },
     newView: { id: "newView", label: "cmd.newView", run: hasSchema ? newView : undefined },
     newMatview: { id: "newMatview", label: "cmd.newMatview", run: hasSchema ? newMatview : undefined },
-    newFunction: { id: "newFunction", label: "cmd.newFunction" },
+    newFunction: { id: "newFunction", label: "cmd.newFunction", run: hasSchema ? newFunction : undefined },
     newRole: { id: "newRole", label: "cmd.newRole" },
     newTablespace: { id: "newTablespace", label: "cmd.newTablespace" },
     newCast: { id: "newCast", label: "cmd.newCast" },
@@ -1439,6 +1479,7 @@ export default function App() {
 
   const tabsForBar = tabs.map((x) => (x.kind === "objects" ? { ...x, title: t("tab.objects") } : x));
   const highlight: Category = active.kind === "query" ? "query"
+    : active.kind === "functionDesigner" ? "function"
     : active.objectKind === "matview" ? "matview"
     : active.kind === "viewDesigner" || (active.kind === "data" && active.objectKind === "view") ? "view"
     : active.kind === "data" || active.kind === "designer" ? "table" : category;
@@ -1531,7 +1572,8 @@ export default function App() {
     const conn = connections.find((c) => c.id === tab.connectionId);
     const sc = conn?.databases.find((d) => d.name === tab.database)?.schemas.find((s) => s.name === tab.schema);
     const tables = sc?.objects.table ?? [];
-    const own = tab.objectKind === "matview" ? sc?.objects.matview ?? []
+    const own = tab.kind === "functionDesigner" ? sc?.objects.function ?? []
+      : tab.objectKind === "matview" ? sc?.objects.matview ?? []
       : tab.objectKind === "view" || tab.kind === "viewDesigner" ? sc?.objects.view ?? [] : tables;
     return { conn, table: own.find((x) => x.name === tab.object), tables };
   };
@@ -1544,6 +1586,19 @@ export default function App() {
         ? pg.matviewDetail(conn.id, db, tab.schema ?? "", tab.object ?? "")
         : pg.viewDetail(conn.id, db, tab.schema ?? "", tab.object ?? "")),
       // A prévia da view enxerga as tabelas do schema dela sem qualificar.
+      execute: (sqlText, maxRows) => pg.execute(conn.id, db, sqlText, maxRows, tab.schema),
+      apply: async (statements) => {
+        await pg.apply(conn.id, db, statements.map((sql) => ({ sql, params: [], expectOneRow: false })));
+      },
+    });
+  };
+
+  const functionBackends = useRef<Record<string, FunctionBackend>>({});
+  const functionBackendFor = (tab: DocTab, conn: ConnectionMock): FunctionBackend => {
+    const db = tab.database ?? "";
+    return (functionBackends.current[tab.id] ??= {
+      loadDetail: (name, identity) => pg.functionDetail(conn.id, db, tab.schema ?? "", name, identity),
+      // A execução enxerga as tabelas do schema da função sem qualificar.
       execute: (sqlText, maxRows) => pg.execute(conn.id, db, sqlText, maxRows, tab.schema),
       apply: async (statements) => {
         await pg.apply(conn.id, db, statements.map((sql) => ({ sql, params: [], expectOneRow: false })));
@@ -1625,6 +1680,31 @@ export default function App() {
             if (conn?.live && tab.database && tab.schema) void loadSchema(conn.id, tab.database, tab.schema, true).catch(() => undefined);
           }}
           backend={conn?.live ? viewBackendFor(tab, conn) : undefined}
+        />
+      );
+    }
+    if (tab.kind === "functionDesigner") {
+      const { conn } = lookupTable(tab);
+      const completion: Record<string, string[]> = {};
+      for (const tb of lookupTable(tab).tables) completion[tb.name] = (tb.columns ?? []).map((c) => c.name);
+      return (
+        <FunctionDesignerDoc
+          schema={tab.schema ?? "public"}
+          fnName={tab.fnName}
+          identity={tab.fnIdentity}
+          owners={conn?.roles.map((r) => r.name) ?? []}
+          serverVersionNum={conn?.serverVersionNum ?? 0}
+          active={isActive}
+          production={conn?.environment === "production"}
+          completionSchema={completion}
+          onStatus={statusFor(tab.id)}
+          onDirty={(dirty) => setTabDirty(tab.id, dirty)}
+          onSaved={(fnName, identity) => {
+            const title = objectTitle(fnName, "tb.function", resolveNode(`schema:${seg(tab.connectionId ?? "")}/${seg(tab.database ?? "")}/${seg(tab.schema ?? "")}`, connections));
+            setTabs((ts) => ts.map((x) => (x.id === tab.id ? { ...x, object: `${fnName}(${identity})`, fnName, fnIdentity: identity, title, windowTitle: title } : x)));
+            if (conn?.live && tab.database && tab.schema) void loadSchema(conn.id, tab.database, tab.schema, true).catch(() => undefined);
+          }}
+          backend={conn?.live ? functionBackendFor(tab, conn) : undefined}
         />
       );
     }

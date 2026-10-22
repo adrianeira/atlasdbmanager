@@ -89,6 +89,16 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       *(`src/documents/ViewDesignerDoc.tsx`, `src/sql/view.ts`, `crates/atlas-pg/src/meta.rs`)*
 - Ainda não há: gerenciar os índices da view materializada no designer.
 
+### Funções e procedimentos
+- [x] Funções com o **mesmo nome e argumentos diferentes** (sobrecarga) aparecem separadas na árvore e na lista
+- [x] **Designer**: nome, parâmetros (modo IN/OUT/INOUT/VARIADIC, tipo, DEFAULT), retorno, linguagem, volatilidade,
+      STRICT, SECURITY DEFINER, dono, comentário e corpo com editor SQL; revisão do DDL antes de gravar
+      (`CREATE OR REPLACE`; mudar parâmetros ou retorno vira `DROP` + `CREATE`, com aviso; renomear é `ALTER ... RENAME`)
+- [x] **Executar** a função/procedimento gravado, com formulário de parâmetros (vazio = DEFAULT ou NULL) e o
+      resultado na grade; **Nova função** e **Excluir função** pelos menus da árvore
+- [x] Procedimentos (`CREATE PROCEDURE`, PostgreSQL 11+) com `CALL`
+      *(`src/documents/FunctionDesignerDoc.tsx`, `src/sql/func.ts`, `crates/atlas-pg/src/meta.rs`)*
+
 ### Navegação / Árvore
 - [x] **Fechar schema** no menu de contexto (colapsa + marca como não-carregado para rebuscar
       na próxima abertura) *(`src/App.tsx`)*
@@ -190,7 +200,8 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 
 ## 6. Tipos de objeto não implementados
 - [x] Materialized View: designer, abrir dados, atualizar dados (ver "Views materializadas" em Entregues)
-- [ ] Function / Procedure designer com debugger de PL/pgSQL
+- [x] Function / Procedure designer (ver "Funções e procedimentos" em Entregues)
+- [ ] Debugger de PL/pgSQL
 - [ ] Type (ENUM, composite, domain)
 - [ ] Sequence (manage, reset, cache)
 - [ ] Trigger / Event Trigger

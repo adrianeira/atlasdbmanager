@@ -53,6 +53,9 @@ export interface DbObject {
   language?: string;
   dataType?: string;
   args?: string;
+  /** Função do servidor: `name` é a chave única "nome(args)" (há sobrecargas) e `fnName` o nome puro. */
+  fnName?: string;
+  procedure?: boolean;
   canLogin?: boolean;
   superuser?: boolean;
   modifiedUser?: string;
@@ -342,7 +345,7 @@ export interface TreeState {
 }
 
 export function functionLabel(o: DbObject): string {
-  return o.args !== undefined ? `${o.name}(${o.args})` : o.name;
+  return o.fnName === undefined && o.args !== undefined ? `${o.name}(${o.args})` : o.name;
 }
 
 export function buildVisibleTree(

@@ -21,6 +21,14 @@ const objInfo = (o: ObjectInfo): DbObject => ({
   dataType: o.dataType ?? undefined,
 });
 
+/** Função do servidor: a chave é "nome(argumentos)" para as sobrecargas não colidirem na árvore. */
+const functionInfo = (o: ObjectInfo): DbObject => ({
+  ...objInfo(o),
+  name: `${o.name}(${o.args ?? ""})`,
+  fnName: o.name,
+  procedure: o.procedure ?? false,
+});
+
 export function schemaFromServer(name: string, objs: SchemaObjects): SchemaMock {
   return {
     name,
@@ -29,7 +37,7 @@ export function schemaFromServer(name: string, objs: SchemaObjects): SchemaMock 
       table: objs.tables.map(objInfo),
       view: objs.views.map(objInfo),
       matview: objs.matviews.map(objInfo),
-      function: objs.functions.map(objInfo),
+      function: objs.functions.map(functionInfo),
       sequence: objs.sequences.map(objInfo),
       type: [],
       query: [],

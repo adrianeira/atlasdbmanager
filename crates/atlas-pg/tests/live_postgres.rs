@@ -248,6 +248,63 @@ async fn matview_detail_reads_definition_and_populated_state() {
 }
 
 #[tokio::test]
+async fn function_detail_reads_signature_options_and_overloads() {
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    let ns = format!("atlas_fn_{}", std::process::id());
+    atlas_pg::execute(
+        &s,
+        &format!(
+            "DROP SCHEMA IF EXISTS {ns} CASCADE; CREATE SCHEMA {ns}; \
+             CREATE FUNCTION {ns}.soma(a integer, b integer DEFAULT 2) RETURNS integer LANGUAGE sql IMMUTABLE STRICT AS $$ SELECT a + b $$; \
+             CREATE FUNCTION {ns}.soma(a text) RETURNS text LANGUAGE plpgsql SECURITY DEFINER AS $$ BEGIN RETURN a || '!'; END $$; \
+             CREATE FUNCTION {ns}.par(IN x integer, OUT dobro integer, OUT triplo integer) LANGUAGE sql AS $$ SELECT x * 2, x * 3 $$; \
+             CREATE FUNCTION {ns}.sem_nome(integer) RETURNS integer LANGUAGE sql STABLE AS $$ SELECT 1 $$; \
+             COMMENT ON FUNCTION {ns}.sem_nome(integer) IS 'um'"
+        ),
+        1,
+    )
+    .await
+    .unwrap();
+
+    let a = atlas_pg::function_detail(&s, &ns, "soma", "a integer, b integer").await.expect("detail");
+    assert_eq!(a.language, "sql");
+    assert_eq!(a.returns.as_deref(), Some("integer"));
+    assert_eq!(a.volatility, "immutable");
+    assert!(a.strict && !a.security_definer && !a.procedure);
+    assert!(a.arguments.contains("DEFAULT 2"), "{}", a.arguments);
+    assert_eq!(a.arg_names, vec!["a", "b"]);
+    assert_eq!(a.identity, "a integer, b integer");
+    assert!(a.body.contains("a + b"));
+
+    // A sobrecarga com o mesmo nome é outra função.
+    let b = atlas_pg::function_detail(&s, &ns, "soma", "a text").await.expect("overload");
+    assert_eq!(b.language, "plpgsql");
+    assert!(b.security_definer);
+    assert_eq!(b.volatility, "volatile");
+
+    let par = atlas_pg::function_detail(&s, &ns, "par", "x integer, OUT dobro integer, OUT triplo integer").await.expect("out params");
+    assert!(par.arguments.contains("OUT dobro integer"), "{}", par.arguments);
+    assert_eq!(par.arg_names, vec!["x", "dobro", "triplo"]);
+
+    let unnamed = atlas_pg::function_detail(&s, &ns, "sem_nome", "integer").await.expect("unnamed");
+    assert_eq!(unnamed.volatility, "stable");
+    assert_eq!(unnamed.comment.as_deref(), Some("um"));
+    assert!(unnamed.arg_names.iter().all(|n| n.is_empty()), "{:?}", unnamed.arg_names);
+
+    assert!(atlas_pg::function_detail(&s, &ns, "soma", "a bigint").await.is_err());
+    if s.server.version_num >= 110000 {
+        atlas_pg::execute(&s, &format!("CREATE PROCEDURE {ns}.proc(x integer) LANGUAGE sql AS $$ SELECT 1 $$"), 1).await.unwrap();
+        // A forma da identidade varia entre versões (14+ imprime "IN x integer"): usa a que a listagem devolve.
+        let listed = atlas_pg::list_objects(&s, &ns).await.unwrap();
+        let identity = listed.functions.iter().find(|f| f.name == "proc").and_then(|f| f.args.clone()).expect("listed procedure");
+        let pr = atlas_pg::function_detail(&s, &ns, "proc", &identity).await.expect("procedure");
+        assert!(pr.procedure && pr.returns.is_none());
+    }
+    atlas_pg::execute(&s, &format!("DROP SCHEMA {ns} CASCADE"), 1).await.unwrap();
+}
+
+#[tokio::test]
 async fn syntax_error_reports_position() {
     let p = require_server!();
     let s = atlas_pg::connect(&p, None).await.expect("connect");

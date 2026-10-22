@@ -3,7 +3,7 @@ import { SmallIcon, type SmallIconName } from "../icons";
 
 export interface DocTab {
   id: string;
-  kind: "objects" | "query" | "data" | "designer" | "viewDesigner" | "placeholder";
+  kind: "objects" | "query" | "data" | "designer" | "viewDesigner" | "functionDesigner" | "placeholder";
   /** Aba "data": tabela ou view (view abre só leitura). */
   objectKind?: "table" | "view" | "matview";
   title: string;
@@ -15,6 +15,9 @@ export interface DocTab {
   schema?: string;
   /** Nome do objeto; ausente em "nova tabela". */
   object?: string;
+  /** Função: nome puro e argumentos de identidade (`object` é a chave "nome(args)"). */
+  fnName?: string;
+  fnIdentity?: string;
   sql?: string;
   dirty?: boolean;
   /** Texto do placeholder para telas ainda não construídas. */

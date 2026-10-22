@@ -5,7 +5,7 @@ use crate::connect::PgSession;
 use crate::error::map_error;
 use atlas_core::{
     ColumnInfo, ConstraintInfo, DatabaseError, DatabaseList, ErrorKind, IndexInfo, ObjectInfo, RoleInfo, RuleInfo,
-    SchemaObjects, TableDetail, TriggerInfo, ViewDetail,
+    FunctionDetail, SchemaObjects, TableDetail, TriggerInfo, ViewDetail,
 };
 
 pub async fn list_databases(s: &PgSession) -> Result<DatabaseList, DatabaseError> {
@@ -69,9 +69,10 @@ pub async fn list_objects(s: &PgSession, schema: &str) -> Result<SchemaObjects, 
 
     // pg_proc.prokind existe só a partir do 11; antes, agregações/janelas eram flags.
     let kind_filter = if v >= 110000 { "p.prokind IN ('f','p')" } else { "NOT p.proisagg AND NOT p.proiswindow" };
+    let is_procedure = if v >= 110000 { "p.prokind = 'p'" } else { "false" };
     let fsql = format!(
         "SELECT p.proname::text, pg_get_function_identity_arguments(p.oid), pg_get_function_result(p.oid), \
-                l.lanname::text, pg_get_userbyid(p.proowner)::text, obj_description(p.oid, 'pg_proc') \
+                l.lanname::text, pg_get_userbyid(p.proowner)::text, obj_description(p.oid, 'pg_proc'), {is_procedure} \
            FROM pg_catalog.pg_proc p \
            JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace \
            JOIN pg_catalog.pg_language l ON l.oid = p.prolang \
@@ -87,6 +88,7 @@ pub async fn list_objects(s: &PgSession, schema: &str) -> Result<SchemaObjects, 
             language: r.get(3),
             owner: r.get(4),
             comment: r.get(5),
+            procedure: r.get(6),
             ..Default::default()
         })
         .collect();
@@ -331,6 +333,49 @@ async fn relation_detail(s: &PgSession, schema: &str, view: &str, materialized: 
         security_barrier,
         rules,
         populated,
+    })
+}
+
+/// Função/procedimento identificado por schema, nome e argumentos de identidade (`pg_get_function_identity_arguments`).
+pub async fn function_detail(s: &PgSession, schema: &str, name: &str, identity: &str) -> Result<FunctionDetail, DatabaseError> {
+    // `prokind` (procedimentos) existe a partir do PostgreSQL 11.
+    let procedure = if s.server.version_num >= 110000 { "p.prokind = 'p'" } else { "false" };
+    let sql = format!(
+        "SELECT p.proname::text, l.lanname::text, p.prosrc, pg_get_function_result(p.oid), \
+                pg_get_function_arguments(p.oid), COALESCE(p.proargnames, '{{}}'::text[]), \
+                pg_get_function_identity_arguments(p.oid), p.provolatile::text, p.prosecdef, p.proisstrict, \
+                pg_get_userbyid(p.proowner)::text, obj_description(p.oid, 'pg_proc'), {procedure} \
+           FROM pg_catalog.pg_proc p \
+           JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace \
+           JOIN pg_catalog.pg_language l ON l.oid = p.prolang \
+          WHERE n.nspname = $1 AND p.proname = $2 AND pg_get_function_identity_arguments(p.oid) = $3"
+    );
+    let row = s.client.query_opt(&sql, &[&schema, &name, &identity]).await.map_err(|e| map_error(&e))?;
+    let Some(r) = row else {
+        let mut err = DatabaseError::new(ErrorKind::Server, format!("function \"{schema}\".\"{name}\"({identity}) does not exist"));
+        err.code = Some("42883".into());
+        return Err(err);
+    };
+    let volatility = match r.get::<_, String>(7).as_str() {
+        "i" => "immutable",
+        "s" => "stable",
+        _ => "volatile",
+    };
+    let is_procedure: bool = r.get(12);
+    Ok(FunctionDetail {
+        name: r.get(0),
+        language: r.get(1),
+        body: r.get(2),
+        returns: if is_procedure { None } else { r.get(3) },
+        arguments: r.get(4),
+        arg_names: r.get(5),
+        identity: r.get(6),
+        volatility: volatility.to_string(),
+        security_definer: r.get(8),
+        strict: r.get(9),
+        owner: r.get(10),
+        comment: r.get(11),
+        procedure: is_procedure,
     })
 }
 

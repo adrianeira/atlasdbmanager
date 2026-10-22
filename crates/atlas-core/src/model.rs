@@ -88,6 +88,8 @@ pub struct ObjectInfo {
     pub return_type: Option<String>,
     pub language: Option<String>,
     pub data_type: Option<String>,
+    /// Procedimento (`CREATE PROCEDURE`, PostgreSQL 11+), não função.
+    pub procedure: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -192,6 +194,31 @@ pub struct ViewDetail {
     pub rules: Vec<RuleInfo>,
     /// View materializada já preenchida com dados (`false` após `WITH NO DATA`). Views comuns: sempre `true`.
     pub populated: bool,
+}
+
+/// Função ou procedimento: o suficiente para o designer remontar o `CREATE OR REPLACE`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FunctionDetail {
+    pub name: String,
+    pub language: String,
+    /// Corpo (`prosrc`), sem as aspas de cifrão.
+    pub body: String,
+    /// Tipo de retorno (`pg_get_function_result`); `None` em procedimentos.
+    pub returns: Option<String>,
+    /// Lista completa de argumentos como o servidor a imprime (modo, nome, tipo, `DEFAULT`).
+    pub arguments: String,
+    /// Nome de cada argumento, na mesma ordem de `arguments` (vazio quando o argumento não tem nome).
+    pub arg_names: Vec<String>,
+    /// Argumentos que identificam a função (sem `DEFAULT`).
+    pub identity: String,
+    /// "immutable" | "stable" | "volatile".
+    pub volatility: String,
+    pub security_definer: bool,
+    pub strict: bool,
+    pub owner: Option<String>,
+    pub comment: Option<String>,
+    pub procedure: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

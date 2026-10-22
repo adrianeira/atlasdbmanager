@@ -63,6 +63,7 @@ export interface ObjectInfo {
   returnType: string | null;
   language: string | null;
   dataType: string | null;
+  procedure?: boolean;
 }
 
 export interface SchemaObjects {
@@ -121,6 +122,26 @@ export interface ViewDetail {
   rules: { name: string; definition: string }[];
   /** View materializada já preenchida com dados. Views comuns: sempre true. */
   populated: boolean;
+}
+
+export interface FunctionDetail {
+  name: string;
+  language: string;
+  body: string;
+  /** Tipo de retorno; null em procedimentos. */
+  returns: string | null;
+  /** Argumentos como o servidor imprime (modo, nome, tipo, DEFAULT). */
+  arguments: string;
+  /** Nome de cada argumento, na ordem de `arguments` (vazio = sem nome). */
+  argNames: string[];
+  /** Argumentos que identificam a função (sem DEFAULT). */
+  identity: string;
+  volatility: "immutable" | "stable" | "volatile";
+  securityDefiner: boolean;
+  strict: boolean;
+  owner: string | null;
+  comment: string | null;
+  procedure: boolean;
 }
 
 export interface ResultSet {
@@ -192,6 +213,8 @@ export const pg = {
     call<TableDetail>("pg_table_detail", { sessionId, database, schema, table }),
   viewDetail: (sessionId: string, database: string, schema: string, view: string) =>
     call<ViewDetail>("pg_view_detail", { sessionId, database, schema, view }),
+  functionDetail: (sessionId: string, database: string, schema: string, name: string, identity: string) =>
+    call<FunctionDetail>("pg_function_detail", { sessionId, database, schema, name, identity }),
   matviewDetail: (sessionId: string, database: string, schema: string, view: string) =>
     call<ViewDetail>("pg_matview_detail", { sessionId, database, schema, view }),
   listRoles: (sessionId: string) => call<RoleInfo[]>("pg_list_roles", { sessionId }),
