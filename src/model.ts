@@ -147,7 +147,7 @@ const fixtureTables = (): DbObject[] => [
     columns: [col("code", "text", 0, 0, false, { collation: TEXT_COLLATION }), col("description", "text", 0, 0, false, { collation: TEXT_COLLATION })],
   },
   {
-    name: "orders", rows: 0, owner: "atlas_test",
+    name: "orders", rows: 3, owner: "atlas_test",
     columns: [
       col("id", "int8", 64, 0, true, { key: 1, default: "nextval('orders_id_seq'::regclass)" }),
       col("client_id", "uuid", 0, 0, true),
@@ -240,6 +240,12 @@ export function mockRows(table: DbObject): CellValue[][] {
       [uuid(4), "O'Brien \"quoted\"", null, "2026-10-20 20:02:17.776452-03", "{}"],
     ],
     conflict_test: [["1", "original", "1"], ["2", "segundo", "3"]],
+    // FK client_id → clients.id (demonstra o lookup de chave estrangeira).
+    orders: [
+      ["1", uuid(1), "150.00", "open"],
+      ["2", uuid(2), "89.90", "paid"],
+      ["3", uuid(1), "42.00", "open"],
+    ],
     "Mixed Case": [["1", "ação"]],
   };
   if (special[table.name]) return special[table.name];

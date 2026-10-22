@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { errorText, toAtlasError, type PlannedStatement } from "../backend";
 import { DataGrid, typeKind, type GridColumn } from "../components/DataGrid";
+import { FkLookup, type FkLookupSource } from "../components/FkLookup";
 import { MessageDialog } from "../components/MessageDialog";
 import type { StatusCell } from "../components/StatusBar";
 import { useT, type MessageKey } from "../i18n";
 import { SmallIcon, type SmallIconName } from "../icons";
 import { plannedStatements } from "../live";
-import { mockRows, quoteIdent, type CellValue, type DbObject } from "../model";
+import { mockRows, quoteIdent, type CellValue, type DbObject, type ForeignKeyDef } from "../model";
 import { columnType, selectSql } from "../sql/ddl";
 
 /** Acesso ao banco real; ausente = modo de demonstração com dados fictícios. */
@@ -23,6 +24,8 @@ interface Props {
   production: boolean;
   onStatus: (cells: StatusCell[]) => void;
   backend?: TableDataBackend;
+  /** Leitura das tabelas referenciadas pelas FKs (botão "…" na célula). */
+  lookup?: FkLookupSource;
 }
 
 const PAGE_SIZE = 1000;
@@ -31,7 +34,7 @@ function literal(v: CellValue): string {
   return v === null ? "NULL" : `'${v.replace(/'/g, "''")}'`;
 }
 
-export function TableDataDoc({ schema, table: tableProp, active, production, onStatus, backend }: Props) {
+export function TableDataDoc({ schema, table: tableProp, active, production, onStatus, backend, lookup }: Props) {
   const t = useT();
   const [table, setTable] = useState<DbObject>(tableProp);
   const cols = useMemo(() => table.columns ?? [], [table]);
@@ -58,6 +61,21 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   const [applying, setApplying] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
   const [sqlText, setSqlText] = useState(() => selectSql(schema, tableProp.name, PAGE_SIZE, 0));
+  const [fkOpen, setFkOpen] = useState<{ row: number; fk: ForeignKeyDef; anchor: DOMRect } | null>(null);
+
+  // Coluna → FK a que pertence (para o botão "…" de lookup).
+  const fkByCol = useMemo(() => {
+    const m = new Map<number, ForeignKeyDef>();
+    for (const fk of table.foreignKeys ?? []) {
+      for (const f of fk.fields.split(",").map((x) => x.trim())) {
+        const i = cols.findIndex((c) => c.name === f);
+        if (i >= 0 && !m.has(i)) m.set(i, fk);
+      }
+    }
+    return m;
+  }, [table, cols]);
+  const lookupCols = useMemo(() => new Set(fkByCol.keys()), [fkByCol]);
+  const fkColumnIndexes = (fk: ForeignKeyDef) => fk.fields.split(",").map((f) => cols.findIndex((c) => c.name === f.trim()));
 
   const resetEdits = () => {
     setEdited(new Set());
@@ -264,6 +282,11 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
             activeRow={activeRow}
             onActiveRow={setActiveRow}
             onEdit={onEdit}
+            lookupCols={lookup ? lookupCols : undefined}
+            onLookup={(row, col, anchor) => {
+              const fk = fkByCol.get(col);
+              if (fk) setFkOpen({ row, fk, anchor });
+            }}
           />
         ) : (
           <div className="form-view">
@@ -304,6 +327,24 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
         <button type="button" className={`sb-button${view === "grid" ? " is-active" : ""}`} title={t("data.gridView")} onClick={() => setView("grid")}><SmallIcon name="gridView" /></button>
         <button type="button" className={`sb-button${view === "form" ? " is-active" : ""}`} title={t("data.formView")} onClick={() => setView("form")}><SmallIcon name="formView" /></button>
       </div>
+
+      {fkOpen && lookup && (
+        <FkLookup
+          fk={fkOpen.fk}
+          table={table.name}
+          current={fkColumnIndexes(fkOpen.fk).map((i) => (i >= 0 ? rows[fkOpen.row]?.[i] ?? null : null))}
+          anchor={fkOpen.anchor}
+          source={lookup}
+          onPick={(values) => {
+            // FK composta: preenche todas as colunas da chave; só marca as que mudaram.
+            fkColumnIndexes(fkOpen.fk).forEach((ci, k) => {
+              if (ci >= 0 && rows[fkOpen.row][ci] !== values[k]) onEdit(fkOpen.row, ci, values[k]);
+            });
+            setFkOpen(null);
+          }}
+          onClose={() => setFkOpen(null)}
+        />
+      )}
 
       {review !== null && (
         <MessageDialog

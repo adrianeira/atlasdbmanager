@@ -194,6 +194,12 @@ const small: Record<string, ReactElement> = {
   star: <path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z" fill="none" stroke="currentColor" strokeLinejoin="round" />,
   starFilled: <path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z" fill="#f2b01e" stroke="#c98a0a" strokeLinejoin="round" />,
   colorDot: <circle cx="8" cy="8" r="5" fill="currentColor" />,
+  link: (
+    <>
+      <path d="M6.8 9.2l2.4-2.4" stroke="#2f7fd0" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M7.6 4.6l1.2-1.2a2.5 2.5 0 0 1 3.6 3.6l-1.2 1.2M8.4 11.4l-1.2 1.2a2.5 2.5 0 0 1-3.6-3.6l1.2-1.2" fill="none" stroke="#2f7fd0" strokeWidth="1.6" strokeLinecap="round" />
+    </>
+  ),
   collapseAll: <path d="M4 3l4 4 4-4M4 9l4 4 4-4" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" transform="rotate(180 8 8)" />,
   chevronRight: <path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />,
   chevronDown: <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />,

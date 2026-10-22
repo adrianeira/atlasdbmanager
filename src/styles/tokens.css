@@ -1,5 +1,5 @@
-﻿/*
- * Tokens visuais do Atlas (DECISÃƒO_ATLAS calibrada pela captura capturas/home.png,
+/*
+ * Tokens visuais do Atlas (DECISÃO_ATLAS calibrada pela captura capturas/home.png,
  * 1586x865 a 100%). Nenhuma View define cor ou tamanho fora destes tokens.
  */
 :root {
@@ -7,7 +7,7 @@
   --font-mono: "Cascadia Mono", Consolas, "SF Mono", "DejaVu Sans Mono", monospace;
   --fs-ui: 12px;
 
-  /* Alturas das regiÃµes */
+  /* Alturas das regiões */
   --h-menu: 22px;
   --h-main-toolbar: 62px;
   --h-tab: 27px;
@@ -57,7 +57,7 @@
   --c-field-disabled: #f0f0f0;
   --c-window: #f0f0f0;
 
-  /* Grid de dados (calibrado pela captura da referÃªncia) */
+  /* Grid de dados (calibrado pela captura da referência) */
   --c-grid-line: #e4e4e4;
   --c-grid-type: #7f7f7f;
   --c-grid-null: #a6a6a6;

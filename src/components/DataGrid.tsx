@@ -105,9 +105,16 @@ interface Props {
   onActiveRow: (row: number) => void;
   onEdit?: (row: number, col: number, value: CellValue) => void;
   rowHeight?: number;
+  /** Cabeçalho de uma linha só (sem tipo), como na grade do lookup de FK. */
+  simpleHeader?: boolean;
+  /** Colunas com lookup de chave estrangeira: a célula ativa mostra o botão "…". */
+  lookupCols?: Set<number>;
+  onLookup?: (row: number, col: number, cell: DOMRect) => void;
 }
 
-export function DataGrid({ columns, rows, readOnly, edited, deletedRows, newRows, activeRow, onActiveRow, onEdit, rowHeight = 23 }: Props) {
+export function DataGrid({
+  columns, rows, readOnly, edited, deletedRows, newRows, activeRow, onActiveRow, onEdit, rowHeight = 23, simpleHeader, lookupCols, onLookup,
+}: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewport, setViewport] = useState(400);
@@ -129,7 +136,7 @@ export function DataGrid({ columns, rows, readOnly, edited, deletedRows, newRows
     return () => ro.disconnect();
   }, []);
 
-  const headerHeight = 41;
+  const headerHeight = simpleHeader ? 24 : 41;
   const rowHeadWidth = 12;
   const overscan = 8;
   const first = Math.max(0, Math.floor(scrollTop / rowHeight) - overscan);
@@ -240,7 +247,7 @@ export function DataGrid({ columns, rows, readOnly, edited, deletedRows, newRows
             >
               <div className="dg-th-name">{c.name}</div>
               {/* Em lotes com vários comandos o servidor não descreve os tipos: a linha fica vazia. */}
-              <div className="dg-th-type">{c.type && <><KindIcon kind={c.kind} /><span>{c.type}</span></>}</div>
+              {!simpleHeader && <div className="dg-th-type">{c.type && <><KindIcon kind={c.kind} /><span>{c.type}</span></>}</div>}
               <span className="dg-resize" onMouseDown={(e) => startResize(i, e)} onDoubleClick={() => fitColumn(i)} />
             </div>
           ))}
@@ -288,6 +295,18 @@ export function DataGrid({ columns, rows, readOnly, edited, deletedRows, newRows
                       <span className="dg-null">(Null)</span>
                     ) : (
                       display(v, c.kind)
+                    )}
+                    {/* Lookup de FK: botão "…" na célula ativa (como a referência). */}
+                    {!isEditing && isActive && ci === activeCol && lookupCols?.has(ci) && onLookup && !readOnly && !deletedRows?.has(ri) && (
+                      <button
+                        type="button"
+                        className="dg-lookup"
+                        title="…"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => onLookup(ri, ci, (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect())}
+                      >
+                        …
+                      </button>
                     )}
                   </div>
                 );

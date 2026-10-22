@@ -5,6 +5,7 @@ import { entries, matchesShortcut, sub, type CommandMap, type MenuDef, type Menu
 import { ConnectionDialog, type ConnectionForm } from "./components/ConnectionDialog";
 import { schemaFromServer, sessionPasswords, tableFromServer } from "./live";
 import type { TableDataBackend } from "./documents/TableDataDoc";
+import type { FkLookupSource } from "./components/FkLookup";
 import type { QueryBackend } from "./documents/QueryDoc";
 import { InfoPane } from "./components/InfoPane";
 import { MainToolbar } from "./components/MainToolbar";
@@ -21,7 +22,7 @@ import { TableDesignerDoc } from "./documents/TableDesignerDoc";
 import { detectLang, I18nContext, makeTranslator, type Lang, type MessageKey } from "./i18n";
 import { ProviderIcon, SmallIcon } from "./icons";
 import {
-  buildVisibleTree, CONNECTION_COLORS, INITIAL_CONNECTIONS, quoteIdent, resolveNode, seg,
+  buildVisibleTree, CONNECTION_COLORS, INITIAL_CONNECTIONS, mockRows, quoteIdent, resolveNode, seg,
   type Category, type ConnectionColor, type ConnectionMock, type DbObject, type ProviderId, type TreeNode,
 } from "./model";
 
@@ -1244,6 +1245,39 @@ export default function App() {
     });
   };
 
+  /** Fonte do lookup de FK por aba: banco real (SELECT só de leitura) ou dados de demonstração. */
+  const lookupSources = useRef<Record<string, FkLookupSource>>({});
+  const lookupSourceFor = (tab: DocTab, conn: ConnectionMock | undefined): FkLookupSource | undefined => {
+    if (!conn) return undefined;
+    const db = tab.database ?? "";
+    return (lookupSources.current[tab.id] ??= conn.live
+      ? {
+          columns: async (schema, table) =>
+            (await pg.tableDetail(conn.id, db, schema, table)).columns.map((c) => ({ name: c.name, type: c.dataType })),
+          rows: async (schema, table, columns, orderBy, limit) => {
+            // Só identificadores (com aspas) e um limite numérico entram no texto; nenhum valor do usuário.
+            const sql = `SELECT ${columns.map(quoteIdent).join(", ")} FROM ${quoteIdent(schema)}.${quoteIdent(table)}`
+              + (orderBy.length ? ` ORDER BY ${orderBy.map(quoteIdent).join(", ")}` : "") + ` LIMIT ${limit}`;
+            const out = await pg.execute(conn.id, db, sql, limit);
+            return out.statements[0]?.result?.rows ?? [];
+          },
+        }
+      : {
+          columns: async (schema, table) => {
+            const obj = connectionsRef.current.find((c) => c.id === conn.id)?.databases.find((d) => d.name === db)
+              ?.schemas.find((s) => s.name === schema)?.objects.table?.find((x) => x.name === table);
+            return (obj?.columns ?? []).map((c) => ({ name: c.name, type: c.type }));
+          },
+          rows: async (schema, table, columns, _orderBy, limit) => {
+            const obj = connectionsRef.current.find((c) => c.id === conn.id)?.databases.find((d) => d.name === db)
+              ?.schemas.find((s) => s.name === schema)?.objects.table?.find((x) => x.name === table);
+            if (!obj) return [];
+            const idx = columns.map((name) => (obj.columns ?? []).findIndex((c) => c.name === name));
+            return mockRows(obj).slice(0, limit).map((r) => idx.map((i) => (i >= 0 ? r[i] : null)));
+          },
+        });
+  };
+
   /* ---------- Render dos documentos ---------- */
   const lookupTable = (tab: DocTab): { conn?: ConnectionMock; table?: DbObject; tables: DbObject[] } => {
     const conn = connections.find((c) => c.id === tab.connectionId);
@@ -1281,6 +1315,7 @@ export default function App() {
           production={conn?.environment === "production"}
           onStatus={statusFor(tab.id)}
           backend={conn?.live ? tableBackendFor(tab, base) : undefined}
+          lookup={lookupSourceFor(tab, conn)}
         />
       );
     }
