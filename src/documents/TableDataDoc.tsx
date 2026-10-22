@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { errorText, toAtlasError, type PlannedStatement } from "../backend";
 import { DataGrid, typeKind, type GridColumn } from "../components/DataGrid";
 import { FkLookup, type FkLookupSource } from "../components/FkLookup";
@@ -46,7 +46,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   const readOnly = isView || keyCols.length === 0;
 
   const columns: GridColumn[] = useMemo(
-    () => cols.map((c) => ({ name: c.name, type: columnType(c), kind: typeKind(c.type), isKey: !!c.key })),
+    () => cols.map((c) => ({ name: c.name, type: columnType(c), kind: typeKind(c.type), isKey: !!c.key, required: c.notNull, hasDefault: !!c.default })),
     [cols],
   );
 
@@ -248,6 +248,20 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
     else setRefreshedAt(new Date());
   };
 
+  // F5 (como na referência) relê só os registros desta tabela; o recarregamento da janela é bloqueado no App.
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+  useEffect(() => {
+    if (!active) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "F5" || e.altKey || document.querySelector(".modal-overlay")) return;
+      e.preventDefault();
+      refreshRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [active]);
+
   /** Novo limite: volta para a primeira página (na referência a mudança vale ao confirmar). */
   const applyLimit = (on: boolean, size: number) => {
     setLimitOn(on);
@@ -328,7 +342,9 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
                   value={record[i] ?? ""}
                   placeholder={record[i] === null ? "(NULL)" : ""}
                   readOnly={readOnly}
-                  onChange={(e) => onEdit(activeRow, i, e.target.value)}
+                  title={c.notNull ? t("grid.required", { name: c.name }) : undefined}
+                  // Obrigatório (NOT NULL) não pode ficar em branco, como no grid.
+                  onChange={(e) => { if (!(c.notNull && e.target.value === "")) onEdit(activeRow, i, e.target.value); }}
                 />
                 <span className="muted">{columnType(c)}</span>
               </div>

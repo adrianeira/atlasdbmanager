@@ -1230,6 +1230,29 @@ export default function App() {
     ...tailMenus,
   ];
 
+  // F5/Ctrl+R/Ctrl+F5/Ctrl+Shift+R nunca recarregam a janela (perderia abas e edições pendentes).
+  // F5 atualiza o documento ativo: a tabela aberta trata no próprio TableDataDoc; na aba
+  // Objetos, relê o nó selecionado na árvore. Ctrl+R no editor SQL continua sendo "Executar".
+  const f5Ref = useRef<() => void>(() => undefined);
+  f5Ref.current = () => {
+    if (active.kind !== "objects") return;
+    const node = nodes.find((n) => n.id === selectedNode);
+    if (node) refreshNode(node);
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const reload = e.key === "F5" || ((e.ctrlKey || e.metaKey) && (e.key === "r" || e.key === "R"));
+      if (!reload) return;
+      // No editor SQL, F5/Ctrl+R/Ctrl+Shift+R são "Executar" do próprio CodeMirror (que já
+      // impede o recarregamento); um evento cancelado aqui ele ignoraria.
+      if (!(e.key === "F5" && e.ctrlKey) && (e.target as HTMLElement | null)?.closest?.(".cm-editor")) return;
+      e.preventDefault();
+      if (e.key === "F5" && !e.ctrlKey && !document.querySelector(".modal-overlay")) f5Ref.current();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
+
   const commandsRef = useRef(commands);
   commandsRef.current = commands;
   useEffect(() => {

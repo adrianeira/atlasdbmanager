@@ -21,7 +21,19 @@ export interface GridColumn {
   kind: TypeKind;
   width?: number;
   isKey?: boolean;
+  /** NOT NULL: o grid não deixa a célula ficar vazia nem NULL. */
+  required?: boolean;
+  /** Tem DEFAULT no servidor: num registro novo pode ficar em branco (o banco preenche). */
+  hasDefault?: boolean;
 }
+
+/** Valor que a célula receberia: fora de colunas de texto, vazio significa NULL. */
+function normalize(v: CellValue, kind: TypeKind): CellValue {
+  return v === "" && kind !== "text" ? null : v;
+}
+
+/** Valor em branco numa coluna obrigatória (NULL ou texto vazio). */
+const isBlank = (v: CellValue) => v === null || v === "";
 
 export function typeKind(type: string): TypeKind {
   const t = type.toLowerCase();
@@ -194,11 +206,21 @@ export function DataGrid({
     setEditing({ row, col, value: initial ?? v ?? "", isNull: initial === undefined && v === null });
   };
 
-  const commitEdit = (setNull = false) => {
-    if (!editing) return;
+  /** Grava a edição. Em coluna obrigatória, valor em branco é recusado: devolve false e a célula fica marcada. */
+  const commitEdit = (setNull = false): boolean => {
+    if (!editing) return true;
+    const col = columns[editing.col];
     const original = rows[editing.row][editing.col];
-    const next = setNull || (editing.isNull && editing.value === "") ? null : editing.value;
+    const next = setNull || (editing.isNull && editing.value === "") ? null : normalize(editing.value, col.kind);
+    if (col.required && isBlank(next)) return false;
     if (next !== original) onEdit?.(editing.row, editing.col, next);
+    setEditing(null);
+    scrollRef.current?.focus();
+    return true;
+  };
+
+  /** Sai da edição sem gravar (Esc, ou ao clicar fora com valor inválido). */
+  const cancelEdit = () => {
     setEditing(null);
     scrollRef.current?.focus();
   };
@@ -264,7 +286,9 @@ export function DataGrid({
   }, [menu]);
 
   const canEdit = (row: number, col: number) => !readOnly && !!onEdit && !deletedRows?.has(row) && columns[col]?.kind !== "binary";
-  const setCell = (row: number, col: number, v: CellValue) => {
+  const setCell = (row: number, col: number, raw: CellValue) => {
+    const v = normalize(raw, columns[col].kind);
+    if (columns[col].required && isBlank(v)) return;
     if (rows[row]?.[col] !== v) onEdit?.(row, col, v);
   };
 
@@ -285,12 +309,14 @@ export function DataGrid({
   const menuItems = (row: number, col: number): MenuEntry[] => {
     const editable = canEdit(row, col);
     const kind = columns[col]?.kind;
+    const required = !!columns[col]?.required;
     const item = (key: Parameters<typeof t>[0], run?: () => void): MenuEntry => ({ kind: "item", text: t(key), run });
     const sep: MenuEntry = { kind: "sep" };
     const uuidOk = editable && (kind === "uuid" || kind === "text" || kind === "other");
     return [
-      item("grid.setEmpty", editable && kind !== "number" && kind !== "uuid" ? () => setCell(row, col, "") : undefined),
-      item("grid.setNull", editable ? () => setCell(row, col, null) : undefined),
+      // Campo obrigatório (NOT NULL) não pode ficar vazio nem NULL.
+      item("grid.setEmpty", editable && kind === "text" && !required ? () => setCell(row, col, "") : undefined),
+      item("grid.setNull", editable && !required ? () => setCell(row, col, null) : undefined),
       {
         kind: "sub", label: "grid.generateUuid",
         items: [
@@ -317,6 +343,7 @@ export function DataGrid({
       },
       item("grid.paste", editable ? () => {
         void readClipboard()
+          // Colar em branco num obrigatório é ignorado pelo setCell.
           .then((text) => setCell(row, col, text.replace(/\r?\n$/, "")))
           .catch(() => undefined);
       } : undefined),
@@ -393,14 +420,18 @@ export function DataGrid({
               {columns.map((c, ci) => {
                 const v = r[ci];
                 const isEditing = editing?.row === ri && editing.col === ci;
-                const cellCls = `dg-td${c.kind === "number" ? " is-num" : ""}${isActive && ci === activeCol ? " is-focus" : ""}${edited?.has(`${ri}:${ci}`) ? " is-edited" : ""}`;
+                // Obrigatório em branco: no editor enquanto digita, ou num registro novo ainda sem valor.
+                const editorInvalid = isEditing && !!c.required && editing.value === "";
+                const missing = !isEditing && !!c.required && !c.hasDefault && v === null && !!newRows?.has(ri);
+                const cellCls = `dg-td${c.kind === "number" ? " is-num" : ""}${isActive && ci === activeCol ? " is-focus" : ""}${edited?.has(`${ri}:${ci}`) ? " is-edited" : ""}${missing || editorInvalid ? " is-required" : ""}`;
                 return (
                   <div
                     key={ci}
                     className={cellCls}
                     style={{ width: widths[ci] }}
                     role="gridcell"
-                    onMouseDown={() => { onActiveRow(ri); setActiveCol(ci); if (editing && !isEditing) commitEdit(); }}
+                    title={missing || editorInvalid ? t("grid.required", { name: c.name }) : undefined}
+                    onMouseDown={() => { onActiveRow(ri); setActiveCol(ci); if (editing && !isEditing && !commitEdit()) cancelEdit(); }}
                     onDoubleClick={() => startEdit(ri, ci)}
                     onContextMenu={isEditing ? undefined : (e) => openMenu(e, ri, ci)}
                   >
@@ -411,13 +442,15 @@ export function DataGrid({
                         value={editing.value}
                         placeholder={editing.isNull ? "(Null)" : ""}
                         onChange={(e) => setEditing({ ...editing, value: e.target.value, isNull: false })}
-                        onBlur={() => commitEdit()}
+                        // Ao sair com valor inválido (obrigatório em branco) volta ao valor original.
+                        onBlur={() => { if (!commitEdit()) cancelEdit(); }}
                         onKeyDown={(e) => {
                           e.stopPropagation();
-                          if (e.key === "Enter") { commitEdit(); move(1, 0); }
-                          else if (e.key === "Escape") { setEditing(null); scrollRef.current?.focus(); }
-                          else if (e.key === "Tab") { e.preventDefault(); commitEdit(); move(0, e.shiftKey ? -1 : 1); }
-                          // Ctrl+0 grava NULL explicitamente (NULL ≠ texto vazio).
+                          // Enter/Tab com obrigatório em branco: não sai da célula (fica marcada em vermelho).
+                          if (e.key === "Enter") { if (commitEdit()) move(1, 0); }
+                          else if (e.key === "Escape") cancelEdit();
+                          else if (e.key === "Tab") { e.preventDefault(); if (commitEdit()) move(0, e.shiftKey ? -1 : 1); }
+                          // Ctrl+0 grava NULL explicitamente (NULL ≠ texto vazio); recusado em obrigatório.
                           else if (e.key === "0" && e.ctrlKey) { e.preventDefault(); commitEdit(true); }
                         }}
                       />
