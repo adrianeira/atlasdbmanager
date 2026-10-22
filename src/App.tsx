@@ -1,0 +1,798 @@
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { entries, matchesShortcut, sub, type CommandMap, type MenuDef, type MenuEntry } from "./commands";
+import { ConnectionDialog, type ConnectionForm } from "./components/ConnectionDialog";
+import { InfoPane } from "./components/InfoPane";
+import { MainToolbar } from "./components/MainToolbar";
+import { MenuBar } from "./components/MenuBar";
+import { MessageDialog } from "./components/MessageDialog";
+import { connIdOf, NavigationPane } from "./components/NavigationPane";
+import { objectsFor, ObjectsView, type ViewMode } from "./components/ObjectsView";
+import { PopupMenu } from "./components/PopupMenu";
+import { StatusBar, type StatusCell } from "./components/StatusBar";
+import { TabBar, type DocTab } from "./components/TabBar";
+import { QueryDoc, type QueryActions } from "./documents/QueryDoc";
+import { TableDataDoc } from "./documents/TableDataDoc";
+import { TableDesignerDoc } from "./documents/TableDesignerDoc";
+import { detectLang, I18nContext, makeTranslator, type Lang, type MessageKey } from "./i18n";
+import { ProviderIcon, SmallIcon } from "./icons";
+import {
+  buildVisibleTree, INITIAL_CONNECTIONS, resolveNode, seg,
+  type Category, type ConnectionMock, type DbObject, type ProviderId, type TreeNode,
+} from "./model";
+
+type Theme = "system" | "light" | "dark";
+
+interface Layout {
+  navWidth: number;
+  navVisible: boolean;
+  infoVisible: boolean;
+  viewMode: ViewMode;
+  showCaptions: boolean;
+  theme: Theme;
+  lang: Lang;
+}
+
+const LAYOUT_KEY = "atlas.layout.v1";
+const CONNECTIONS_KEY = "atlas.connections.v1";
+const DEFAULT_LAYOUT: Layout = {
+  navWidth: 384, navVisible: true, infoVisible: false, viewMode: "detail", showCaptions: true, theme: "system", lang: detectLang(),
+};
+
+/* ---------- Persistência local do protótipo (no M1: SQLite local + cofre do SO) ---------- */
+
+function readJson<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? { ...fallback, ...JSON.parse(raw) } : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeJson(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* sem armazenamento disponível: segue só em memória */
+  }
+}
+
+/** Perfil salvo: NUNCA contém senha (spec SEG-001/ADR-007). */
+interface SavedProfile { id: string; name: string; provider: ProviderId; host: string; port: number; user: string; initialDatabase: string; environment: string }
+
+function profileToConnection(p: SavedProfile): ConnectionMock {
+  return {
+    ...p, serverVersion: "-", serverVersionNum: 0, hiddenDatabases: 0, roles: [],
+    databases: [{ name: p.initialDatabase || "postgres", schemas: [{ name: "public", objects: { table: [], view: [], matview: [], function: [], query: [], backup: [] } }] }],
+  };
+}
+
+function loadConnections(): ConnectionMock[] {
+  try {
+    const raw = localStorage.getItem(CONNECTIONS_KEY);
+    const saved: SavedProfile[] = raw ? JSON.parse(raw) : [];
+    return [...INITIAL_CONNECTIONS, ...saved.map(profileToConnection)];
+  } catch {
+    return INITIAL_CONNECTIONS;
+  }
+}
+
+function saveConnections(list: ConnectionMock[]) {
+  const builtIn = new Set(INITIAL_CONNECTIONS.map((c) => c.id));
+  const profiles: SavedProfile[] = list
+    .filter((c) => !builtIn.has(c.id))
+    .map((c) => ({ id: c.id, name: c.name, provider: c.provider, host: c.host, port: c.port, user: c.user, initialDatabase: c.initialDatabase, environment: c.environment ?? "development" }));
+  writeJson(CONNECTIONS_KEY, profiles);
+}
+
+const CATEGORY_LABEL: Record<Category, MessageKey> = {
+  table: "tb.table", view: "tb.view", matview: "cat.matview", function: "tb.function",
+  sequence: "cat.sequence", type: "cat.type", user: "tb.user", query: "tb.query",
+  backup: "tb.backup", automation: "tb.automation", model: "tb.model", bi: "tb.bi",
+};
+
+const FOLDER_LABEL: Partial<Record<Category, MessageKey>> = {
+  table: "folder.table", view: "folder.view", matview: "folder.matview",
+  function: "folder.function", query: "folder.query", backup: "folder.backup",
+};
+
+const COUNT_LABEL: Record<Category, MessageKey> = {
+  table: "status.count.table", view: "status.count.view", matview: "status.count.matview", function: "status.count.function",
+  sequence: "status.count.sequence", type: "status.count.type", user: "status.count.user", query: "status.count.query",
+  backup: "status.count.backup", automation: "status.count.automation", model: "status.count.model", bi: "status.count.bi",
+};
+
+const OBJECTS_TAB: DocTab = { id: "objects", kind: "objects", title: "" };
+
+interface RecentItem { label: string; tab: Omit<DocTab, "id"> }
+
+type Dialog =
+  | { kind: "connection"; editing?: ConnectionMock }
+  | { kind: "deleteConnection"; conn: ConnectionMock }
+  | { kind: "closeDirty"; tabId: string }
+  | { kind: "about" };
+
+export default function App() {
+  const [layout, setLayout] = useState<Layout>(() => readJson(LAYOUT_KEY, DEFAULT_LAYOUT));
+  const t = useMemo(() => makeTranslator(layout.lang), [layout.lang]);
+  const patchLayout = useCallback((p: Partial<Layout>) => setLayout((l) => ({ ...l, ...p })), []);
+
+  useEffect(() => writeJson(LAYOUT_KEY, layout), [layout]);
+  useEffect(() => {
+    const root = document.documentElement;
+    if (layout.theme === "system") delete root.dataset.theme;
+    else root.dataset.theme = layout.theme;
+    root.lang = layout.lang;
+  }, [layout.theme, layout.lang]);
+
+  /* ---------- Conexões e árvore ---------- */
+  const [connections, setConnections] = useState<ConnectionMock[]>(loadConnections);
+  useEffect(() => saveConnections(connections), [connections]);
+
+  const [selectedNode, setSelectedNode] = useState<string | null>("root");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [openConnections, setOpenConnections] = useState<Set<string>>(new Set());
+  const [openDatabases, setOpenDatabases] = useState<Set<string>>(new Set());
+  const [connecting, setConnecting] = useState<Set<string>>(new Set());
+  const [filter, setFilter] = useState("");
+  const [category, setCategory] = useState<Category>("table");
+  const [selectedObjects, setSelectedObjects] = useState<string[]>([]);
+  const [dialog, setDialog] = useState<Dialog | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; items: MenuEntry[] } | null>(null);
+  const [recents, setRecents] = useState<RecentItem[]>([]);
+  const [recentProviders, setRecentProviders] = useState<ProviderId[]>(["postgresql"]);
+
+  const nodes = useMemo(
+    () => buildVisibleTree(connections, { expanded, openConnections, openDatabases, filter }, (c) => t(FOLDER_LABEL[c] ?? CATEGORY_LABEL[c]), t("nav.myConnections")),
+    [connections, expanded, openConnections, openDatabases, filter, t],
+  );
+
+  const add = (set: Set<string>, id: string) => new Set(set).add(id);
+  const remove = (set: Set<string>, id: string) => {
+    const s = new Set(set);
+    s.delete(id);
+    return s;
+  };
+
+  const connect = (connId: string) => {
+    if (connecting.has(connId)) return;
+    setConnecting((s) => add(s, connId));
+    // Mock: no M1 vira o comando IPC `connection_open` do núcleo Rust.
+    window.setTimeout(() => {
+      setConnecting((s) => remove(s, connId));
+      setOpenConnections((s) => add(s, connId));
+      setExpanded((s) => add(s, `conn:${seg(connId)}`));
+    }, 450);
+  };
+
+  const disconnect = (connId: string) => {
+    setOpenConnections((s) => remove(s, connId));
+    const prefix = `db:${seg(connId)}/`;
+    setOpenDatabases((s) => new Set([...s].filter((x) => !x.startsWith(prefix))));
+  };
+
+  const toggle = (node: TreeNode) => {
+    if (node.kind === "connection") {
+      const connId = connIdOf(node.id);
+      if (!openConnections.has(connId)) return connect(connId);
+    }
+    if (node.kind === "database" && !openDatabases.has(node.id)) {
+      setOpenDatabases((s) => add(s, node.id));
+      setExpanded((s) => add(s, node.id));
+      return;
+    }
+    setExpanded((s) => (s.has(node.id) ? remove(s, node.id) : add(s, node.id)));
+  };
+
+  const selectNode = (id: string) => {
+    setSelectedNode(id);
+    const c = resolveNode(id, connections);
+    if (id.startsWith("folder:") && c.category) {
+      setCategory(c.category);
+      setSelectedObjects([]);
+    } else if (id.startsWith("obj:") && c.category && c.objectName) {
+      setCategory(c.category);
+      setSelectedObjects([c.objectName]);
+    } else if (id.startsWith("col:") && c.objectName) {
+      setCategory("table");
+      setSelectedObjects([c.objectName]);
+    } else {
+      setSelectedObjects([]);
+    }
+  };
+
+  /* ---------- Documentos/abas ---------- */
+  const [tabs, setTabs] = useState<DocTab[]>([OBJECTS_TAB]);
+  const [activeTab, setActiveTab] = useState("objects");
+  const [docStatus, setDocStatus] = useState<Record<string, StatusCell[]>>({});
+  const queryActions = useRef<QueryActions | null>(null);
+  const tabSeq = useRef(0);
+
+  const ctx = resolveNode(selectedNode, connections);
+  const connectionOpen = !!ctx.connection && openConnections.has(ctx.connection.id);
+
+  const openTab = (tab: Omit<DocTab, "id">, recentLabel?: string) => {
+    // Reaproveita a aba se o mesmo objeto já estiver aberto no mesmo modo.
+    const existing = tab.object && tabs.find((x) => x.kind === tab.kind && x.connectionId === tab.connectionId && x.database === tab.database && x.schema === tab.schema && x.object === tab.object);
+    if (existing) {
+      setActiveTab(existing.id);
+      return;
+    }
+    const id = `doc${++tabSeq.current}`;
+    setTabs((ts) => [...ts, { ...tab, id }]);
+    setActiveTab(id);
+    if (recentLabel) setRecents((r) => [{ label: recentLabel, tab }, ...r.filter((x) => x.label !== recentLabel)].slice(0, 10));
+  };
+
+  const objectTitle = (name: string, kind: MessageKey, c = ctx) =>
+    c.database && c.schema && c.connection ? `${name} @${c.database.name}.${c.schema.name} (${c.connection.name}) - ${t(kind)}` : name;
+
+  const newQuery = (sqlText?: string) => {
+    const conn = ctx.connection && openConnections.has(ctx.connection.id) ? ctx.connection : undefined;
+    const db = conn ? ctx.database ?? conn.databases[0] : undefined;
+    openTab({
+      kind: "query", title: t("tab.untitledQuery"), windowTitle: t("tab.untitledQuery"), icon: "query",
+      connectionId: conn?.id, database: db?.name, schema: ctx.schema?.name ?? db?.schemas[0]?.name, sql: sqlText,
+    });
+  };
+
+  const newTable = () => {
+    if (!ctx.connection || !ctx.database || !ctx.schema) return;
+    const title = objectTitle(t("des.untitled"), "tb.table");
+    openTab({ kind: "designer", title, windowTitle: title, icon: "tableDesign", connectionId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name });
+  };
+
+  const openObjects = (kind: "open" | "design" | "new", names: string[], cat: Category = category, c = ctx) => {
+    if (kind === "new") {
+      if (cat === "query") return newQuery();
+      if (cat === "table") return newTable();
+      return openTab({ kind: "placeholder", title: `${t("act.new")} ${t(CATEGORY_LABEL[cat])}`, icon: cat, note: t("placeholder.designer") });
+    }
+    for (const name of names) {
+      const base = { connectionId: c.connection?.id, database: c.database?.name, schema: c.schema?.name, object: name };
+      if (cat === "table" && kind === "open") {
+        const title = objectTitle(name, "tb.table", c);
+        openTab({ ...base, kind: "data", title, windowTitle: title, icon: "table" }, `${t("act.openTable")} - ${name}`);
+      } else if (cat === "table" && kind === "design") {
+        const title = objectTitle(name, "tb.table", c);
+        openTab({ ...base, kind: "designer", title, windowTitle: title, icon: "tableDesign" }, `${t("act.designTable")} - ${name}`);
+      } else {
+        const title = objectTitle(name, CATEGORY_LABEL[cat], c);
+        openTab({ ...base, kind: "placeholder", title, windowTitle: title, icon: cat, note: kind === "open" && (cat === "view" || cat === "matview") ? t("placeholder.viewData") : t("placeholder.designer") });
+      }
+    }
+  };
+
+  const activate = (node: TreeNode) => {
+    if (node.kind === "object" && node.category) {
+      const c = resolveNode(node.id, connections);
+      if (c.objectName) openObjects(node.category === "function" ? "design" : "open", [c.objectName], node.category, c);
+      return;
+    }
+    if (node.kind === "root" || node.kind === "column") return;
+    if (node.kind === "connection" && !openConnections.has(connIdOf(node.id))) return connect(connIdOf(node.id));
+    toggle(node);
+  };
+
+  const doCloseTab = (id: string) => {
+    if (id === "objects") return;
+    setTabs((ts) => {
+      const idx = ts.findIndex((x) => x.id === id);
+      const next = ts.filter((x) => x.id !== id);
+      if (activeTab === id) setActiveTab(next[Math.max(0, idx - 1)]?.id ?? "objects");
+      return next;
+    });
+    setDocStatus((m) => {
+      const n = { ...m };
+      delete n[id];
+      return n;
+    });
+  };
+
+  const closeTab = (id: string) => {
+    const tab = tabs.find((x) => x.id === id);
+    if (tab?.dirty) setDialog({ kind: "closeDirty", tabId: id });
+    else doCloseTab(id);
+  };
+
+  const cycleTab = (dir: 1 | -1) => {
+    const idx = tabs.findIndex((x) => x.id === activeTab);
+    setActiveTab(tabs[(idx + dir + tabs.length) % tabs.length].id);
+  };
+
+  const setTabDirty = useCallback((id: string, dirty: boolean) => setTabs((ts) => (ts.some((x) => x.id === id && !!x.dirty !== dirty) ? ts.map((x) => (x.id === id ? { ...x, dirty } : x)) : ts)), []);
+  const statusSetters = useRef<Record<string, (cells: StatusCell[]) => void>>({});
+  const statusFor = (id: string) => (statusSetters.current[id] ??= (cells: StatusCell[]) => setDocStatus((m) => ({ ...m, [id]: cells })));
+
+  /* ---------- Salvar estrutura de tabela (mock) ---------- */
+  const saveTable = (tab: DocTab, obj: DbObject, previousName: string | null) => {
+    setConnections((list) => list.map((c) => {
+      if (c.id !== tab.connectionId) return c;
+      return {
+        ...c,
+        databases: c.databases.map((d) => d.name !== tab.database ? d : {
+          ...d,
+          schemas: d.schemas.map((s) => {
+            if (s.name !== tab.schema) return s;
+            const tables = s.objects.table ?? [];
+            const prev = previousName ? tables.find((x) => x.name === previousName) : undefined;
+            const merged: DbObject = { ...prev, ...obj, rows: prev?.rows ?? 0 };
+            const next = previousName ? tables.map((x) => (x.name === previousName ? merged : x)) : [...tables, merged];
+            return { ...s, objects: { ...s.objects, table: next.sort((a, b) => a.name.localeCompare(b.name)) } };
+          }),
+        }),
+      };
+    }));
+    const c = resolveNode(`schema:${seg(tab.connectionId ?? "")}/${seg(tab.database ?? "")}/${seg(tab.schema ?? "")}`, connections);
+    const title = objectTitle(obj.name, "tb.table", c);
+    setTabs((ts) => ts.map((x) => (x.id === tab.id ? { ...x, object: obj.name, title, windowTitle: title } : x)));
+  };
+
+  /* ---------- Conexões: salvar/excluir ---------- */
+  const saveConnection = (form: ConnectionForm, version: number | null, editing?: ConnectionMock) => {
+    const base = {
+      name: form.name, provider: form.provider, host: form.host, port: Number(form.port) || 0, user: form.user,
+      initialDatabase: form.initialDatabase, environment: form.environment,
+    };
+    if (editing) {
+      setConnections((list) => list.map((c) => (c.id === editing.id ? { ...c, ...base } : c)));
+    } else {
+      const id = `c${Date.now().toString(36)}`;
+      const conn = profileToConnection({ id, ...base });
+      if (version) {
+        conn.serverVersionNum = version;
+        conn.serverVersion = `${Math.floor(version / 10000)}.${version % 100}`;
+      }
+      setConnections((list) => [...list, conn]);
+      setSelectedNode(`conn:${seg(id)}`);
+    }
+    setRecentProviders((r) => [form.provider, ...r.filter((p) => p !== form.provider)].slice(0, 3));
+    setDialog(null);
+  };
+
+  /* ---------- Menus de contexto ---------- */
+  const showContextMenu = (node: TreeNode, x: number, y: number) => {
+    const c = resolveNode(node.id, connections);
+    const items: MenuEntry[] = [];
+    const item = (text: MessageKey, run?: () => void): MenuEntry => ({ kind: "item", text: t(text), run });
+    const sep: MenuEntry = { kind: "sep" };
+    if (node.kind === "root") items.push(item("cmd.newConnection", () => setDialog({ kind: "connection" })));
+    if (node.kind === "connection" && c.connection) {
+      const conn = c.connection;
+      const isOpen = openConnections.has(conn.id);
+      items.push(
+        isOpen ? item("cmd.closeConnection", () => disconnect(conn.id)) : item("cmd.openConnection", () => connect(conn.id)),
+        sep,
+        item("cmd.editConnection", isOpen ? undefined : () => setDialog({ kind: "connection", editing: conn })),
+        item("cmd.newConnection", () => setDialog({ kind: "connection" })),
+        item("cmd.deleteConnection", isOpen ? undefined : () => setDialog({ kind: "deleteConnection", conn })),
+        sep,
+        item("cmd.newQuery", isOpen ? () => newQuery() : undefined),
+        sep,
+        item("cmd.refresh"),
+      );
+    }
+    if (node.kind === "database") {
+      const isOpen = openDatabases.has(node.id);
+      items.push(
+        isOpen ? item("cmd.closeDatabase", () => setOpenDatabases((s) => remove(s, node.id))) : item("cmd.openDatabase", () => toggle(node)),
+        sep,
+        item("cmd.newQuery", () => newQuery()),
+      );
+    }
+    if (node.kind === "schema" || (node.kind === "folder" && node.category === "table")) {
+      items.push(item("act.newTable", newTable), item("cmd.newQuery", () => newQuery()));
+    }
+    if (node.kind === "object" && node.category === "table" && c.objectName) {
+      const name = c.objectName;
+      items.push(
+        item("act.openTable", () => openObjects("open", [name], "table", c)),
+        item("act.designTable", () => openObjects("design", [name], "table", c)),
+        item("act.newTable", newTable),
+        item("act.deleteTable"),
+        sep,
+        item("cmd.copyName", () => { void navigator.clipboard?.writeText(name).catch(() => undefined); }),
+        sep,
+        item("cmd.newQuery", () => newQuery(`SELECT * FROM ${c.schema ? `"${c.schema.name.replace(/"/g, '""')}".` : ""}"${name.replace(/"/g, '""')}" LIMIT 100;`)),
+      );
+    }
+    if (items.length) setCtxMenu({ x, y, items });
+  };
+
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = (e: Event) => {
+      if (e instanceof KeyboardEvent && e.key !== "Escape") return;
+      if (e instanceof MouseEvent && (e.target as HTMLElement).closest?.(".ctx-menu")) return;
+      setCtxMenu(null);
+    };
+    window.addEventListener("mousedown", close);
+    window.addEventListener("keydown", close);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", close);
+      window.removeEventListener("resize", close);
+    };
+  }, [ctxMenu]);
+
+  /* ---------- Comandos ---------- */
+  const active = tabs.find((x) => x.id === activeTab) ?? OBJECTS_TAB;
+  const hasSchema = !!ctx.schema;
+  const selConn = ctx.connection;
+  const qa = () => queryActions.current;
+
+  const commands: CommandMap = {
+    newProject: { id: "newProject", label: "cmd.newProject" },
+    newConnection: { id: "newConnection", label: "cmd.newConnection", run: () => setDialog({ kind: "connection" }) },
+    newTableNormal: { id: "newTableNormal", label: "cmd.newTableNormal", run: hasSchema ? newTable : undefined },
+    newTableForeign: { id: "newTableForeign", label: "cmd.newTableForeign" },
+    newView: { id: "newView", label: "cmd.newView" },
+    newMatview: { id: "newMatview", label: "cmd.newMatview" },
+    newFunction: { id: "newFunction", label: "cmd.newFunction" },
+    newRole: { id: "newRole", label: "cmd.newRole" },
+    newTablespace: { id: "newTablespace", label: "cmd.newTablespace" },
+    newCast: { id: "newCast", label: "cmd.newCast" },
+    newForeignServer: { id: "newForeignServer", label: "cmd.newForeignServer" },
+    newLanguage: { id: "newLanguage", label: "cmd.newLanguage" },
+    newAggregate: { id: "newAggregate", label: "cmd.newAggregate" },
+    newConversion: { id: "newConversion", label: "cmd.newConversion" },
+    newDomain: { id: "newDomain", label: "cmd.newDomain" },
+    newIndex: { id: "newIndex", label: "cmd.newIndex" },
+    newOperator: { id: "newOperator", label: "cmd.newOperator" },
+    newOperatorClass: { id: "newOperatorClass", label: "cmd.newOperatorClass" },
+    newSequence: { id: "newSequence", label: "cmd.newSequence" },
+    newTrigger: { id: "newTrigger", label: "cmd.newTrigger" },
+    typeBase: { id: "typeBase", label: "cmd.typeBase" },
+    typeComposite: { id: "typeComposite", label: "cmd.typeComposite" },
+    typeEnum: { id: "typeEnum", label: "cmd.typeEnum" },
+    typeRange: { id: "typeRange", label: "cmd.typeRange" },
+    newQuery: { id: "newQuery", label: "cmd.newQuery", shortcut: "Ctrl+Q", run: () => newQuery() },
+    newQueryFile: { id: "newQueryFile", label: "cmd.newQueryFile", run: () => newQuery() },
+    newBackup: { id: "newBackup", label: "cmd.newBackup" },
+    newAutomation: { id: "newAutomation", label: "cmd.newAutomation" },
+    newModelWorkspace: { id: "newModelWorkspace", label: "cmd.newModelWorkspace" },
+    newBiWorkspace: { id: "newBiWorkspace", label: "cmd.newBiWorkspace" },
+    openUri: { id: "openUri", label: "cmd.openUri" },
+    openQueryFile: { id: "openQueryFile", label: "cmd.newQueryFile" },
+    openModelFile: { id: "openModelFile", label: "cmd.newModelWorkspace" },
+    openBiFile: { id: "openBiFile", label: "cmd.newBiWorkspace" },
+    clearRecents: { id: "clearRecents", label: "cmd.clearRecents", run: recents.length ? () => setRecents([]) : undefined },
+    openConnection: { id: "openConnection", label: "cmd.openConnection", run: selConn && !openConnections.has(selConn.id) ? () => connect(selConn.id) : undefined },
+    closeConnection: { id: "closeConnection", label: "cmd.closeConnection", run: selConn && openConnections.has(selConn.id) ? () => disconnect(selConn.id) : undefined },
+    importConnections: { id: "importConnections", label: "cmd.importConnections" },
+    exportConnections: { id: "exportConnections", label: "cmd.exportConnections" },
+    closeWindow: { id: "closeWindow", label: "cmd.closeWindow" },
+    closeTab: { id: "closeTab", label: "cmd.closeTab", shortcut: "Ctrl+W", run: activeTab !== "objects" ? () => closeTab(activeTab) : undefined },
+    exit: { id: "exit", label: "cmd.exit" },
+    undo: { id: "undo", label: "cmd.undo", shortcut: "Ctrl+Z" },
+    redo: { id: "redo", label: "cmd.redo", shortcut: "Ctrl+Y" },
+    cut: { id: "cut", label: "cmd.cut", shortcut: "Ctrl+X" },
+    copy: { id: "copy", label: "cmd.copy", shortcut: "Ctrl+C" },
+    paste: { id: "paste", label: "cmd.paste", shortcut: "Ctrl+V" },
+    selectAll: { id: "selectAll", label: "cmd.selectAll", shortcut: "Ctrl+A" },
+    find: { id: "find", label: "cmd.find", shortcut: "Ctrl+F" },
+    navigationPane: { id: "navigationPane", label: "cmd.navigationPane", checked: layout.navVisible, run: () => patchLayout({ navVisible: !layout.navVisible }) },
+    informationPane: { id: "informationPane", label: "cmd.informationPane", checked: layout.infoVisible, run: () => patchLayout({ infoVisible: !layout.infoVisible }) },
+    toolbarCaptions: { id: "toolbarCaptions", label: "cmd.toolbarCaptions", checked: layout.showCaptions, run: () => patchLayout({ showCaptions: !layout.showCaptions }) },
+    viewList: { id: "viewList", label: "cmd.viewList", checked: layout.viewMode === "list", run: () => patchLayout({ viewMode: "list" }) },
+    viewDetail: { id: "viewDetail", label: "cmd.viewDetail", checked: layout.viewMode === "detail", run: () => patchLayout({ viewMode: "detail" }) },
+    viewIcons: { id: "viewIcons", label: "cmd.viewIcons", checked: layout.viewMode === "icons", run: () => patchLayout({ viewMode: "icons" }) },
+    themeSystem: { id: "themeSystem", label: "cmd.themeSystem", checked: layout.theme === "system", run: () => patchLayout({ theme: "system" }) },
+    themeLight: { id: "themeLight", label: "cmd.themeLight", checked: layout.theme === "light", run: () => patchLayout({ theme: "light" }) },
+    themeDark: { id: "themeDark", label: "cmd.themeDark", checked: layout.theme === "dark", run: () => patchLayout({ theme: "dark" }) },
+    langPt: { id: "langPt", label: "cmd.langPt", checked: layout.lang === "pt-BR", run: () => patchLayout({ lang: "pt-BR" }) },
+    langEn: { id: "langEn", label: "cmd.langEn", checked: layout.lang === "en-US", run: () => patchLayout({ lang: "en-US" }) },
+    resetLayout: { id: "resetLayout", label: "cmd.resetLayout", run: () => setLayout({ ...DEFAULT_LAYOUT, lang: layout.lang, theme: layout.theme }) },
+    addFavorite: { id: "addFavorite", label: "cmd.addFavorite" },
+    manageFavorites: { id: "manageFavorites", label: "cmd.manageFavorites" },
+    dataTransfer: { id: "dataTransfer", label: "cmd.dataTransfer" },
+    dataSync: { id: "dataSync", label: "cmd.dataSync" },
+    structureSync: { id: "structureSync", label: "cmd.structureSync" },
+    serverMonitor: { id: "serverMonitor", label: "cmd.serverMonitor" },
+    options: { id: "options", label: "cmd.options" },
+    nextTab: { id: "nextTab", label: "cmd.nextTab", shortcut: "Ctrl+Tab", run: () => cycleTab(1) },
+    previousTab: { id: "previousTab", label: "cmd.previousTab", shortcut: "Ctrl+Shift+Tab", run: () => cycleTab(-1) },
+    closeAllTabs: { id: "closeAllTabs", label: "cmd.closeAllTabs", run: tabs.length > 1 ? () => { setTabs([OBJECTS_TAB]); setActiveTab("objects"); } : undefined },
+    documentation: { id: "documentation", label: "cmd.documentation" },
+    about: { id: "about", label: "cmd.about", run: () => setDialog({ kind: "about" }) },
+    run: { id: "run", label: "cmd.run", shortcut: "Ctrl+R", run: active.kind === "query" ? () => qa()?.run(false) : undefined },
+    runSelected: { id: "runSelected", label: "cmd.runSelected", shortcut: "Ctrl+Enter", run: active.kind === "query" ? () => qa()?.run(true) : undefined },
+    stop: { id: "stop", label: "cmd.stop", run: active.kind === "query" ? () => qa()?.stop() : undefined },
+    explain: { id: "explain", label: "cmd.explain", run: active.kind === "query" ? () => qa()?.explain() : undefined },
+    beautify: { id: "beautify", label: "cmd.beautify", shortcut: "Ctrl+Shift+F", run: active.kind === "query" ? () => qa()?.beautify() : undefined },
+    queryBuilder: { id: "queryBuilder", label: "cmd.queryBuilder" },
+    indent: { id: "indent", label: "cmd.indent", shortcut: "Tab" },
+    outdent: { id: "outdent", label: "cmd.outdent", shortcut: "Shift+Tab" },
+    toggleComment: { id: "toggleComment", label: "cmd.comment", shortcut: "Ctrl+/" },
+    upper: { id: "upper", label: "cmd.upper" },
+    lower: { id: "lower", label: "cmd.lower" },
+    addRecord: { id: "addRecord", label: "data.addRecord" },
+    deleteRecord: { id: "deleteRecord", label: "data.deleteRecord" },
+    applyChanges: { id: "applyChanges", label: "data.apply" },
+    discardChanges: { id: "discardChanges", label: "data.discard" },
+    refreshData: { id: "refreshData", label: "data.refresh" },
+  };
+
+  const recentEntries: MenuEntry[] = recents.length
+    ? recents.map((r, i) => ({ kind: "item" as const, text: `${i + 1}. ${r.label}`, run: () => openTab(r.tab, r.label) }))
+    : [{ kind: "item", text: t("cmd.noRecents") }];
+
+  const fileMenu: MenuDef = {
+    label: "menu.file",
+    items: entries(
+      "newProject", "newConnection",
+      sub("sub.new",
+        sub("sub.table", "newTableNormal", "newTableForeign"),
+        "newView", "newMatview", "newFunction", "newRole",
+        sub("sub.others", "newTablespace", "-", "newCast", "newForeignServer", "newLanguage", "-", "newAggregate", "newConversion", "newDomain", "newIndex", "newOperator", "newOperatorClass", "newSequence", "newTrigger", sub("sub.type", "typeBase", "typeComposite", "typeEnum", "typeRange")),
+        "-", "newQueryFile", "newBackup", "newAutomation", "newModelWorkspace", "newBiWorkspace",
+      ),
+      "-", "openUri",
+      sub("sub.openExternal", "openQueryFile", "openModelFile", "openBiFile"),
+      { kind: "sub", label: "sub.openRecent", items: [...recentEntries, { kind: "sep" }, { kind: "cmd", id: "clearRecents" }] },
+      "-", "openConnection", "closeConnection", "importConnections", "exportConnections",
+      "-", "closeWindow", "closeTab", "exit",
+    ),
+  };
+  const editMenu: MenuDef = { label: "menu.edit", items: entries("undo", "redo", "-", "cut", "copy", "paste", "selectAll", "-", "find") };
+  const viewMenu: MenuDef = {
+    label: "menu.view",
+    items: entries("navigationPane", "informationPane", "toolbarCaptions", "-", "viewList", "viewDetail", "viewIcons", "-", "themeSystem", "themeLight", "themeDark", "-", "langPt", "langEn", "-", "resetLayout"),
+  };
+  const queryMenu: MenuDef = { label: "menu.query", items: entries("run", "runSelected", "stop", "-", "explain", "-", "beautify", "queryBuilder") };
+  const formatMenu: MenuDef = { label: "menu.format", items: entries("indent", "outdent", "-", "toggleComment", "-", "upper", "lower") };
+  const tableMenu: MenuDef = { label: "menu.table", items: entries("addRecord", "deleteRecord", "-", "applyChanges", "discardChanges", "-", "refreshData") };
+  const tailMenus: MenuDef[] = [
+    { label: "menu.favorites", items: entries("addFavorite", "manageFavorites") },
+    { label: "menu.tools", items: entries("dataTransfer", "dataSync", "structureSync", "-", "serverMonitor", "-", "options") },
+    { label: "menu.window", items: entries("nextTab", "previousTab", "-", "closeTab", "closeAllTabs") },
+    { label: "menu.help", items: entries("documentation", "-", "about") },
+  ];
+  // A barra de menus muda conforme o documento ativo (CONFIRMADO_EM_CAPTURA: Query/Format e Table).
+  const menus: MenuDef[] = [
+    fileMenu, editMenu, viewMenu,
+    ...(active.kind === "query" ? [queryMenu, formatMenu] : active.kind === "data" ? [tableMenu] : []),
+    ...tailMenus,
+  ];
+
+  const commandsRef = useRef(commands);
+  commandsRef.current = commands;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // Atalhos de edição e os do editor SQL ficam com o controle focado.
+      const local = new Set(["copy", "cut", "paste", "selectAll", "undo", "redo", "find", "indent", "outdent", "toggleComment", "run", "runSelected", "beautify"]);
+      for (const cmd of Object.values(commandsRef.current)) {
+        if (cmd.run && cmd.shortcut && !local.has(cmd.id) && matchesShortcut(e, cmd.shortcut)) {
+          e.preventDefault();
+          cmd.run();
+          return;
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  /* ---------- Título da janela ---------- */
+  useEffect(() => {
+    document.title = active.kind === "objects" || !active.windowTitle ? "Atlas DB Manager" : `${active.windowTitle} - Atlas DB Manager`;
+  }, [active]);
+
+  /* ---------- Splitter do painel de navegação ---------- */
+  const startResize = (e: ReactMouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = layout.navWidth;
+    const move = (ev: MouseEvent) => {
+      const max = Math.min(640, window.innerWidth - 420);
+      patchLayout({ navWidth: Math.max(180, Math.min(max, startW + ev.clientX - startX)) });
+    };
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      document.body.classList.remove("is-resizing");
+    };
+    document.body.classList.add("is-resizing");
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
+
+  /* ---------- Status ---------- */
+  const objects = objectsFor(category, ctx, connectionOpen);
+  const objectsStatus = (): { left: string; cells: StatusCell[] } => {
+    const cells: StatusCell[] = [];
+    if (ctx.connection) {
+      cells.push({ text: <span className="sb-chip"><ProviderIcon provider={ctx.connection.provider} open={connectionOpen} />{ctx.connection.name}</span> });
+      if (ctx.database) cells.push({ text: <span className="sb-chip"><SmallIcon name="database" />{ctx.database.name}</span> });
+      if (ctx.schema) cells.push({ text: <span className="sb-chip"><SmallIcon name="schema" />{ctx.schema.name}</span> });
+    }
+    if (selectedNode?.startsWith("conn:") && ctx.connection && connectionOpen) {
+      const n = ctx.connection.databases.length;
+      const h = ctx.connection.hiddenDatabases;
+      return { left: h ? t("status.databasesHidden", { n, h }) : t("status.databases", { n }), cells };
+    }
+    if (objects) {
+      const left = selectedObjects.length > 1 ? t("status.selected", { n: selectedObjects.length }) : t(COUNT_LABEL[category], { n: objects.length });
+      return { left, cells };
+    }
+    return { left: connections.length === 1 ? t("status.connection") : t("status.connections", { n: connections.length }), cells };
+  };
+  const status = active.kind === "objects" ? objectsStatus() : { left: "", cells: docStatus[active.id] ?? [] };
+  const selectedObject = selectedObjects.length === 1 ? objects?.find((o) => o.name === selectedObjects[0]) ?? null : null;
+
+  const tabsForBar = tabs.map((x) => (x.kind === "objects" ? { ...x, title: t("tab.objects") } : x));
+  const highlight: Category = active.kind === "query" ? "query" : active.kind === "data" || active.kind === "designer" ? "table" : category;
+  const toolbarProvider = ctx.connection?.provider ?? connections.find((c) => c.id === active.connectionId)?.provider;
+
+  /* ---------- Render dos documentos ---------- */
+  const lookupTable = (tab: DocTab): { conn?: ConnectionMock; table?: DbObject; tables: DbObject[] } => {
+    const conn = connections.find((c) => c.id === tab.connectionId);
+    const sc = conn?.databases.find((d) => d.name === tab.database)?.schemas.find((s) => s.name === tab.schema);
+    const tables = sc?.objects.table ?? [];
+    return { conn, table: tables.find((x) => x.name === tab.object), tables };
+  };
+
+  const renderDoc = (tab: DocTab) => {
+    const isActive = tab.id === activeTab;
+    if (tab.kind === "query") {
+      return (
+        <QueryDoc
+          connections={connections}
+          openConnections={openConnections}
+          initial={{ connectionId: tab.connectionId, database: tab.database, schema: tab.schema }}
+          initialSql={tab.sql}
+          active={isActive}
+          onStatus={statusFor(tab.id)}
+          onDirty={(d) => setTabDirty(tab.id, d)}
+          registerActions={(a) => { if (isActive) queryActions.current = a; }}
+        />
+      );
+    }
+    if (tab.kind === "data") {
+      const { conn, table } = lookupTable(tab);
+      if (!table) return <div className="doc-placeholder">{t("placeholder.missing")}</div>;
+      return <TableDataDoc schema={tab.schema ?? ""} table={table} active={isActive} production={conn?.environment === "production"} onStatus={statusFor(tab.id)} />;
+    }
+    if (tab.kind === "designer") {
+      const { conn, table, tables } = lookupTable(tab);
+      return (
+        <TableDesignerDoc
+          schema={tab.schema ?? "public"}
+          table={tab.object ? table ?? null : null}
+          owners={conn?.roles.map((r) => r.name) ?? []}
+          otherTables={tables.map((x) => x.name)}
+          serverVersionNum={conn?.serverVersionNum ?? 0}
+          active={isActive}
+          production={conn?.environment === "production"}
+          onStatus={statusFor(tab.id)}
+          onSaved={(obj, prev) => saveTable(tab, obj, prev)}
+        />
+      );
+    }
+    return (
+      <div className="doc-placeholder">
+        <div className="doc-placeholder-title">{tab.title}</div>
+        <div>{tab.note}</div>
+      </div>
+    );
+  };
+
+  return (
+    <I18nContext.Provider value={t}>
+      <div className="shell">
+        <MenuBar menus={menus} commands={commands} />
+        <MainToolbar
+          highlight={highlight}
+          provider={toolbarProvider}
+          showCaptions={layout.showCaptions}
+          onCategory={(c) => { setCategory(c); setSelectedObjects([]); setActiveTab("objects"); }}
+          onNewConnection={() => setDialog({ kind: "connection" })}
+          onNewQuery={() => newQuery()}
+        />
+        <div className="workspace">
+          {layout.navVisible && (
+            <>
+              <div style={{ width: layout.navWidth }} className="nav-wrap">
+                <NavigationPane
+                  nodes={nodes}
+                  selectedId={selectedNode}
+                  expanded={expanded}
+                  openConnections={openConnections}
+                  openDatabases={openDatabases}
+                  connecting={connecting}
+                  filter={filter}
+                  onFilter={setFilter}
+                  onSelect={selectNode}
+                  onActivate={activate}
+                  onToggle={toggle}
+                  onCollapseAll={() => setExpanded(new Set())}
+                  onContextMenu={showContextMenu}
+                />
+              </div>
+              <div className="splitter" role="separator" aria-orientation="vertical" onMouseDown={startResize} />
+            </>
+          )}
+          <main className="center">
+            <TabBar tabs={tabsForBar} activeId={activeTab} onActivate={setActiveTab} onClose={closeTab} />
+            <div className="tab-content">
+              <div className={`doc-host${activeTab === "objects" ? "" : " is-hidden"}`}>
+                <ObjectsView
+                  category={category}
+                  ctx={ctx}
+                  connectionOpen={connectionOpen}
+                  viewMode={layout.viewMode}
+                  lang={layout.lang}
+                  selected={selectedObjects}
+                  onSelect={setSelectedObjects}
+                  onAction={(kind, names) => openObjects(kind, names)}
+                />
+              </div>
+              {tabs.filter((x) => x.kind !== "objects").map((tab) => (
+                <div key={tab.id} className={`doc-host${tab.id === activeTab ? "" : " is-hidden"}`}>{renderDoc(tab)}</div>
+              ))}
+            </div>
+          </main>
+          {layout.infoVisible && (
+            <InfoPane ctx={ctx} category={category} connectionOpen={connectionOpen} object={selectedObject} lang={layout.lang} />
+          )}
+        </div>
+        <StatusBar
+          leftWidth={layout.navVisible ? layout.navWidth + 1 : 300}
+          left={status.left}
+          cells={status.cells}
+          viewMode={active.kind === "objects" ? layout.viewMode : undefined}
+          navVisible={layout.navVisible}
+          infoVisible={layout.infoVisible}
+          onViewMode={(m) => patchLayout({ viewMode: m })}
+          onToggleNav={() => patchLayout({ navVisible: !layout.navVisible })}
+          onToggleInfo={() => patchLayout({ infoVisible: !layout.infoVisible })}
+        />
+      </div>
+
+      {ctxMenu && (
+        <PopupMenu
+          items={ctxMenu.items}
+          commands={commands}
+          onClose={() => setCtxMenu(null)}
+          className="ctx-menu"
+          style={{ position: "fixed", left: Math.min(ctxMenu.x, window.innerWidth - 240), top: Math.min(ctxMenu.y, window.innerHeight - 320) }}
+        />
+      )}
+
+      {dialog?.kind === "connection" && (
+        <ConnectionDialog
+          editing={dialog.editing}
+          recentProviders={recentProviders}
+          onSave={(form, version) => saveConnection(form, version, dialog.editing)}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {dialog?.kind === "deleteConnection" && (
+        <MessageDialog
+          title={t("cmd.deleteConnection")}
+          message={t("msg.deleteConnection", { name: dialog.conn.name })}
+          danger
+          onOk={() => {
+            setConnections((list) => list.filter((c) => c.id !== dialog.conn.id));
+            setSelectedNode("root");
+            setDialog(null);
+          }}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+      {dialog?.kind === "closeDirty" && (
+        <MessageDialog
+          title={t("msg.unsavedTitle")}
+          message={t("msg.unsavedQuery")}
+          okLabel={t("msg.discard")}
+          onOk={() => { doCloseTab(dialog.tabId); setDialog(null); }}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+      {dialog?.kind === "about" && (
+        <MessageDialog title={t("cmd.about")} message={t("msg.about")} onOk={() => setDialog(null)} onCancel={() => setDialog(null)} />
+      )}
+    </I18nContext.Provider>
+  );
+}

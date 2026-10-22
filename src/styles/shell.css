@@ -1,0 +1,751 @@
+/* Shell do Atlas: 7 regiões (menu, main toolbar, navegação, abas, object toolbar, object pane, info, status). */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--c-surface);
+  color: var(--c-text);
+  font: var(--fs-ui) / 1.35 var(--font-ui);
+  overflow: hidden;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+body.is-resizing {
+  cursor: col-resize;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+input {
+  font: inherit;
+  color: var(--c-text);
+}
+
+:focus-visible {
+  outline: 2px solid var(--c-focus);
+  outline-offset: -2px;
+}
+
+.icon16 {
+  flex: none;
+  display: block;
+}
+
+.shell {
+  display: grid;
+  grid-template-rows: var(--h-menu) var(--h-main-toolbar) minmax(0, 1fr) var(--h-status);
+  grid-template-columns: minmax(0, 1fr);
+  height: 100vh;
+  min-width: 900px;
+  min-height: 600px;
+}
+
+/* ---------- Menu ---------- */
+
+.menubar {
+  display: flex;
+  align-items: stretch;
+  background: var(--c-chrome);
+  padding-left: 2px;
+}
+
+.menubar-item-wrap {
+  position: relative;
+  display: flex;
+}
+
+.menubar-item {
+  border: 1px solid transparent;
+  background: none;
+  padding: 0 6px;
+  cursor: default;
+}
+
+.menubar-item:hover,
+.menubar-item.is-open {
+  background: var(--c-hover);
+  border-color: var(--c-hover-border);
+}
+
+.menu-popup {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 50;
+  min-width: 220px;
+  padding: 3px 0;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border-strong);
+  box-shadow: var(--c-menu-shadow);
+}
+
+.menu-entry {
+  display: grid;
+  grid-template-columns: 26px 1fr auto;
+  align-items: center;
+  width: 100%;
+  height: 24px;
+  padding: 0 14px 0 4px;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.menu-entry:hover:not(:disabled) {
+  background: var(--c-hover);
+}
+
+.menu-entry:disabled {
+  color: var(--c-text-disabled);
+}
+
+.menu-check {
+  display: flex;
+  justify-content: center;
+}
+
+.menu-shortcut {
+  padding-left: 24px;
+  color: var(--c-text-muted);
+}
+
+.menu-sep {
+  height: 1px;
+  margin: 3px 0 3px 30px;
+  background: var(--c-border);
+}
+
+/* ---------- Main toolbar ---------- */
+
+.main-toolbar {
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  padding: 2px 4px 2px 2px;
+  background: var(--c-chrome);
+  border-bottom: 1px solid var(--c-border);
+}
+
+.tb-button {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: var(--w-toolbar-button);
+  padding: 2px 5px 1px;
+  border: 1px solid transparent;
+  background: none;
+  cursor: default;
+}
+
+.tb-button.no-caption {
+  min-width: 42px;
+}
+
+.tb-button:hover:not(:disabled) {
+  background: var(--c-hover);
+  border-color: var(--c-hover-border);
+}
+
+.tb-button.is-active {
+  background: var(--c-selected);
+  border-color: var(--c-selected);
+}
+
+.tb-button:disabled {
+  opacity: 0.55;
+}
+
+.tb-caption {
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.tb-dropdown {
+  position: absolute;
+  right: 3px;
+  top: 24px;
+  color: var(--c-text);
+}
+
+.tb-separator {
+  width: 1px;
+  margin: 6px 4px;
+  background: var(--c-border-strong);
+}
+
+.tb-others {
+  position: relative;
+  display: flex;
+}
+
+.tb-others-popup {
+  top: calc(100% + 2px);
+  min-width: 190px;
+}
+
+.tb-spacer {
+  flex: 1;
+}
+
+.tb-account {
+  align-self: center;
+  border: 0;
+  background: none;
+  padding: 0 8px;
+}
+
+.tb-account svg {
+  width: 36px;
+  height: 36px;
+}
+
+/* ---------- Área de trabalho ---------- */
+
+.workspace {
+  display: flex;
+  min-height: 0;
+}
+
+.nav-wrap {
+  flex: none;
+  min-width: 0;
+  display: flex;
+}
+
+.splitter {
+  flex: none;
+  width: 1px;
+  background: var(--c-border);
+  position: relative;
+  cursor: col-resize;
+}
+
+.splitter::after {
+  content: "";
+  position: absolute;
+  inset: 0 calc(var(--w-splitter-hit) / -2);
+}
+
+.center {
+  flex: 1;
+  min-width: 420px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- Painel de navegação ---------- */
+
+.nav-pane {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--c-surface);
+}
+
+.nav-tree {
+  flex: 1;
+  overflow: auto;
+  outline: none;
+  padding-bottom: 4px;
+}
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  height: var(--h-row);
+  padding-right: 8px;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.tree-row:hover {
+  background: var(--c-hover);
+}
+
+.tree-row.is-selected {
+  background: var(--c-selected-inactive);
+}
+
+.nav-tree:focus .tree-row.is-selected {
+  background: var(--c-selected);
+}
+
+.tree-root {
+  height: var(--h-nav-header);
+  margin-bottom: 2px;
+}
+
+.tree-twisty {
+  flex: none;
+  width: 14px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 3px;
+  color: var(--c-text-muted);
+}
+
+.tree-icon {
+  flex: none;
+  margin-right: 6px;
+}
+
+.tree-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree-busy {
+  margin-left: 8px;
+  color: var(--c-text-muted);
+}
+
+.spinner {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--c-border-strong);
+  border-top-color: var(--c-accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2.4s;
+  }
+}
+
+.nav-search {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--h-nav-search);
+  padding: 0 6px 0 7px;
+  border-top: 1px solid var(--c-border);
+  color: var(--c-text-muted);
+}
+
+.nav-search input {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  border: 0;
+  background: none;
+  outline: none;
+}
+
+.icon-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--c-text-muted);
+  cursor: default;
+}
+
+.icon-button:hover:not(:disabled) {
+  background: var(--c-hover);
+  border-color: var(--c-hover-border);
+}
+
+.icon-button:disabled {
+  opacity: 0.8;
+}
+
+/* ---------- Abas ---------- */
+
+.tab-bar {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  height: var(--h-tab);
+  background: var(--c-surface);
+  border-bottom: 1px solid var(--c-border);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  max-width: 320px;
+  padding: 0 12px;
+  border-right: 1px solid var(--c-border);
+  color: var(--c-text-muted);
+  white-space: nowrap;
+  cursor: default;
+}
+
+.tab:first-child {
+  border-left: 1px solid transparent;
+}
+
+.tab:hover {
+  background: var(--c-hover);
+}
+
+.tab.is-active {
+  color: var(--c-text);
+  background: var(--c-surface-alt);
+}
+
+.tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: -6px;
+  border: 0;
+  background: none;
+  color: var(--c-text-muted);
+  opacity: 0.7;
+}
+
+.tab-close:hover {
+  opacity: 1;
+  background: var(--c-border);
+}
+
+.tab-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- Object toolbar + lista ---------- */
+
+.objects-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.object-toolbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: var(--h-object-toolbar);
+  padding: 0 4px;
+  background: var(--c-surface-alt);
+  border-bottom: 1px solid var(--c-border);
+}
+
+.ot-button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 5px;
+  border: 1px solid transparent;
+  background: none;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.ot-button:hover:not(:disabled) {
+  background: var(--c-hover);
+  border-color: var(--c-hover-border);
+}
+
+.ot-button:disabled {
+  color: var(--c-text-disabled);
+}
+
+.ot-button:disabled svg {
+  opacity: 0.6;
+}
+
+.ot-spacer {
+  flex: 1;
+}
+
+.ot-search {
+  width: 200px;
+  height: 21px;
+  padding: 0 6px;
+  border: 1px solid var(--c-border-strong);
+  background: var(--c-surface);
+}
+
+.object-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  outline: none;
+  background: var(--c-surface);
+}
+
+.grid-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  width: 100%;
+  min-width: max-content;
+}
+
+.grid-table th {
+  position: sticky;
+  top: 0;
+  height: var(--h-list-header);
+  padding: 0 6px;
+  background: var(--c-surface);
+  border-right: 1px solid var(--c-border);
+  border-bottom: 1px solid var(--c-border);
+  font-weight: 400;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.grid-table th.filler,
+.grid-table td.filler {
+  border-right: 0;
+}
+
+.grid-table td {
+  height: var(--h-row);
+  padding: 0 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cell-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.cell-name > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.grid-table tbody tr:hover {
+  background: var(--c-hover);
+}
+
+.grid-table tbody tr.is-selected {
+  background: var(--c-selected);
+}
+
+.align-right {
+  text-align: right !important;
+}
+
+.list-flow {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  height: 100%;
+  padding: 2px;
+}
+
+.list-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 240px;
+  height: var(--h-row);
+  padding: 0 6px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.icon-flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 4px;
+  padding: 6px;
+}
+
+.icon-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 96px;
+  padding: 6px 4px;
+  text-align: center;
+  word-break: break-all;
+}
+
+.list-item:hover,
+.icon-item:hover {
+  background: var(--c-hover);
+}
+
+.list-item.is-selected,
+.icon-item.is-selected {
+  background: var(--c-selected);
+}
+
+/* ---------- Placeholders de documentos (substituídos nas próximas etapas) ---------- */
+
+.doc-placeholder {
+  margin: 24px;
+  padding: 16px;
+  border: 1px dashed var(--c-border-strong);
+  color: var(--c-text-muted);
+}
+
+.doc-placeholder-title {
+  margin-bottom: 6px;
+  color: var(--c-text);
+  font-weight: 600;
+}
+
+/* ---------- Painel de informações ---------- */
+
+.info-pane {
+  flex: none;
+  width: var(--w-info-default);
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--c-border);
+  background: var(--c-surface);
+}
+
+.info-header {
+  height: var(--h-tab);
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--c-border);
+  font-weight: 600;
+}
+
+.info-empty {
+  padding: 12px 10px;
+  color: var(--c-text-muted);
+}
+
+.info-list {
+  margin: 0;
+  padding: 6px 0;
+}
+
+.info-row {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 8px;
+  padding: 3px 10px;
+}
+
+.info-row dt {
+  color: var(--c-text-muted);
+}
+
+.info-row dd {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+}
+
+/* ---------- Status bar ---------- */
+
+.status-bar {
+  display: flex;
+  align-items: stretch;
+  background: var(--c-chrome);
+  border-top: 1px solid var(--c-border);
+}
+
+.sb-cell {
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.sb-left {
+  width: 300px;
+  border-right: 1px solid var(--c-border);
+}
+
+.sb-middle {
+  flex: 1;
+  padding-left: 8px;
+}
+
+.sb-right {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding-right: 4px;
+}
+
+.sb-gap {
+  width: 8px;
+}
+
+.sb-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 19px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--c-text-muted);
+  cursor: default;
+}
+
+.sb-button:hover {
+  background: var(--c-hover);
+}
+
+.sb-button.is-active {
+  background: var(--c-selected);
+  border-color: var(--c-selected-border);
+  color: var(--c-text);
+}

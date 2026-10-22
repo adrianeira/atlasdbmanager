@@ -1,0 +1,149 @@
+/*
+ * Tokens visuais do Atlas (DECISÃO_ATLAS calibrada pela captura capturas/home.png,
+ * 1586x865 a 100%). Nenhuma View define cor ou tamanho fora destes tokens.
+ */
+:root {
+  --font-ui: "Segoe UI", system-ui, -apple-system, "Ubuntu", "Cantarell", sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, "SF Mono", "DejaVu Sans Mono", monospace;
+  --fs-ui: 12px;
+
+  /* Alturas das regiões */
+  --h-menu: 22px;
+  --h-main-toolbar: 62px;
+  --h-tab: 27px;
+  --h-object-toolbar: 28px;
+  --h-list-header: 21px;
+  --h-row: 20px;
+  --h-nav-header: 28px;
+  --h-nav-search: 28px;
+  --h-status: 22px;
+
+  /* Larguras */
+  --w-nav-default: 384px;
+  --w-nav-min: 180px;
+  --w-nav-max: 640px;
+  --w-info-default: 260px;
+  --w-toolbar-button: 68px;
+  --w-splitter-hit: 6px;
+
+  /* Cores (tema claro) */
+  --c-chrome: #f0f0f0;
+  --c-surface: #ffffff;
+  --c-surface-alt: #f3f3f3;
+  --c-border: #dadada;
+  --c-border-strong: #c4c4c4;
+  --c-text: #1b1b1b;
+  --c-text-muted: #5f5f5f;
+  --c-text-disabled: #8c8c8c;
+  --c-hover: #e5f1fb;
+  --c-hover-border: #cce4f7;
+  --c-selected: #cce4f7;
+  --c-selected-border: #99c9ef;
+  --c-selected-inactive: #e3e3e3;
+  --c-accent: #0063b1;
+  --c-focus: #0063b1;
+  --c-danger: #c42b1c;
+  --c-success: #0f7b0f;
+  --c-menu-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+  --c-overlay: rgba(0, 0, 0, 0.25);
+  --c-ok-bg: #e3f6e8;
+  --c-ok-text: #1e9e4a;
+  --c-fail-bg: #fde4e8;
+  --c-fail-text: #d4183d;
+  --c-warn-bg: #fff4ce;
+  --c-edited: #fff1b8;
+  --c-new-row: #e6f4ea;
+  --c-deleted-row: #fbe3e3;
+  --c-field-disabled: #f0f0f0;
+  --c-window: #f0f0f0;
+
+  /* Editor SQL */
+  --sql-keyword: #0b5fd6;
+  --sql-type: #0b5fd6;
+  --sql-string: #c2185b;
+  --sql-number: #098658;
+  --sql-comment: #6a737d;
+  --sql-quoted: #1b1b1b;
+  --editor-active-line: #f5f9ff;
+  --editor-selection: #cce4f7;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --c-chrome: #2b2b2b;
+    --c-surface: #1f1f1f;
+    --c-surface-alt: #282828;
+    --c-border: #3a3a3a;
+    --c-border-strong: #4a4a4a;
+    --c-text: #e8e8e8;
+    --c-text-muted: #b0b0b0;
+    --c-text-disabled: #7a7a7a;
+    --c-hover: #2f3d4a;
+    --c-hover-border: #3d5468;
+    --c-selected: #264f78;
+    --c-selected-border: #3a6ea5;
+    --c-selected-inactive: #383838;
+    --c-accent: #4ca0e0;
+    --c-focus: #4ca0e0;
+    --c-overlay: rgba(0, 0, 0, 0.45);
+    --c-ok-bg: #1f3a28;
+    --c-ok-text: #6fd08f;
+    --c-fail-bg: #45222a;
+    --c-fail-text: #ff8597;
+    --c-warn-bg: #4a3f17;
+    --c-edited: #4a4216;
+    --c-new-row: #1f3a28;
+    --c-deleted-row: #45222a;
+    --c-field-disabled: #2b2b2b;
+    --c-window: #262626;
+    --sql-keyword: #6cb6ff;
+    --sql-type: #6cb6ff;
+    --sql-string: #f48fb1;
+    --sql-number: #7ee2b8;
+    --sql-comment: #8b949e;
+    --sql-quoted: #e8e8e8;
+    --editor-active-line: #252b33;
+    --editor-selection: #264f78;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --c-chrome: #2b2b2b;
+  --c-surface: #1f1f1f;
+  --c-surface-alt: #282828;
+  --c-border: #3a3a3a;
+  --c-border-strong: #4a4a4a;
+  --c-text: #e8e8e8;
+  --c-text-muted: #b0b0b0;
+  --c-text-disabled: #7a7a7a;
+  --c-hover: #2f3d4a;
+  --c-hover-border: #3d5468;
+  --c-selected: #264f78;
+  --c-selected-border: #3a6ea5;
+  --c-selected-inactive: #383838;
+  --c-accent: #4ca0e0;
+  --c-focus: #4ca0e0;
+  --c-overlay: rgba(0, 0, 0, 0.45);
+  --c-ok-bg: #1f3a28;
+  --c-ok-text: #6fd08f;
+  --c-fail-bg: #45222a;
+  --c-fail-text: #ff8597;
+  --c-warn-bg: #4a3f17;
+  --c-edited: #4a4216;
+  --c-new-row: #1f3a28;
+  --c-deleted-row: #45222a;
+  --c-field-disabled: #2b2b2b;
+  --c-window: #262626;
+  --sql-keyword: #6cb6ff;
+  --sql-type: #6cb6ff;
+  --sql-string: #f48fb1;
+  --sql-number: #7ee2b8;
+  --sql-comment: #8b949e;
+  --sql-quoted: #e8e8e8;
+  --editor-active-line: #252b33;
+  --editor-selection: #264f78;
+  color-scheme: dark;
+}

@@ -1,0 +1,4 @@
+# Capturas de produto de terceiros não são versionadas
+*
+!.gitignore
+!LEIA-ME.md
