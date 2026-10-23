@@ -105,7 +105,7 @@ const qualifierOf = (t: QbTable) => (t.alias.trim() ? ident(t.alias.trim()) : id
 
 const tableSql = (t: QbTable, defaultSchema: string) => {
   const base = t.schema === defaultSchema ? ident(t.name) : `${ident(t.schema)}.${ident(t.name)}`;
-  return t.alias.trim() ? `${base} ${ident(t.alias.trim())}` : base;
+  return t.alias.trim() ? `${base} AS ${ident(t.alias.trim())}` : base;
 };
 
 function refSql(state: QbState, r: QbRef): string {

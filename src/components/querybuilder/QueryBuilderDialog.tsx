@@ -172,6 +172,7 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
         for (const [n, pt] of parsed.tables.entries()) {
           const schema = pt.schema ?? defaultSchema;
           const d = await pg.tableDetail(connId, database, schema, pt.name);
+          if (d.columns.length === 0) throw new Error(`missing:${schema}.${pt.name}`);
           const fks = d.constraints
             .filter((c) => c.kind === "f" && c.refTable)
             .map((c) => ({ fields: c.fields.split(", "), refSchema: c.refSchema ?? schema, refTable: c.refTable ?? "", refFields: (c.refFields ?? "").split(", ") }));
@@ -210,7 +211,7 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
           setFromSql(true);
         }
       } catch (e) {
-        if (alive) setError(e instanceof Error && e.message === "ref" ? t("qb.parseFailed") : errorText(toAtlasError(e)));
+        if (alive) setError(e instanceof Error && e.message === "ref" ? t("qb.parseFailed") : e instanceof Error && e.message.startsWith("missing:") ? t("qb.tableMissing", { table: e.message.slice(8) }) : errorText(toAtlasError(e)));
       }
     })();
     return () => {
@@ -433,7 +434,7 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
   const selectTab = (
     <div className="qb-rows">
       {st.fields.length === 0 && !adding && <div className="qb-hint">{t("qb.addField")}</div>}
-      {st.fields.map((f) => (
+      {st.fields.map((f, i, all) => (
         <div key={f.id} className={`qb-row qb-field-row${selField === f.id ? " is-selected" : ""}`} onClick={() => setSelField(f.id)}>
           <span className="qb-ref" title={labelOf(f.ref)}>{labelOf(f.ref)}</span>
           <select className="field qb-agg" value={f.aggregate} onChange={(e) => setSt((s) => ({ ...s, fields: s.fields.map((x) => (x.id === f.id ? { ...x, aggregate: e.target.value as Aggregate } : x)) }))}>
@@ -441,13 +442,16 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
           </select>
           <input className="field qb-alias" value={f.alias} placeholder={t("qb.alias")} spellCheck={false} onChange={(e) => setSt((s) => ({ ...s, fields: s.fields.map((x) => (x.id === f.id ? { ...x, alias: e.target.value } : x)) }))} />
           {rm(() => setSt((s) => ({ ...s, fields: s.fields.filter((x) => x.id !== f.id) })))}
+          {i === all.length - 1 && !adding && addBtn(() => setAdding(true))}
         </div>
       ))}
-      <div className="qb-row">
-        {adding
-          ? <RefSelect tables={tbls} value={null} placeholder={t("qb.pickField")} onChange={(r) => { if (r) toggleColumn(r.table, r.column, true); setAdding(false); }} />
-          : addBtn(() => setAdding(true))}
-      </div>
+      {(adding || st.fields.length === 0) && (
+        <div className="qb-row">
+          {adding
+            ? <RefSelect tables={tbls} value={null} placeholder={t("qb.pickField")} onChange={(r) => { if (r) toggleColumn(r.table, r.column, true); setAdding(false); }} />
+            : addBtn(() => setAdding(true))}
+        </div>
+      )}
     </div>
   );
 
@@ -641,7 +645,7 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
                     {lines.map(({ j, a, b }) => (
                       <g key={j.id} className={`qb-line${selJoin === j.id ? " is-selected" : ""}`} onClick={() => { setSelJoin(j.id); setTab("FROM"); }} onContextMenu={(e) => { setSelJoin(j.id); showMenu(e, lineMenu(j.id, j.type)); }}>
                         <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} className="qb-hit" />
-                        <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} markerEnd="url(#qb-arrow)" />
+                        <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} markerStart="url(#qb-arrow)" markerEnd="url(#qb-arrow)" />
                         {j.type !== "INNER" && <text className="qb-join-label" x={(a.x + b.x) / 2} y={(a.y + b.y) / 2 - 4} textAnchor="middle">{j.type}</text>}
                         <title>{`${j.type} JOIN: ${labelOf(j.left)} = ${labelOf(j.right)}`}</title>
                       </g>

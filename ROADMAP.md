@@ -92,6 +92,8 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [x] Views reabertas de um SELECT aparecem como views (cor e ícone); redimensionar também pelas bordas direita e
       inferior; o Build não apaga o que foi escrito no editor enquanto a janela estava aberta (acrescenta ao fim);
       fechar a aba de consulta fecha a janela do builder dela; janela separada verificada no PostgreSQL 9.6 e 18
+- [x] Ajustes pela referência: apelido da tabela com `AS` (`clients AS teste`), seta nas duas pontas da relação, botão
+      `+` ao lado do último campo do SELECT e aviso claro quando a tabela do SELECT não existe no schema da aba
 - [ ] "Table Relation" foi montado sem referência visual (linha entre os títulos dos cartões); conferir com o original
 
 ### Importação de dados
