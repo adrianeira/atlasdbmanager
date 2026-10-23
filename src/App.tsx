@@ -211,7 +211,7 @@ const OBJECTS_TAB: DocTab = { id: "objects", kind: "objects", title: "" };
 interface RecentItem { label: string; tab: Omit<DocTab, "id"> }
 
 /**
- * Comando de estrutura disparado pelos menus de contexto. Só pergunta antes (sem mostrar o SQL, como a referência)
+ * Comando de estrutura disparado pelos menus de contexto. Só pergunta antes (sem mostrar o SQL, como na referência)
  * quando é destrutivo (`danger`) ou exige digitar o nome (`confirmText`); o resto executa direto.
  */
 interface DdlRequest {

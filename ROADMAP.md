@@ -63,12 +63,12 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       importação ou dump está rodando
 - [x] **Botões no padrão** (`btn`, cinza, com o principal em destaque) em Filtro e ordenação, Colunas, editor de célula e
       seletor de data/hora, que usavam uma classe sem estilo fora da barra de busca da grade
-- [x] **Confirmações sem mostrar o SQL** (como a referência): excluir/esvaziar/truncar perguntam com o nome do objeto
+- [x] **Confirmações sem mostrar o SQL** (como na referência): excluir/esvaziar/truncar perguntam com o nome do objeto
       (`Excluir tabela "x"?`), o Aplicar do grid resume "N inserido(s), N alterado(s), N excluído(s)" e os designers
       confirmam só com a pergunta e os avisos (recriar função/view materializada, perda de dados). O que não é
       destrutivo roda direto depois do formulário: novo banco/schema, renomear, duplicar tabela, atualizar view
       materializada, Editar banco/schema (renomear banco continua perguntando, e em produção pede o nome). O SQL
-      segue visível onde o própria referência mostra: abas de prévia dos designers e do Filtro e ordenação
+      segue visível onde a própria referência mostra: abas de prévia dos designers e do Filtro e ordenação
       *(`src/components/MessageDialog.tsx`, `askDdl` em `src/App.tsx`)*
 
 ### Query Builder *(prioridade máxima)*
