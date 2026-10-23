@@ -1,6 +1,7 @@
 mod backup;
 mod builder;
 mod commands;
+mod datagen;
 mod datasync;
 mod structsync;
 mod dump;
@@ -178,6 +179,10 @@ pub fn run() {
             transfer::pg_transfer,
             builder::open_data_sync,
             builder::open_struct_sync,
+            builder::open_data_gen,
+            datagen::datagen_describe,
+            datagen::datagen_preview,
+            datagen::datagen_run,
             structsync::structsync_compare,
             structsync::structsync_script,
             structsync::structsync_deploy,

@@ -119,6 +119,12 @@ pub async fn open_data_sync(app: AppHandle, args: State<'_, WebviewArgs>, req: D
     open_tool(&app, &args, "ds-main", "__ATLAS_DS__", &req)
 }
 
+/// Data Generation.
+#[tauri::command]
+pub async fn open_data_gen(app: AppHandle, args: State<'_, WebviewArgs>, req: DataTransferOpen) -> Result<(), String> {
+    open_tool(&app, &args, "dg-main", "__ATLAS_DG__", &req)
+}
+
 /// Structure Synchronization.
 #[tauri::command]
 pub async fn open_struct_sync(app: AppHandle, args: State<'_, WebviewArgs>, req: DataTransferOpen) -> Result<(), String> {
