@@ -48,10 +48,6 @@ interface Props {
 
 const MAX_PAGE_SIZE = 1_000_000;
 
-function literal(v: CellValue): string {
-  return v === null ? "NULL" : `'${v.replace(/'/g, "''")}'`;
-}
-
 export function TableDataDoc({ schema, table: tableProp, active, production, onStatus, backend, lookup, isView, onDirty, onExport }: Props) {
   const t = useT();
   const DEFAULT_PAGE_SIZE = useOptions().pageSize;
@@ -88,7 +84,8 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   const [activeRow, setActiveRow] = useState(0);
   const [view, setView] = useState<"grid" | "form">("grid");
   const [refreshedAt, setRefreshedAt] = useState(() => new Date());
-  const [review, setReview] = useState<string | null>(null);
+  /** Confirmação do Aplicar (há registros a excluir ou a conexão é de produção). */
+  const [confirmApply, setConfirmApply] = useState(false);
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(!!backend);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -322,38 +319,6 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
     setActiveRow((r) => Math.min(r, Math.max(0, original.length - 1)));
   };
 
-  /** Prévia legível para revisão. Na execução real os valores vão como parâmetros, nunca no texto. */
-  const buildPreview = (): string => {
-    const target = `${quoteIdent(schema)}.${quoteIdent(table.name)}`;
-    const where = (orig: CellValue[], extra: number[]) => {
-      const conds = keyCols.map(({ c, i }) => `${quoteIdent(c.name)} = ${literal(orig[i])}`);
-      // Concorrência otimista (ADR-027): compara também o valor original das colunas editadas.
-      for (const i of extra) {
-        if (keyCols.some((k) => k.i === i)) continue;
-        conds.push(orig[i] === null ? `${quoteIdent(cols[i].name)} IS NULL` : `${quoteIdent(cols[i].name)} = ${literal(orig[i])}`);
-      }
-      return conds.join(" AND ");
-    };
-    const out: string[] = [];
-    const byRow = new Map<number, number[]>();
-    for (const k of edited) {
-      const [r, c] = k.split(":").map(Number);
-      if (deleted.has(r)) continue;
-      byRow.set(r, [...(byRow.get(r) ?? []), c]);
-    }
-    for (const [r, cs] of byRow) {
-      const set = cs.map((c) => `${quoteIdent(cols[c].name)} = ${literal(rows[r][c])}`).join(", ");
-      out.push(`UPDATE ${target}\n   SET ${set}\n WHERE ${where(original[r], cs)};`);
-    }
-    for (const r of newRows) {
-      const filled = cols.map((c, i) => ({ c, v: rows[r][i] })).filter((x) => x.v !== null);
-      if (!filled.length) out.push(`INSERT INTO ${target} DEFAULT VALUES;`);
-      else out.push(`INSERT INTO ${target} (${filled.map((x) => quoteIdent(x.c.name)).join(", ")})\nVALUES (${filled.map((x) => literal(x.v)).join(", ")});`);
-    }
-    for (const r of deleted) out.push(`DELETE FROM ${target}\n WHERE ${where(original[r], [])};`);
-    return out.join("\n\n");
-  };
-
   const apply = async () => {
     if (backend) {
       setApplying(true);
@@ -366,7 +331,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
         return;
       }
       setApplying(false);
-      setReview(null);
+      setConfirmApply(false);
       await loadPage(page, table, limit);
       return;
     }
@@ -375,7 +340,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
     setOriginal(kept);
     setRows(kept);
     resetEdits();
-    setReview(null);
+    setConfirmApply(false);
     setRefreshedAt(new Date());
     setActiveRow((r) => Math.min(r, Math.max(0, kept.length - 1)));
   };
@@ -450,13 +415,16 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
+  /** Registros existentes com alguma célula alterada (para o resumo da confirmação). */
+  const updatedRows = new Set([...edited].map((k) => Number(k.split(":")[0])).filter((r) => !deleted.has(r))).size;
+
   /**
-   * Aplicar: grava direto, como a referência. Só pede confirmação (com o SQL) quando há
-   * registros marcados para exclusão ou a conexão é de produção.
+   * Aplicar: grava direto, como a referência. Só pede confirmação quando há registros
+   * marcados para exclusão ou a conexão é de produção.
    */
   const requestApply = () => {
     if (!dirty || applying) return;
-    if (deleted.size > 0 || production) setReview(buildPreview());
+    if (deleted.size > 0 || production) setConfirmApply(true);
     else void apply();
   };
 
@@ -879,8 +847,8 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
         />
       )}
 
-      {/* Erro ao aplicar sem a janela de revisão: as alterações continuam na tela. */}
-      {review === null && applyError && (
+      {/* Erro ao aplicar sem a janela de confirmação: as alterações continuam na tela. */}
+      {!confirmApply && applyError && (
         <MessageDialog
           title={t("data.applyFailed")}
           message={applyError}
@@ -889,18 +857,21 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
           onCancel={() => setApplyError(null)}
         />
       )}
-      {review !== null && (
+      {confirmApply && (
         <MessageDialog
           title={t("data.reviewTitle")}
-          message={t(backend ? "data.reviewMessageLive" : "data.reviewMessage")}
-          sql={review}
+          message={[
+            t("data.confirmApply", { table: table.name }),
+            t("data.confirmSummary", { ins: newRows.size, upd: updatedRows, del: deleted.size }),
+            deleted.size > 0 ? t("data.confirmDeleteWarn") : "",
+          ].filter(Boolean).join("\n\n")}
           confirmText={production ? table.name : undefined}
           danger={deleted.size > 0}
           okLabel={t("data.apply")}
           busy={applying}
           error={applyError ?? undefined}
           onOk={() => void apply()}
-          onCancel={() => { setApplyError(null); setReview(null); }}
+          onCancel={() => { setApplyError(null); setConfirmApply(false); }}
         />
       )}
     </div>

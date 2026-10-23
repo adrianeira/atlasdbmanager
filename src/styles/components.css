@@ -790,18 +790,6 @@ textarea.field.remarks {
   gap: 10px;
 }
 
-.msg-sql {
-  margin: 0;
-  max-height: 320px;
-  overflow: auto;
-  padding: 8px;
-  border: 1px solid var(--c-border);
-  background: var(--c-surface-alt);
-  font: 12px / 1.45 var(--font-mono);
-  white-space: pre;
-  user-select: text;
-}
-
 .msg-text {
   white-space: pre-wrap;
 }
@@ -2121,6 +2109,19 @@ select.et-input {
 .dump-note { font-size: 11px; }
 .dump-progress { display: flex; align-items: center; gap: 8px; }
 .dump-result { padding: 8px 10px; border: 1px solid var(--c-border); background: var(--c-surface-alt); }
+
+/* Editar banco de dados / schema. */
+.ed-dialog { width: min(520px, 92vw); }
+.ed-body { display: flex; flex-direction: column; gap: 8px; }
+.ed-row { display: grid; grid-template-columns: 150px 1fr; align-items: center; gap: 6px; min-height: 22px; }
+.ed-row > label { white-space: nowrap; }
+.ed-row .field, .ed-row .dd-button { width: 100%; }
+.ed-row .ed-num { width: 90px; }
+.ed-row.has-error .field { border-color: var(--c-danger); }
+.ed-row .ed-comment { height: 64px; padding: 4px; resize: vertical; font: inherit; }
+.ed-checks { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.ed-note { font-size: 11px; margin-left: 156px; }
+.ed-sep { height: 1px; margin: 4px 0; background: var(--c-border); }
 
 /* Opções. */
 .opt-dialog { width: min(600px, 92vw); }

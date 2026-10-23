@@ -18,4 +18,7 @@ pub use exec::{
 pub use dump::{DumpOptions, DumpPlan, DumpScope, DumpTable, begin_snapshot, copy_header, copy_table, data_select, end_snapshot, header as dump_header, plan as dump_plan};
 pub use import::{Feed, Hooks as ImportHooks, ImportMode, ImportSpec, ImportStats, TargetColumn, run as run_import};
 pub use find::{FindHit, FindOptions, FindResult, find};
-pub use meta::{role_detail, type_detail, sequence_detail, function_detail, list_databases, list_objects, list_roles, list_schemas, matview_detail, table_detail, view_detail};
+pub use meta::{
+    database_detail, function_detail, list_databases, list_objects, list_roles, list_schemas, matview_detail, role_detail,
+    schema_detail, sequence_detail, table_detail, type_detail, view_detail,
+};

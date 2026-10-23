@@ -395,7 +395,6 @@ export function ViewDesignerDoc({
         <MessageDialog
           title={t("des.reviewTitle")}
           message={t(materialized && !dialog.newName && dialog.statements.some((x) => x.startsWith("DROP ")) ? "vw.matRecreate" : "des.reviewMessage")}
-          sql={dialog.statements.join("\n\n")}
           confirmText={production && !dialog.newName ? name : undefined}
           okLabel={t("des.save")}
           busy={saving}

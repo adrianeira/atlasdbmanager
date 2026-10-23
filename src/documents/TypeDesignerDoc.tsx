@@ -270,7 +270,6 @@ export function TypeDesignerDoc({ schema, typeName, owners, serverVersionNum, ac
         <MessageDialog
           title={t("des.reviewTitle")}
           message={t("des.reviewMessage")}
-          sql={dialog.statements.join("\n\n")}
           confirmText={production && !isNew ? name : undefined}
           okLabel={t("des.save")}
           busy={saving}

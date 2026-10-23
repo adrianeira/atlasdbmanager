@@ -128,8 +128,9 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
   useEffect(() => {
     let alive = true;
     pg.listSchemas(connId, database)
-      .then((list) => {
+      .then((infos) => {
         if (!alive) return;
+        const list = infos.map((s) => s.name);
         setSchemas(list);
         const first = list.includes(defaultSchema) ? defaultSchema : list[0];
         if (first) {

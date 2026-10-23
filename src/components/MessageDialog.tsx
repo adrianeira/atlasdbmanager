@@ -5,8 +5,6 @@ import { SmallIcon } from "../icons";
 interface Props {
   title: string;
   message?: ReactNode;
-  /** SQL a revisar antes de aplicar (spec: toda mutação tem prévia). */
-  sql?: string;
   /** Exige digitar este texto para confirmar (operações destrutivas em produção). */
   confirmText?: string;
   /** Campo de texto livre (ex.: nome da nova tabela). */
@@ -27,7 +25,7 @@ interface Props {
   onCancel: () => void;
 }
 
-export function MessageDialog({ title, message, sql, confirmText, prompt, danger, okLabel, busy, error, secret, allowEmpty, selectText, onOk, onCancel }: Props) {
+export function MessageDialog({ title, message, confirmText, prompt, danger, okLabel, busy, error, secret, allowEmpty, selectText, onOk, onCancel }: Props) {
   const t = useT();
   const [typed, setTyped] = useState("");
   const [value, setValue] = useState(prompt?.initial ?? "");
@@ -55,7 +53,6 @@ export function MessageDialog({ title, message, sql, confirmText, prompt, danger
         </div>
         <div className="msg-body">
           {message && <div className="msg-text">{message}</div>}
-          {sql !== undefined && <pre className="msg-sql">{sql}</pre>}
           {prompt && (
             <label className="msg-prompt">
               <span>{prompt.label}</span>

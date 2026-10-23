@@ -279,6 +279,33 @@ export interface FindResult {
   truncated: boolean;
 }
 
+/** Banco de dados: encoding, collation e tablespace são só leitura (o ALTER não os troca). */
+export interface DatabaseDetail {
+  name: string;
+  owner: string;
+  encoding: string;
+  collate: string;
+  ctype: string;
+  tablespace: string;
+  /** -1 = sem limite. */
+  connectionLimit: number;
+  allowConnections: boolean;
+  isTemplate: boolean;
+  comment: string | null;
+}
+
+export interface SchemaDetail {
+  name: string;
+  owner: string;
+  comment: string | null;
+}
+
+/** Schema da lista da árvore, com o comentário (dica ao passar o mouse). */
+export interface SchemaInfo {
+  name: string;
+  comment: string | null;
+}
+
 export interface RoleDetail {
   name: string;
   superuser: boolean;
@@ -486,8 +513,10 @@ export const pg = {
   open: (sessionId: string, params: ConnectionParams, profileId?: string) => call<ServerInfo>("pg_open", { sessionId, params, profileId }),
   close: (sessionId: string) => call<void>("pg_close", { sessionId }),
   closeDatabase: (sessionId: string, database: string) => call<void>("pg_close_database", { sessionId, database }),
-  listDatabases: (sessionId: string) => call<{ databases: string[]; hidden: number }>("pg_list_databases", { sessionId }),
-  listSchemas: (sessionId: string, database: string) => call<string[]>("pg_list_schemas", { sessionId, database }),
+  /** `comments`: comentário de cada banco que tem um (dica na árvore). */
+  listDatabases: (sessionId: string) =>
+    call<{ databases: string[]; hidden: number; comments: Record<string, string> }>("pg_list_databases", { sessionId }),
+  listSchemas: (sessionId: string, database: string) => call<SchemaInfo[]>("pg_list_schemas", { sessionId, database }),
   listObjects: (sessionId: string, database: string, schema: string) => call<SchemaObjects>("pg_list_objects", { sessionId, database, schema }),
   tableDetail: (sessionId: string, database: string, schema: string, table: string) =>
     call<TableDetail>("pg_table_detail", { sessionId, database, schema, table }),
@@ -498,6 +527,9 @@ export const pg = {
   import: (req: ImportRequest) => call<ImportSummary>("pg_import", { req }),
   dumpSql: (req: DumpRequest) => call<DumpResult>("pg_dump_sql", { req }),
   find: (sessionId: string, database: string, options: FindOptions) => call<FindResult>("pg_find", { sessionId, database, options }),
+  databaseDetail: (sessionId: string, name: string) => call<DatabaseDetail>("pg_database_detail", { sessionId, name }),
+  schemaDetail: (sessionId: string, database: string, name: string) =>
+    call<SchemaDetail>("pg_schema_detail", { sessionId, database, name }),
   roleDetail: (sessionId: string, name: string) => call<RoleDetail>("pg_role_detail", { sessionId, name }),
   typeDetail: (sessionId: string, database: string, schema: string, name: string) =>
     call<TypeDetail>("pg_type_detail", { sessionId, database, schema, name }),

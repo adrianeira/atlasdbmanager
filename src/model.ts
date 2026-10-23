@@ -78,8 +78,8 @@ export interface DbObject {
 }
 
 /** `loaded` = false indica nível ainda não lido do servidor (carga preguiçosa). */
-export interface SchemaMock { name: string; objects: Partial<Record<Category, DbObject[]>>; loaded?: boolean }
-export interface DatabaseMock { name: string; schemas: SchemaMock[]; loaded?: boolean }
+export interface SchemaMock { name: string; objects: Partial<Record<Category, DbObject[]>>; loaded?: boolean; comment?: string }
+export interface DatabaseMock { name: string; schemas: SchemaMock[]; loaded?: boolean; comment?: string }
 
 export interface ConnectionMock {
   id: string;
@@ -379,13 +379,13 @@ export function buildVisibleTree(
     for (const db of conn.databases) {
       const dbId = `db:${seg(conn.id)}/${seg(db.name)}`;
       const dbOpen = state.openDatabases.has(dbId);
-      out.push({ id: dbId, kind: "database", label: db.name, depth: 1, expandable: true });
+      out.push({ id: dbId, kind: "database", label: db.name, depth: 1, expandable: true, comment: db.comment });
       if (!dbOpen || !state.expanded.has(dbId)) continue;
 
       for (const sc of db.schemas) {
         const scPath = `${seg(conn.id)}/${seg(db.name)}/${seg(sc.name)}`;
         const scId = `schema:${scPath}`;
-        out.push({ id: scId, kind: "schema", label: sc.name, depth: 2, expandable: true });
+        out.push({ id: scId, kind: "schema", label: sc.name, depth: 2, expandable: true, comment: sc.comment });
         if (!state.expanded.has(scId)) continue;
 
         for (const cat of SCHEMA_FOLDERS) {

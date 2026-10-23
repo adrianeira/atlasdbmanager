@@ -384,7 +384,6 @@ export function FunctionDesignerDoc({
         <MessageDialog
           title={t("des.reviewTitle")}
           message={t(dialog.statements.some((x) => x.startsWith("DROP ")) ? "fn.recreate" : "des.reviewMessage")}
-          sql={dialog.statements.join("\n\n")}
           confirmText={production && !isNew ? name : undefined}
           okLabel={t("des.save")}
           busy={saving}

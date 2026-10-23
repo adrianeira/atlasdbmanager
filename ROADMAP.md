@@ -63,6 +63,13 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       importação ou dump está rodando
 - [x] **Botões no padrão** (`btn`, cinza, com o principal em destaque) em Filtro e ordenação, Colunas, editor de célula e
       seletor de data/hora, que usavam uma classe sem estilo fora da barra de busca da grade
+- [x] **Confirmações sem mostrar o SQL** (como a referência): excluir/esvaziar/truncar perguntam com o nome do objeto
+      (`Excluir tabela "x"?`), o Aplicar do grid resume "N inserido(s), N alterado(s), N excluído(s)" e os designers
+      confirmam só com a pergunta e os avisos (recriar função/view materializada, perda de dados). O que não é
+      destrutivo roda direto depois do formulário: novo banco/schema, renomear, duplicar tabela, atualizar view
+      materializada, Editar banco/schema (renomear banco continua perguntando, e em produção pede o nome). O SQL
+      segue visível onde o própria referência mostra: abas de prévia dos designers e do Filtro e ordenação
+      *(`src/components/MessageDialog.tsx`, `askDdl` em `src/App.tsx`)*
 
 ### Query Builder *(prioridade máxima)*
 - [x] **Janela do sistema à parte** (não um diálogo dentro da janela principal): maximiza pela tela inteira, independe do
@@ -151,7 +158,7 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       dados (concorrente)**) e pasta com "Nova view materializada"
 - [x] **Abrir dados** (grade somente leitura, com filtro/ordenação/colunas/exportação como numa tabela)
 - [x] **Designer**: definição (SELECT) com prévia e Explain, dono, comentário, "Preencher com dados" na criação
-      e **Atualizar dados** na barra; mudar o SELECT mostra `DROP` + `CREATE` na revisão, com aviso de que os
+      e **Atualizar dados** na barra; mudar o SELECT recria a view (`DROP` + `CREATE`) e a confirmação avisa que os
       índices e as views dependentes precisam ser refeitos
       *(`src/documents/ViewDesignerDoc.tsx`, `src/sql/view.ts`, `crates/atlas-pg/src/meta.rs`)*
 - Ainda não há: gerenciar os índices da view materializada no designer.
@@ -159,7 +166,7 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 ### Funções e procedimentos
 - [x] Funções com o **mesmo nome e argumentos diferentes** (sobrecarga) aparecem separadas na árvore e na lista
 - [x] **Designer**: nome, parâmetros (modo IN/OUT/INOUT/VARIADIC, tipo, DEFAULT), retorno, linguagem, volatilidade,
-      STRICT, SECURITY DEFINER, dono, comentário e corpo com editor SQL; revisão do DDL antes de gravar
+      STRICT, SECURITY DEFINER, dono, comentário e corpo com editor SQL; confirmação antes de gravar
       (`CREATE OR REPLACE`; mudar parâmetros ou retorno vira `DROP` + `CREATE`, com aviso; renomear é `ALTER ... RENAME`)
 - [x] **Executar** a função/procedimento gravado, com formulário de parâmetros (vazio = DEFAULT ou NULL) e o
       resultado na grade; **Nova função** e **Excluir função** pelos menus da árvore
@@ -187,7 +194,7 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       menu de contexto; sequências novas e existentes no mesmo designer
 - [x] **Designer**: nome, tipo (`AS smallint/integer/bigint`, PostgreSQL 10+), incremento, mínimo, máximo, inicial,
       cache, cíclica, **pertence a** (`OWNED BY tabela.coluna`), dono e comentário; mostra o **valor atual e o próximo**
-- [x] **Reiniciar** (`RESTART [WITH n]`) e **Definir valor** (`setval`) com revisão do comando; só o que mudou vai
+- [x] **Reiniciar** (`RESTART [WITH n]`) e **Definir valor** (`setval`) com confirmação; só o que mudou vai
       no `ALTER SEQUENCE`; compatível com o PostgreSQL 9.6 (lê a própria relação) e 10+ (`pg_sequences`)
       *(`src/documents/SequenceDesignerDoc.tsx`, `src/sql/sequence.ts`, `crates/atlas-pg/src/meta.rs`)*
 
@@ -257,6 +264,19 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       `src/icons.tsx`)*
 
 - [x] **Novo schema...** no menu de contexto do banco (cria e recarrega a árvore)
+- [x] **Editar banco de dados...** (menu do banco): nome, dono, limite de conexões, "permitir conexões", "usar como
+      modelo" (PostgreSQL 9.5+) e comentário; codificação, collation, ctype e tablespace aparecem só para leitura
+      (o PostgreSQL não os troca). Aplicar grava direto (`ALTER`/`COMMENT` e, por último, o `RENAME TO`); renomear
+      pergunta antes, roda pelo banco inicial da conexão, fecha as sessões do Atlas no banco e, em conexões de
+      produção, pede o nome para confirmar. O banco usado pela própria conexão não pode ser renomeado (campo
+      bloqueado, com aviso)
+      *(`src/components/EditDatabaseDialog.tsx`, `src/sql/dbedit.ts`, `crates/atlas-pg/src/meta.rs`)*
+- [x] **Comentário como dica na árvore**: bancos e schemas com comentário no servidor o mostram ao passar o mouse
+      sobre o nome (como já era com tabelas, views e colunas); a lista de bancos e a de schemas passaram a trazer o
+      comentário e ele é relido ao editar ou atualizar *(`crates/atlas-pg/src/meta.rs`, `src/model.ts`)*
+- [x] **Editar schema...** (menu do schema): nome, dono e comentário; Aplicar grava direto (em produção, renomear pede
+      o nome para confirmar)
+      *(`src/components/EditSchemaDialog.tsx`, `src/sql/dbedit.ts`)*
 
 ### Editor SQL / Toolbar da consulta
 - [x] **Zoom do editor SQL**: Ctrl + roda do mouse, Ctrl + / Ctrl - e Ctrl 0 (50% a 400%), igual em todos os editores
@@ -315,7 +335,7 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [x] Find in Database / Find in Schema (ver "Localizar no banco" em Entregues)
 - [ ] Console do servidor *(item `cmd.console` sem handler)*
 - [ ] Share *(`cmd.share` sem handler)*
-- [ ] Edit Database / Edit Schema *(sem handler)*
+- [x] Edit Database / Edit Schema (ver "Navegação / Árvore" em Entregues)
 
 ## 3. Grid de dados
 - [x] Filter & Sort avançado — diálogo "Filtrar e ordenar" com WHERE multi-regra

@@ -4,8 +4,8 @@
 use crate::local::Local;
 use crate::sessions::Sessions;
 use atlas_core::{
-    ConnectionParams, DatabaseError, DatabaseList, FunctionDetail, OrderBy, RoleDetail, SequenceDetail, TypeDetail, QueryOutcome, RoleInfo, SchemaObjects, ServerInfo, TableDetail,
-    TableFilter, ViewDetail,
+    ConnectionParams, DatabaseDetail, DatabaseError, DatabaseList, FunctionDetail, OrderBy, RoleDetail, SchemaDetail, SequenceDetail,
+    TypeDetail, QueryOutcome, RoleInfo, SchemaInfo, SchemaObjects, ServerInfo, TableDetail, TableFilter, ViewDetail,
 };
 use serde::Serialize;
 use tauri::State;
@@ -60,7 +60,7 @@ pub async fn pg_list_databases(sessions: State<'_, Sessions>, session_id: String
 }
 
 #[tauri::command]
-pub async fn pg_list_schemas(sessions: State<'_, Sessions>, session_id: String, database: String) -> Result<Vec<String>, DatabaseError> {
+pub async fn pg_list_schemas(sessions: State<'_, Sessions>, session_id: String, database: String) -> Result<Vec<SchemaInfo>, DatabaseError> {
     let s = sessions.get(&session_id, Some(&database)).await?;
     atlas_pg::list_schemas(&s).await
 }
@@ -110,6 +110,24 @@ pub async fn pg_find(
 ) -> Result<atlas_pg::FindResult, DatabaseError> {
     let s = sessions.get(&session_id, Some(&database)).await?;
     atlas_pg::find(&s, &options).await
+}
+
+/// Atributos de um banco (leitura do catálogo do cluster; usa a sessão do banco inicial).
+#[tauri::command]
+pub async fn pg_database_detail(sessions: State<'_, Sessions>, session_id: String, name: String) -> Result<DatabaseDetail, DatabaseError> {
+    let s = sessions.get(&session_id, None).await?;
+    atlas_pg::database_detail(&s, &name).await
+}
+
+#[tauri::command]
+pub async fn pg_schema_detail(
+    sessions: State<'_, Sessions>,
+    session_id: String,
+    database: String,
+    name: String,
+) -> Result<SchemaDetail, DatabaseError> {
+    let s = sessions.get(&session_id, Some(&database)).await?;
+    atlas_pg::schema_detail(&s, &name).await
 }
 
 #[tauri::command]

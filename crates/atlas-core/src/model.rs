@@ -74,6 +74,16 @@ pub struct DatabaseList {
     pub databases: Vec<String>,
     /// Bancos não listáveis (templates/sem permissão de conexão), como "2 items hidden".
     pub hidden: u32,
+    /// Comentário de cada banco que tem um (dica na árvore); bancos sem comentário não aparecem.
+    pub comments: std::collections::BTreeMap<String, String>,
+}
+
+/// Schema listado na árvore, com o comentário (dica ao passar o mouse).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SchemaInfo {
+    pub name: String,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -213,6 +223,33 @@ pub struct ViewDetail {
     pub rules: Vec<RuleInfo>,
     /// View materializada já preenchida com dados (`false` após `WITH NO DATA`). Views comuns: sempre `true`.
     pub populated: bool,
+}
+
+/// Banco de dados (`pg_database`): o que o "Editar banco" mostra e altera. Encoding, collation e
+/// tablespace só são exibidos: o PostgreSQL não os troca com um `ALTER` simples.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseDetail {
+    pub name: String,
+    pub owner: String,
+    pub encoding: String,
+    pub collate: String,
+    pub ctype: String,
+    pub tablespace: String,
+    /// Limite de conexões simultâneas (`-1` = sem limite).
+    pub connection_limit: i32,
+    pub allow_connections: bool,
+    pub is_template: bool,
+    pub comment: Option<String>,
+}
+
+/// Schema (`pg_namespace`): dono e comentário.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SchemaDetail {
+    pub name: String,
+    pub owner: String,
+    pub comment: Option<String>,
 }
 
 /// Papel (usuário ou grupo) com todos os atributos editáveis. A senha nunca é lida: o servidor só guarda o hash.

@@ -277,7 +277,7 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
   const [sel, setSel] = useState<Record<string, number>>({});
   const [pkMenu, setPkMenu] = useState(false);
   const [previewMode, setPreviewMode] = useState<"save" | "saveAs">(table ? "save" : "saveAs");
-  const [dialog, setDialog] = useState<null | { kind: "name" } | { kind: "invalidTrigger" } | { kind: "review"; sql: string; destructive: boolean; newName?: string }>(null);
+  const [dialog, setDialog] = useState<null | { kind: "name" } | { kind: "invalidTrigger" } | { kind: "review"; destructive: boolean; newName?: string }>(null);
   const [triggerTab, setTriggerTab] = useState<"general" | "constraint">("general");
   const pkRef = useRef<HTMLDivElement>(null);
 
@@ -379,7 +379,7 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
       return;
     }
     if (!plan?.sql) return;
-    setDialog({ kind: "review", sql: plan.sql, destructive: plan.destructive });
+    setDialog({ kind: "review", destructive: plan.destructive });
   };
 
   const commit = async (newName?: string) => {
@@ -741,7 +741,7 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
           prompt={{ label: t("des.tableName"), initial: "" }}
           onOk={(name) => {
             if (!name) return;
-            setDialog({ kind: "review", sql: createTableSql(schema, toObject({ ...d, name })), destructive: false, newName: name });
+            setDialog({ kind: "review", destructive: false, newName: name });
           }}
           onCancel={() => setDialog(null)}
         />
@@ -750,7 +750,6 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
         <MessageDialog
           title={t("des.reviewTitle")}
           message={dialog.destructive ? t("des.destructiveWarning") : t("des.reviewMessage")}
-          sql={dialog.sql}
           danger={dialog.destructive}
           confirmText={production && dialog.destructive ? (original?.name ?? dialog.newName) : undefined}
           okLabel={t("des.save")}

@@ -256,7 +256,6 @@ export function SequenceDesignerDoc({ schema, seqName, owners, serverVersionNum,
         <MessageDialog
           title={t("des.reviewTitle")}
           message={t("des.reviewMessage")}
-          sql={dialog.statements.join("\n\n")}
           confirmText={production && !isNew ? name : undefined}
           okLabel={t(dialog.reload ? "seq.run" : "des.save")}
           busy={saving}

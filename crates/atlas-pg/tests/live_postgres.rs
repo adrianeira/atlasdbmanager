@@ -66,7 +66,7 @@ async fn lists_catalog() {
     let dbs = atlas_pg::list_databases(&s).await.expect("databases");
     assert!(dbs.databases.iter().any(|d| d == &p.database));
     let schemas = atlas_pg::list_schemas(&s).await.expect("schemas");
-    assert!(!schemas.iter().any(|n| n.starts_with("pg_")));
+    assert!(!schemas.iter().any(|n| n.name.starts_with("pg_")));
     let objs = atlas_pg::list_objects(&s, "public").await.expect("objects");
     eprintln!("public: {} tabelas, {} views, {} funções", objs.tables.len(), objs.views.len(), objs.functions.len());
     let roles = atlas_pg::list_roles(&s).await.expect("roles");
@@ -446,6 +446,86 @@ async fn role_detail_reads_attributes_and_memberships() {
 
     assert!(atlas_pg::role_detail(&s, "atlas_nao_existe_xyz").await.is_err());
     atlas_pg::execute(&s, &format!("DROP ROLE {usuario}; DROP ROLE {grupo}"), 1).await.unwrap();
+}
+
+/// "Editar banco": lê os atributos e roda os mesmos comandos que a interface monta (`src/sql/dbedit.ts`),
+/// com o `RENAME TO` por último, num banco descartável.
+#[tokio::test]
+async fn database_detail_reads_attributes_and_edit_commands_apply() {
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    let suffix = std::process::id();
+    let (antigo, novo) = (format!("atlas_edb_{suffix}"), format!("atlas_edb_novo_{suffix}"));
+    atlas_pg::execute(&s, &format!("DROP DATABASE IF EXISTS \"{antigo}\""), 1).await.unwrap();
+    atlas_pg::execute(&s, &format!("DROP DATABASE IF EXISTS \"{novo}\""), 1).await.unwrap();
+    atlas_pg::execute(&s, &format!("CREATE DATABASE \"{antigo}\""), 1).await.unwrap();
+
+    let d = atlas_pg::database_detail(&s, &antigo).await.expect("detail");
+    assert_eq!(d.name, antigo);
+    assert!(!d.owner.is_empty() && !d.encoding.is_empty() && !d.collate.is_empty() && !d.ctype.is_empty() && !d.tablespace.is_empty());
+    assert_eq!(d.connection_limit, -1);
+    assert!(d.allow_connections && !d.is_template && d.comment.is_none());
+    // O banco da própria sessão também é legível.
+    assert_eq!(atlas_pg::database_detail(&s, &p.database).await.expect("current").name, p.database);
+
+    // O comentário aparece na lista de bancos da árvore (dica ao passar o mouse); sem comentário, o banco não consta.
+    let sem = atlas_pg::list_databases(&s).await.expect("databases");
+    assert!(sem.databases.contains(&antigo) && !sem.comments.contains_key(&antigo));
+    atlas_pg::execute(&s, &format!("COMMENT ON DATABASE \"{antigo}\" IS 'na árvore'"), 1).await.unwrap();
+    let com = atlas_pg::list_databases(&s).await.expect("databases");
+    assert_eq!(com.comments.get(&antigo).map(String::as_str), Some("na árvore"));
+
+    if s.server.version_num >= 90500 {
+        atlas_pg::execute(
+            &s,
+            &format!(
+                "ALTER DATABASE \"{antigo}\" WITH CONNECTION LIMIT 5 ALLOW_CONNECTIONS false IS_TEMPLATE true; \
+                 COMMENT ON DATABASE \"{antigo}\" IS 'banco de ''teste'''; \
+                 ALTER DATABASE \"{antigo}\" RENAME TO \"{novo}\""
+            ),
+            1,
+        )
+        .await
+        .unwrap();
+        let d = atlas_pg::database_detail(&s, &novo).await.expect("renamed");
+        assert_eq!(d.connection_limit, 5);
+        assert!(!d.allow_connections && d.is_template);
+        assert_eq!(d.comment.as_deref(), Some("banco de 'teste'"));
+        assert!(atlas_pg::database_detail(&s, &antigo).await.is_err(), "o nome antigo não pode mais existir");
+        // Um banco marcado como template não pode ser excluído.
+        atlas_pg::execute(&s, &format!("ALTER DATABASE \"{novo}\" WITH IS_TEMPLATE false"), 1).await.unwrap();
+        atlas_pg::execute(&s, &format!("DROP DATABASE \"{novo}\""), 1).await.unwrap();
+    } else {
+        atlas_pg::execute(&s, &format!("DROP DATABASE \"{antigo}\""), 1).await.unwrap();
+    }
+    assert!(atlas_pg::database_detail(&s, "atlas_nao_existe_xyz").await.is_err());
+}
+
+/// "Editar schema": dono, comentário e renomear, num schema descartável do banco do teste.
+#[tokio::test]
+async fn schema_detail_reads_owner_comment_and_rename_applies() {
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    let suffix = std::process::id();
+    let (antigo, novo) = (format!("atlas_esc_{suffix}"), format!("atlas_esc_novo_{suffix}"));
+    atlas_pg::execute(&s, &format!("DROP SCHEMA IF EXISTS {antigo} CASCADE; DROP SCHEMA IF EXISTS {novo} CASCADE"), 1).await.unwrap();
+    atlas_pg::execute(&s, &format!("CREATE SCHEMA {antigo}; COMMENT ON SCHEMA {antigo} IS 'schema de ''teste'''"), 1).await.unwrap();
+
+    let d = atlas_pg::schema_detail(&s, &antigo).await.expect("detail");
+    assert_eq!(d.name, antigo);
+    assert!(!d.owner.is_empty());
+    assert_eq!(d.comment.as_deref(), Some("schema de 'teste'"));
+    // O comentário também vem na lista de schemas da árvore.
+    let lista = atlas_pg::list_schemas(&s).await.expect("schemas");
+    assert_eq!(lista.iter().find(|x| x.name == antigo).and_then(|x| x.comment.as_deref()), Some("schema de 'teste'"));
+
+    atlas_pg::execute(&s, &format!("COMMENT ON SCHEMA {antigo} IS NULL; ALTER SCHEMA {antigo} RENAME TO {novo}"), 1).await.unwrap();
+    assert!(atlas_pg::schema_detail(&s, &antigo).await.is_err(), "o nome antigo não pode mais existir");
+    let d = atlas_pg::schema_detail(&s, &novo).await.expect("renamed");
+    assert!(d.comment.is_none());
+
+    atlas_pg::execute(&s, &format!("DROP SCHEMA {novo}"), 1).await.unwrap();
+    assert!(atlas_pg::schema_detail(&s, "atlas_nao_existe_xyz").await.is_err());
 }
 
 #[tokio::test]

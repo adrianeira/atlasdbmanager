@@ -4,40 +4,53 @@
 use crate::connect::PgSession;
 use crate::error::map_error;
 use atlas_core::{
-    ColumnInfo, ConstraintInfo, DatabaseError, DatabaseList, ErrorKind, IndexInfo, ObjectInfo, RoleInfo, RuleInfo,
-    FunctionDetail, RoleDetail, SchemaObjects, SequenceDetail, TableDetail, TypeAttribute, TypeCheck, TypeDetail, TriggerInfo, ViewDetail,
+    ColumnInfo, ConstraintInfo, DatabaseDetail, DatabaseError, DatabaseList, ErrorKind, IndexInfo, ObjectInfo, RoleInfo, RuleInfo,
+    FunctionDetail, RoleDetail, SchemaDetail, SchemaInfo, SchemaObjects, SequenceDetail, TableDetail, TypeAttribute, TypeCheck, TypeDetail,
+    TriggerInfo, ViewDetail,
 };
 
 pub async fn list_databases(s: &PgSession) -> Result<DatabaseList, DatabaseError> {
     let rows = s
         .client
-        .query("SELECT datname::text, (datallowconn AND NOT datistemplate) FROM pg_catalog.pg_database ORDER BY datname", &[])
+        .query(
+            "SELECT datname::text, (datallowconn AND NOT datistemplate), shobj_description(oid, 'pg_database') \
+               FROM pg_catalog.pg_database ORDER BY datname",
+            &[],
+        )
         .await
         .map_err(|e| map_error(&e))?;
     let mut databases = Vec::new();
+    let mut comments = std::collections::BTreeMap::new();
     let mut hidden = 0;
     for r in rows {
         if r.get::<_, bool>(1) {
-            databases.push(r.get(0));
+            let name: String = r.get(0);
+            if let Some(comment) = r.get::<_, Option<String>>(2).filter(|c| !c.is_empty()) {
+                comments.insert(name.clone(), comment);
+            }
+            databases.push(name);
         } else {
             hidden += 1;
         }
     }
-    Ok(DatabaseList { databases, hidden })
+    Ok(DatabaseList { databases, hidden, comments })
 }
 
-/// Schemas do usuário (sem `pg_*` e `information_schema`, como a referência faz por padrão).
-pub async fn list_schemas(s: &PgSession) -> Result<Vec<String>, DatabaseError> {
+/// Schemas do usuário (sem `pg_*` e `information_schema`, como a referência faz por padrão), com o comentário de cada um.
+pub async fn list_schemas(s: &PgSession) -> Result<Vec<SchemaInfo>, DatabaseError> {
     let rows = s
         .client
         .query(
-            "SELECT nspname::text FROM pg_catalog.pg_namespace \
+            "SELECT nspname::text, obj_description(oid, 'pg_namespace') FROM pg_catalog.pg_namespace \
              WHERE nspname !~ '^pg_' AND nspname <> 'information_schema' ORDER BY nspname",
             &[],
         )
         .await
         .map_err(|e| map_error(&e))?;
-    Ok(rows.iter().map(|r| r.get(0)).collect())
+    Ok(rows
+        .iter()
+        .map(|r| SchemaInfo { name: r.get(0), comment: r.get::<_, Option<String>>(1).filter(|c| !c.is_empty()) })
+        .collect())
 }
 
 async fn relations(s: &PgSession, schema: &str, kinds: &str) -> Result<Vec<ObjectInfo>, DatabaseError> {
@@ -592,6 +605,58 @@ pub async fn function_detail(s: &PgSession, schema: &str, name: &str, identity: 
 }
 
 /// Atributos e participações de um papel.
+/// Atributos de um banco do servidor. `pg_database` vale para o cluster inteiro, então a leitura não
+/// exige abrir uma sessão naquele banco.
+pub async fn database_detail(s: &PgSession, name: &str) -> Result<DatabaseDetail, DatabaseError> {
+    let row = s
+        .client
+        .query_opt(
+            "SELECT pg_get_userbyid(d.datdba)::text, pg_encoding_to_char(d.encoding)::text, d.datcollate::text, d.datctype::text, \
+                    t.spcname::text, d.datconnlimit, d.datallowconn, d.datistemplate, shobj_description(d.oid, 'pg_database') \
+               FROM pg_catalog.pg_database d JOIN pg_catalog.pg_tablespace t ON t.oid = d.dattablespace \
+              WHERE d.datname = $1",
+            &[&name],
+        )
+        .await
+        .map_err(|e| map_error(&e))?;
+    let Some(r) = row else {
+        let mut err = DatabaseError::new(ErrorKind::Server, format!("database \"{name}\" does not exist"));
+        err.code = Some("3D000".into());
+        return Err(err);
+    };
+    Ok(DatabaseDetail {
+        name: name.to_string(),
+        owner: r.get(0),
+        encoding: r.get(1),
+        collate: r.get(2),
+        ctype: r.get(3),
+        tablespace: r.get(4),
+        connection_limit: r.get(5),
+        allow_connections: r.get(6),
+        is_template: r.get(7),
+        comment: r.get(8),
+    })
+}
+
+/// Dono e comentário de um schema do banco da sessão.
+pub async fn schema_detail(s: &PgSession, name: &str) -> Result<SchemaDetail, DatabaseError> {
+    let row = s
+        .client
+        .query_opt(
+            "SELECT pg_get_userbyid(n.nspowner)::text, obj_description(n.oid, 'pg_namespace') \
+               FROM pg_catalog.pg_namespace n WHERE n.nspname = $1",
+            &[&name],
+        )
+        .await
+        .map_err(|e| map_error(&e))?;
+    let Some(r) = row else {
+        let mut err = DatabaseError::new(ErrorKind::Server, format!("schema \"{name}\" does not exist"));
+        err.code = Some("3F000".into());
+        return Err(err);
+    };
+    Ok(SchemaDetail { name: name.to_string(), owner: r.get(0), comment: r.get(1) })
+}
+
 pub async fn role_detail(s: &PgSession, name: &str) -> Result<RoleDetail, DatabaseError> {
     // `rolbypassrls` existe a partir do PostgreSQL 9.5.
     let bypass = if s.server.version_num >= 90500 { "rolbypassrls" } else { "NULL::boolean" };
