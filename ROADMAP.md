@@ -74,7 +74,6 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       apelido, JOINs, WHERE/HAVING, GROUP BY, ORDER BY, LIMIT/OFFSET, agregações), monta o desenho e, no Build,
       substitui aquele trecho; fora desse formato avisa e começa do zero
       *(`src/sql/querybuilderParse.ts`)*
-- [ ] Expressões livres no SELECT/WHERE, subconsultas, UNION e tabelas derivadas
 - [ ] Salvar/abrir o desenho (posição dos cartões) junto com a consulta
 
 ### Importação de dados

@@ -583,7 +583,7 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
                           const p = canvasPoint(e);
                           setDrag({ id: tb.id, dx: p.x - tb.x, dy: p.y - tb.y });
                         }}>
-                        <span>{tb.alias.trim() || tb.name}</span>
+                        <span>{tb.alias.trim() ? `${tb.name} ( ${tb.alias.trim()} )` : tb.name}</span>
                       </div>
                       <div className="qb-card-body" style={{ padding: PAD }}>
                         {tb.columns.length === 0 ? <div className="qb-row-col muted">{t("qb.loading")}</div> : ["*", ...tb.columns].map((c) => (
