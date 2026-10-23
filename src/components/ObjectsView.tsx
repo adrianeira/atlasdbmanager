@@ -360,7 +360,7 @@ export function ObjectsView({ category, ctx, connectionOpen, viewMode, erOptions
       </div>
 
       <div
-        className={`object-list${er ? " is-er" : ""}`}
+        className={`object-list${er ? " is-er" : ""}${hasContext ? "" : " no-context"}`}
         tabIndex={0}
         onKeyDown={onKeyDown}
         onMouseDown={(e) => e.target === e.currentTarget && onSelect([])}

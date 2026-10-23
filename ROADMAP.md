@@ -267,6 +267,9 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       *(`src/components/OptionsDialog.tsx`, `src/options.ts`)*
 
 ### Navegação / Árvore
+- [x] **Layout da área de objetos como na referência**: a aba Objects não desenha mais uma segunda barra vertical ao lado do
+      divisor do painel; sem schema ou conexão escolhidos a área fica em cinza e sem a linha sob a barra de botões
+      (com itens, a lista continua branca e com a linha) *(`src/styles/shell.css`, `ObjectsView.tsx`)*
 - [x] **Filtro da árvore em todos os níveis**: bancos, schemas e objetos são filtrados pelo texto (os pais de quem combina
       continuam visíveis) e o trecho encontrado fica destacado em amarelo; antes só filtrava conexões fechadas e objetos
       *(`buildVisibleTree` em `src/model.ts`, `NavigationPane.tsx`)*

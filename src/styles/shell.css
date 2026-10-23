@@ -432,6 +432,11 @@ input {
   border-left-color: var(--c-border);
 }
 
+/* A primeira aba (Objects) encosta no divisor do painel: sem borda própria, para não parecer uma barra dupla. */
+.tab:first-child.is-active {
+  border-left-color: transparent;
+}
+
 .tab-title {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -525,6 +530,15 @@ input {
   padding: 0 6px;
   border: 1px solid var(--c-border-strong);
   background: var(--c-surface);
+}
+
+/* Sem schema/conexão escolhidos a lista não tem o que mostrar: fundo cinza, sem linha sob a barra de botões. */
+.object-list.no-context {
+  background: var(--c-surface-alt);
+}
+
+.objects-view:has(> .object-list.no-context) > .object-toolbar {
+  border-bottom-color: transparent;
 }
 
 .object-list {
