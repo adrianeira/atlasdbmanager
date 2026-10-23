@@ -40,6 +40,7 @@ export function schemaFromServer(name: string, objs: SchemaObjects): SchemaMock 
       function: objs.functions.map(functionInfo),
       sequence: objs.sequences.map(objInfo),
       type: objs.types.map(objInfo),
+      extension: objs.extensions.map((e) => ({ name: e.name, version: e.version, extSchema: e.schema, owner: e.owner, comment: e.comment ?? undefined })),
       query: [],
       backup: [],
     },

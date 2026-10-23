@@ -520,6 +520,13 @@ const small: Record<string, ReactElement> = {
     </>
   ),
   type: <text x="8" y="12.5" textAnchor="middle" fontFamily="Segoe UI, sans-serif" fontWeight="700" fontSize="10" fill="#7a4fc4">T</text>,
+  // Extensão: peça de quebra-cabeça (módulo que se encaixa no banco).
+  extension: (
+    <path
+      d="M2.5 6h3a1.8 1.8 0 1 1 3.6 0h3.4v3.4a1.8 1.8 0 1 1 0 3.6V14.5h-9z"
+      fill="#e6f4ea" stroke="#2f9e57" strokeWidth="1.2" strokeLinejoin="round"
+    />
+  ),
   user: (
     <>
       <circle cx="8" cy="5.5" r="3" fill="#f3c27a" stroke="#c98a3a" strokeWidth=".8" />

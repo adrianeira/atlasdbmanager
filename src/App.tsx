@@ -28,6 +28,8 @@ import { ViewDesignerDoc, type ViewBackend } from "./documents/ViewDesignerDoc";
 import { refreshMatviewSql } from "./sql/view";
 import { dropFuncSql } from "./sql/func";
 import { dropSeqSql } from "./sql/sequence";
+import { dropExtSql } from "./sql/extension";
+import { ExtensionDesignerDoc, type ExtensionBackend } from "./documents/ExtensionDesignerDoc";
 import { dropTypeSql } from "./sql/typedef";
 import { dropRoleSql } from "./sql/role";
 import { RoleDesignerDoc, type RoleBackend } from "./documents/RoleDesignerDoc";
@@ -176,7 +178,7 @@ function paramsFor(c: ConnectionMock): ConnectionParams {
 
 const CATEGORY_LABEL: Record<Category, MessageKey> = {
   table: "tb.table", view: "tb.view", matview: "cat.matview", function: "tb.function",
-  sequence: "cat.sequence", type: "cat.type", user: "tb.user", query: "tb.query",
+  sequence: "cat.sequence", type: "cat.type", extension: "cat.extension", user: "tb.user", query: "tb.query",
   backup: "tb.backup", automation: "tb.automation", model: "tb.model", bi: "tb.bi",
 };
 
@@ -187,7 +189,7 @@ const FOLDER_LABEL: Partial<Record<Category, MessageKey>> = {
 
 const COUNT_LABEL: Record<Category, MessageKey> = {
   table: "status.count.table", view: "status.count.view", matview: "status.count.matview", function: "status.count.function",
-  sequence: "status.count.sequence", type: "status.count.type", user: "status.count.user", query: "status.count.query",
+  sequence: "status.count.sequence", type: "status.count.type", extension: "status.count.extension", user: "status.count.user", query: "status.count.query",
   backup: "status.count.backup", automation: "status.count.automation", model: "status.count.model", bi: "status.count.bi",
 };
 
@@ -210,7 +212,7 @@ interface DdlRequest {
   database: string;
   schema?: string;
   /** O que reler na árvore depois de executar. */
-  refresh: "connection" | "database" | "schema" | "roles";
+  refresh: "connection" | "database" | "schema" | "roles" | "extensions";
   danger?: boolean;
   /** `false` para comandos que o PostgreSQL não aceita em transação (CREATE/DROP DATABASE). */
   transactional?: boolean;
@@ -701,7 +703,7 @@ export default function App() {
     else void runDdl(d);
   };
   /** Pergunta da confirmação de exclusão, com o nome do objeto. */
-  const confirmDelete = (kind: "database" | "schema" | "table" | "view" | "matview" | "function" | "procedure" | "type" | "sequence" | "role", name: string) =>
+  const confirmDelete = (kind: "database" | "schema" | "table" | "view" | "matview" | "function" | "procedure" | "type" | "sequence" | "extension" | "role", name: string) =>
     t("msg.confirmDelete", { kind: t(`kind.${kind}`), name });
   const askName = (title: string, label: string, initial: string, onSubmit: (value: string) => void) =>
     setDialog({ kind: "name", title, label, initial, onSubmit });
@@ -783,6 +785,7 @@ export default function App() {
       const fail = (e: unknown) => showError(t("cmd.refresh"), e);
       if (d.refresh === "roles") void reloadRoles(d.connId).catch(fail);
       else if (d.refresh === "schema" && d.schema) void loadSchema(d.connId, d.database, d.schema, true).catch(fail);
+      else if (d.refresh === "extensions" && d.schema) reloadExtensions(d.connId, d.database, d.schema);
       else if (d.refresh === "database") void loadDatabase(d.connId, d.database, true).catch(fail);
       else {
         const node = nodes.find((n) => n.id === `conn:${seg(d.connId)}`);
@@ -872,13 +875,31 @@ export default function App() {
     openTab({ kind: "sequenceDesigner", title, windowTitle: title, icon: "sequence", connectionId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name });
   };
 
+  const newExtension = () => {
+    if (!ctx.connection || !ctx.database || !ctx.schema) return;
+    const title = objectTitle(t("des.untitled"), "cat.extension");
+    openTab({ kind: "extensionDesigner", title, windowTitle: title, icon: "extension", connectionId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name });
+  };
+
+  /**
+   * Depois de instalar, atualizar ou remover uma extensão: a lista é do banco inteiro e vem junto com cada schema,
+   * então relê o schema atual e marca os outros para serem relidos quando forem abertos.
+   */
+  const reloadExtensions = (connId: string, dbName: string, schemaName: string) => {
+    updateConn(connId, (c) => ({
+      ...c,
+      databases: c.databases.map((d) => (d.name !== dbName ? d : { ...d, schemas: d.schemas.map((s) => (s.name === schemaName ? s : { ...s, loaded: false })) })),
+    }));
+    void loadSchema(connId, dbName, schemaName, true).catch(() => undefined);
+  };
+
   const newMatview = () => {
     if (!ctx.connection || !ctx.database || !ctx.schema) return;
     const title = objectTitle(t("des.untitled"), "tb.matview");
     openTab({ kind: "viewDesigner", objectKind: "matview", title, windowTitle: title, icon: "matview", connectionId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name });
   };
 
-  /** REFRESH MATERIALIZED VIEW (revisão do comando antes de executar). */
+  /** REFRESH MATERIALIZED VIEW (executa direto). */
   const refreshMatview = (c: NodeContext, name: string, concurrently: boolean) => {
     if (!c.connection || !c.database || !c.schema) return;
     askDdl({
@@ -925,6 +946,7 @@ export default function App() {
       if (cat === "function") return newFunction();
       if (cat === "sequence") return newSequence();
       if (cat === "type") return newType();
+      if (cat === "extension") return newExtension();
       if (cat === "user") return newRole();
       return openTab({ kind: "placeholder", title: `${t("act.new")} ${t(CATEGORY_LABEL[cat])}`, icon: cat, note: t("placeholder.designer") });
     }
@@ -955,6 +977,9 @@ export default function App() {
       } else if (cat === "sequence" && c.connection?.live) {
         const title = objectTitle(name, "cat.sequence", c);
         openTab({ ...base, kind: "sequenceDesigner", title, windowTitle: title, icon: "sequence" }, `${t("act.design")} - ${name}`);
+      } else if (cat === "extension" && c.connection?.live) {
+        const title = objectTitle(name, "cat.extension", c);
+        openTab({ ...base, kind: "extensionDesigner", title, windowTitle: title, icon: "extension" }, `${t("act.design")} - ${name}`);
       } else if (cat === "matview" && kind === "open") {
         const title = objectTitle(name, "tb.matview", c);
         openTab({ ...base, kind: "data", objectKind: "matview", title, windowTitle: title, icon: "matview" }, `${t("act.openMatview")} - ${name}`);
@@ -1397,6 +1422,33 @@ export default function App() {
       );
     }
 
+    if (node.kind === "folder" && node.category === "extension") {
+      items.push(
+        item("act.new", newExtension),
+        item("cmd.newQuery", () => newQuery()),
+        sep,
+        item("cmd.refresh", live ? () => refreshNode(node) : undefined),
+      );
+    }
+
+    if (node.kind === "object" && node.category === "extension" && c.connection && c.database && c.schema && c.objectName) {
+      const name = c.objectName;
+      const scope = { connId: c.connection.id, database: c.database.name, schema: c.schema.name, refresh: "extensions" as const };
+      items.push(
+        item("act.design", () => openObjects("design", [name], "extension", c)),
+        item("act.new", newExtension),
+        item("act.delete", live ? () => askDdl({
+          ...scope, title: t("act.delete"), message: confirmDelete("extension", name), note: t("ext.deleteNote"),
+          statements: [dropExtSql(name)], danger: true, confirmText: prod ? name : undefined,
+        }) : undefined),
+        sep,
+        item("cmd.copyName", () => { void navigator.clipboard?.writeText(name).catch(() => undefined); }),
+        sep,
+        item("cmd.refresh", live ? () => refreshNode(node) : undefined),
+        item("cmd.objectInfo", () => patchLayout({ infoVisible: true })),
+      );
+    }
+
     if (node.kind === "folder" && node.category === "function") {
       items.push(
         item("act.newFunction", newFunction),
@@ -1754,6 +1806,7 @@ export default function App() {
     : active.kind === "functionDesigner" ? "function"
     : active.kind === "sequenceDesigner" ? "sequence"
     : active.kind === "typeDesigner" ? "type"
+    : active.kind === "extensionDesigner" ? "extension"
     : active.kind === "roleDesigner" ? "user"
     : active.objectKind === "matview" ? "matview"
     : active.kind === "viewDesigner" || (active.kind === "data" && active.objectKind === "view") ? "view"
@@ -1915,6 +1968,18 @@ export default function App() {
     });
   };
 
+  const extensionBackends = useRef<Record<string, ExtensionBackend>>({});
+  const extensionBackendFor = (tab: DocTab, conn: ConnectionMock): ExtensionBackend => {
+    const db = tab.database ?? "";
+    return (extensionBackends.current[tab.id] ??= {
+      loadDetail: (name) => pg.extensionDetail(conn.id, db, name),
+      loadAvailable: () => pg.availableExtensions(conn.id, db),
+      apply: async (statements) => {
+        await pg.apply(conn.id, db, statements.map((sql) => ({ sql, params: [], expectOneRow: false })));
+      },
+    });
+  };
+
   const renderDoc = (tab: DocTab) => {
     const isActive = tab.id === activeTab;
     if (tab.kind === "query") {
@@ -2061,6 +2126,27 @@ export default function App() {
             if (conn?.live && tab.database && tab.schema) void loadSchema(conn.id, tab.database, tab.schema, true).catch(() => undefined);
           }}
           backend={conn?.live ? sequenceBackendFor(tab, conn) : undefined}
+        />
+      );
+    }
+    if (tab.kind === "extensionDesigner") {
+      const conn = connections.find((c) => c.id === tab.connectionId);
+      return (
+        <ExtensionDesignerDoc
+          schema={tab.schema ?? "public"}
+          schemas={conn?.databases.find((d) => d.name === tab.database)?.schemas.map((s) => s.name) ?? []}
+          extName={tab.object}
+          serverVersionNum={conn?.serverVersionNum ?? 0}
+          active={isActive}
+          production={conn?.environment === "production"}
+          onStatus={statusFor(tab.id)}
+          onDirty={(dirty) => setTabDirty(tab.id, dirty)}
+          onSaved={(name) => {
+            const title = objectTitle(name, "cat.extension", resolveNode(`schema:${seg(tab.connectionId ?? "")}/${seg(tab.database ?? "")}/${seg(tab.schema ?? "")}`, connections));
+            setTabs((ts) => ts.map((x) => (x.id === tab.id ? { ...x, object: name, title, windowTitle: title } : x)));
+            if (conn?.live && tab.database && tab.schema) reloadExtensions(conn.id, tab.database, tab.schema);
+          }}
+          backend={conn?.live ? extensionBackendFor(tab, conn) : undefined}
         />
       );
     }

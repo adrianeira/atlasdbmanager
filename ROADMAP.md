@@ -206,6 +206,15 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       padrão, `NOT NULL` e restrições `CHECK`; renomear, dono e comentário; faixa só para leitura
       *(`src/documents/TypeDesignerDoc.tsx`, `src/sql/typedef.ts`, `crates/atlas-pg/src/meta.rs`)*
 
+### Extensões
+- [x] A lista **Outros → Extensão** mostra as extensões instaladas no banco (nome, versão, schema, dono, comentário), a mesma
+      em qualquer schema; duplo clique abre o designer; **Nova** e **Excluir** (`DROP EXTENSION`) pelo menu de contexto
+- [x] **Nova extensão**: escolhe entre as que o servidor oferece e ainda não estão instaladas (`pg_available_extensions`),
+      com versão (padrão se vazio), schema (fixo quando o arquivo de controle da extensão o define) e `CASCADE` (9.6+)
+- [x] **Extensão instalada**: atualizar a versão (só as com caminho de atualização, `pg_extension_update_paths`), mover de
+      schema (só extensão relocável) e comentário; dono só para leitura
+      *(`src/documents/ExtensionDesignerDoc.tsx`, `src/sql/extension.ts`, `crates/atlas-pg/src/meta.rs`)*
+
 ### Usuários e papéis
 - [x] Botão **Papel/Usuário** da barra: lista os papéis do servidor; duplo clique ou **Editar**; **Novo** e **Excluir**
       (`DROP ROLE`) pelo menu de contexto
@@ -380,7 +389,7 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [x] Type (ENUM, composto, domínio): designer (ver "Tipos" em Entregues)
 - [x] Sequence: designer, reiniciar, definir valor (ver "Sequências" em Entregues)
 - [ ] Event Trigger (gatilhos de evento do banco; os gatilhos de tabela já estão no designer)
-- [ ] Extension
+- [x] Extension: lista, instalar, atualizar, mover de schema e remover (ver "Extensões" em Entregues)
 - [ ] Foreign Server / Foreign Table
 - [ ] Publication / Subscription (replicação lógica)
 - [x] Role / User manager: atributos, senha e participações (ver "Usuários e papéis" em Entregues); o gerenciador de

@@ -112,6 +112,46 @@ pub struct SchemaObjects {
     /// Tipos próprios do schema: enum, composto, domínio e faixa (`data_type` diz qual).
     pub types: Vec<ObjectInfo>,
     pub sequences: Vec<ObjectInfo>,
+    /// Extensões instaladas no banco (valem para o banco todo, não para o schema: a lista é a mesma em todos).
+    pub extensions: Vec<ExtensionInfo>,
+}
+
+/// Extensão instalada (`pg_extension`).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionInfo {
+    pub name: String,
+    pub version: String,
+    /// Schema onde os objetos da extensão foram instalados.
+    pub schema: String,
+    pub owner: String,
+    pub comment: Option<String>,
+}
+
+/// Extensão que o servidor oferece e que ainda não está instalada neste banco (`pg_available_extensions`).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AvailableExtension {
+    pub name: String,
+    pub default_version: String,
+    pub comment: Option<String>,
+    /// Schema fixo no arquivo de controle da extensão (`schema = ...`); `None` = escolha livre.
+    pub fixed_schema: Option<String>,
+}
+
+/// Extensão instalada, com o que o designer precisa para alterá-la.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionDetail {
+    pub name: String,
+    pub version: String,
+    pub schema: String,
+    pub owner: String,
+    /// Só uma extensão relocável muda de schema (`ALTER EXTENSION ... SET SCHEMA`).
+    pub relocatable: bool,
+    pub comment: Option<String>,
+    /// Versões para as quais há caminho de atualização a partir da instalada (`pg_extension_update_paths`).
+    pub update_versions: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -448,6 +448,42 @@ async fn role_detail_reads_attributes_and_memberships() {
     atlas_pg::execute(&s, &format!("DROP ROLE {usuario}; DROP ROLE {grupo}"), 1).await.unwrap();
 }
 
+/// Extensões: lista do banco (com o schema de cada uma), disponíveis para instalar e detalhe de uma instalada.
+#[tokio::test]
+async fn extensions_are_listed_available_and_described() {
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+
+    // O plpgsql vem em todo banco e vive em pg_catalog; a lista é a mesma em qualquer schema.
+    let objs = atlas_pg::list_objects(&s, "public").await.expect("objects");
+    let pl = objs.extensions.iter().find(|e| e.name == "plpgsql").expect("plpgsql instalado");
+    assert_eq!(pl.schema, "pg_catalog");
+    assert!(!pl.version.is_empty() && !pl.owner.is_empty());
+    let d = atlas_pg::extension_detail(&s, "plpgsql").await.expect("detail");
+    assert_eq!((d.schema.as_str(), d.relocatable), ("pg_catalog", false));
+    assert!(atlas_pg::extension_detail(&s, "atlas_nao_existe_xyz").await.is_err());
+
+    // As disponíveis não incluem as já instaladas.
+    let avail = atlas_pg::available_extensions(&s).await.expect("available");
+    assert!(!avail.iter().any(|a| a.name == "plpgsql"));
+
+    // Instala e remove uma extensão leve, se o servidor a oferece e ela ainda não está no banco
+    // (sem permissão para criar extensões, esta parte é pulada).
+    if let Some(a) = avail.iter().find(|a| a.name == "pg_trgm") {
+        if atlas_pg::execute(&s, "CREATE EXTENSION pg_trgm", 1).await.is_ok() {
+            atlas_pg::execute(&s, "COMMENT ON EXTENSION pg_trgm IS 'busca por similaridade'", 1).await.unwrap();
+            let d = atlas_pg::extension_detail(&s, "pg_trgm").await.expect("pg_trgm");
+            assert_eq!(d.version, a.default_version);
+            assert_eq!(d.comment.as_deref(), Some("busca por similaridade"));
+            assert!(d.relocatable);
+            let nova = atlas_pg::list_objects(&s, "public").await.expect("objects");
+            assert!(nova.extensions.iter().any(|e| e.name == "pg_trgm"));
+            atlas_pg::execute(&s, "DROP EXTENSION pg_trgm", 1).await.unwrap();
+            assert!(atlas_pg::extension_detail(&s, "pg_trgm").await.is_err());
+        }
+    }
+}
+
 /// "Editar banco": lê os atributos e roda os mesmos comandos que a interface monta (`src/sql/dbedit.ts`),
 /// com o `RENAME TO` por último, num banco descartável.
 #[tokio::test]

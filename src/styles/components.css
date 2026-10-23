@@ -2079,6 +2079,7 @@ select.et-input {
 .snip-hint { font-size: 11px; }
 
 /* Designer de sequência. */
+.ext-note { font-size: 11px; max-width: 420px; padding: 2px 0 4px; }
 .seq-position { margin-top: 12px; padding: 8px 12px; border: 1px solid var(--c-border); background: var(--c-surface-alt); display: flex; flex-direction: column; gap: 3px; width: max-content; max-width: 100%; }
 .field.is-invalid { border-color: var(--c-danger); }
 

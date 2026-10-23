@@ -73,6 +73,38 @@ export interface SchemaObjects {
   functions: ObjectInfo[];
   types: ObjectInfo[];
   sequences: ObjectInfo[];
+  /** Extensões do banco inteiro (a mesma lista em qualquer schema). */
+  extensions: ExtensionInfo[];
+}
+
+/** Extensão instalada, com o schema onde foi instalada. */
+export interface ExtensionInfo {
+  name: string;
+  version: string;
+  schema: string;
+  owner: string;
+  comment: string | null;
+}
+
+/** Extensão que o servidor oferece e ainda não está instalada neste banco. */
+export interface AvailableExtension {
+  name: string;
+  defaultVersion: string;
+  comment: string | null;
+  /** Schema fixo no arquivo de controle da extensão; `null` = escolha livre. */
+  fixedSchema: string | null;
+}
+
+export interface ExtensionDetail {
+  name: string;
+  version: string;
+  schema: string;
+  owner: string;
+  /** Só uma extensão relocável muda de schema. */
+  relocatable: boolean;
+  comment: string | null;
+  /** Versões para as quais há caminho de atualização a partir da instalada. */
+  updateVersions: string[];
 }
 
 export interface OrderBy { column: string; descending?: boolean }
@@ -527,6 +559,10 @@ export const pg = {
   import: (req: ImportRequest) => call<ImportSummary>("pg_import", { req }),
   dumpSql: (req: DumpRequest) => call<DumpResult>("pg_dump_sql", { req }),
   find: (sessionId: string, database: string, options: FindOptions) => call<FindResult>("pg_find", { sessionId, database, options }),
+  availableExtensions: (sessionId: string, database: string) =>
+    call<AvailableExtension[]>("pg_available_extensions", { sessionId, database }),
+  extensionDetail: (sessionId: string, database: string, name: string) =>
+    call<ExtensionDetail>("pg_extension_detail", { sessionId, database, name }),
   databaseDetail: (sessionId: string, name: string) => call<DatabaseDetail>("pg_database_detail", { sessionId, name }),
   schemaDetail: (sessionId: string, database: string, name: string) =>
     call<SchemaDetail>("pg_schema_detail", { sessionId, database, name }),

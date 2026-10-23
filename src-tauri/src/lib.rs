@@ -146,6 +146,8 @@ pub fn run() {
             commands::pg_function_detail,
             commands::pg_sequence_detail,
             commands::pg_type_detail,
+            commands::pg_available_extensions,
+            commands::pg_extension_detail,
             commands::pg_database_detail,
             commands::pg_schema_detail,
             commands::pg_role_detail,

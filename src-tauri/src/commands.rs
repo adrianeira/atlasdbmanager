@@ -4,7 +4,7 @@
 use crate::local::Local;
 use crate::sessions::Sessions;
 use atlas_core::{
-    ConnectionParams, DatabaseDetail, DatabaseError, DatabaseList, FunctionDetail, OrderBy, RoleDetail, SchemaDetail, SequenceDetail,
+    AvailableExtension, ConnectionParams, DatabaseDetail, DatabaseError, DatabaseList, ExtensionDetail, FunctionDetail, OrderBy, RoleDetail, SchemaDetail, SequenceDetail,
     TypeDetail, QueryOutcome, RoleInfo, SchemaInfo, SchemaObjects, ServerInfo, TableDetail, TableFilter, ViewDetail,
 };
 use serde::Serialize;
@@ -110,6 +110,28 @@ pub async fn pg_find(
 ) -> Result<atlas_pg::FindResult, DatabaseError> {
     let s = sessions.get(&session_id, Some(&database)).await?;
     atlas_pg::find(&s, &options).await
+}
+
+/// Extensões que o servidor oferece e ainda não estão instaladas no banco.
+#[tauri::command]
+pub async fn pg_available_extensions(
+    sessions: State<'_, Sessions>,
+    session_id: String,
+    database: String,
+) -> Result<Vec<AvailableExtension>, DatabaseError> {
+    let s = sessions.get(&session_id, Some(&database)).await?;
+    atlas_pg::available_extensions(&s).await
+}
+
+#[tauri::command]
+pub async fn pg_extension_detail(
+    sessions: State<'_, Sessions>,
+    session_id: String,
+    database: String,
+    name: String,
+) -> Result<ExtensionDetail, DatabaseError> {
+    let s = sessions.get(&session_id, Some(&database)).await?;
+    atlas_pg::extension_detail(&s, &name).await
 }
 
 /// Atributos de um banco (leitura do catálogo do cluster; usa a sessão do banco inicial).

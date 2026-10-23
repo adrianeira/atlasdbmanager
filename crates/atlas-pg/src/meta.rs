@@ -4,7 +4,8 @@
 use crate::connect::PgSession;
 use crate::error::map_error;
 use atlas_core::{
-    ColumnInfo, ConstraintInfo, DatabaseDetail, DatabaseError, DatabaseList, ErrorKind, IndexInfo, ObjectInfo, RoleInfo, RuleInfo,
+    AvailableExtension, ColumnInfo, ConstraintInfo, DatabaseDetail, DatabaseError, DatabaseList, ErrorKind, ExtensionDetail,
+    ExtensionInfo, IndexInfo, ObjectInfo, RoleInfo, RuleInfo,
     FunctionDetail, RoleDetail, SchemaDetail, SchemaInfo, SchemaObjects, SequenceDetail, TableDetail, TypeAttribute, TypeCheck, TypeDetail,
     TriggerInfo, ViewDetail,
 };
@@ -125,7 +126,82 @@ pub async fn list_objects(s: &PgSession, schema: &str) -> Result<SchemaObjects, 
         .map(|r| ObjectInfo { name: r.get(0), data_type: Some(r.get(1)), owner: r.get(2), comment: r.get(3), ..Default::default() })
         .collect();
 
-    Ok(SchemaObjects { tables, views, matviews, functions, types, sequences })
+    // Extensões são do banco inteiro: a mesma lista aparece em qualquer schema, com o schema de cada uma.
+    let erows = s
+        .client
+        .query(
+            "SELECT e.extname::text, e.extversion::text, n.nspname::text, pg_get_userbyid(e.extowner)::text, \
+                    obj_description(e.oid, 'pg_extension') \
+               FROM pg_catalog.pg_extension e JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace \
+              ORDER BY e.extname",
+            &[],
+        )
+        .await
+        .map_err(|e| map_error(&e))?;
+    let extensions = erows
+        .iter()
+        .map(|r| ExtensionInfo { name: r.get(0), version: r.get(1), schema: r.get(2), owner: r.get(3), comment: r.get(4) })
+        .collect();
+
+    Ok(SchemaObjects { tables, views, matviews, functions, types, sequences, extensions })
+}
+
+/// Extensões que o servidor oferece e ainda não foram instaladas neste banco (para o "Nova extensão").
+pub async fn available_extensions(s: &PgSession) -> Result<Vec<AvailableExtension>, DatabaseError> {
+    let rows = s
+        .client
+        .query(
+            "SELECT a.name::text, a.default_version::text, a.comment, v.schema::text \
+               FROM pg_catalog.pg_available_extensions a \
+               LEFT JOIN pg_catalog.pg_available_extension_versions v ON v.name = a.name AND v.version = a.default_version \
+              WHERE a.installed_version IS NULL ORDER BY a.name",
+            &[],
+        )
+        .await
+        .map_err(|e| map_error(&e))?;
+    Ok(rows
+        .iter()
+        .map(|r| AvailableExtension { name: r.get(0), default_version: r.get(1), comment: r.get(2), fixed_schema: r.get(3) })
+        .collect())
+}
+
+/// Uma extensão instalada, com as versões para as quais ela pode ser atualizada.
+pub async fn extension_detail(s: &PgSession, name: &str) -> Result<ExtensionDetail, DatabaseError> {
+    let row = s
+        .client
+        .query_opt(
+            "SELECT e.extversion::text, n.nspname::text, pg_get_userbyid(e.extowner)::text, e.extrelocatable, \
+                    obj_description(e.oid, 'pg_extension') \
+               FROM pg_catalog.pg_extension e JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace \
+              WHERE e.extname = $1",
+            &[&name],
+        )
+        .await
+        .map_err(|e| map_error(&e))?;
+    let Some(r) = row else {
+        let mut err = DatabaseError::new(ErrorKind::Server, format!("extension \"{name}\" does not exist"));
+        err.code = Some("42704".into());
+        return Err(err);
+    };
+    let version: String = r.get(0);
+    let paths = s
+        .client
+        .query(
+            "SELECT target::text FROM pg_catalog.pg_extension_update_paths($1::name) \
+              WHERE source = $2 AND path IS NOT NULL AND target <> $2 ORDER BY target",
+            &[&name, &version],
+        )
+        .await
+        .map_err(|e| map_error(&e))?;
+    Ok(ExtensionDetail {
+        name: name.to_string(),
+        version,
+        schema: r.get(1),
+        owner: r.get(2),
+        relocatable: r.get(3),
+        comment: r.get(4),
+        update_versions: paths.iter().map(|p| p.get(0)).collect(),
+    })
 }
 
 /// Tamanho/decimais no formato da grade de campos (deriva de `atttypmod`).
