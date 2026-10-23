@@ -6,7 +6,8 @@
     "main",
     "qb-*",
     "dt-*",
-    "ds-*"
+    "ds-*",
+    "ss-*"
   ],
   "permissions": [
     "core:default",

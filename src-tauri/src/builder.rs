@@ -87,46 +87,40 @@ pub struct DataTransferOpen {
     pub params: serde_json::Value,
 }
 
-/// Abre (ou traz para a frente) a janela do Data Transfer, também uma janela do sistema à parte.
-#[tauri::command]
-pub async fn open_data_transfer(app: AppHandle, args: State<'_, WebviewArgs>, req: DataTransferOpen) -> Result<(), String> {
-    let label = "dt-main";
+/// Abre (ou traz para a frente) uma janela de ferramenta do sistema (`label`), entregando os parâmetros em `global`.
+fn open_tool(app: &AppHandle, args: &WebviewArgs, label: &str, global: &str, req: &DataTransferOpen) -> Result<(), String> {
     if let Some(existing) = app.get_webview_window(label) {
         let _ = existing.unminimize();
         let _ = existing.set_focus();
         return Ok(());
     }
-    let init = format!("window.__ATLAS_DT__ = {};", serde_json::to_string(&req.params).map_err(|e| e.to_string())?);
-    let builder = WebviewWindowBuilder::new(&app, label, WebviewUrl::default())
+    let init = format!("window.{global} = {};", serde_json::to_string(&req.params).map_err(|e| e.to_string())?);
+    let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::default())
         .title(&req.title)
         .inner_size(1186.0, 793.0)
         .min_inner_size(900.0, 560.0)
         .center()
         .initialization_script(&init)
-        .background_color(backdrop(&app))
+        .background_color(backdrop(app))
         .additional_browser_args(&args.0);
     show_when_loaded(builder).build().map_err(|e| e.to_string())?;
     Ok(())
 }
 
-/// Abre (ou traz para a frente) a janela do Data Synchronization, também uma janela do sistema à parte.
+/// Data Transfer.
+#[tauri::command]
+pub async fn open_data_transfer(app: AppHandle, args: State<'_, WebviewArgs>, req: DataTransferOpen) -> Result<(), String> {
+    open_tool(&app, &args, "dt-main", "__ATLAS_DT__", &req)
+}
+
+/// Data Synchronization.
 #[tauri::command]
 pub async fn open_data_sync(app: AppHandle, args: State<'_, WebviewArgs>, req: DataTransferOpen) -> Result<(), String> {
-    let label = "ds-main";
-    if let Some(existing) = app.get_webview_window(label) {
-        let _ = existing.unminimize();
-        let _ = existing.set_focus();
-        return Ok(());
-    }
-    let init = format!("window.__ATLAS_DS__ = {};", serde_json::to_string(&req.params).map_err(|e| e.to_string())?);
-    let builder = WebviewWindowBuilder::new(&app, label, WebviewUrl::default())
-        .title(&req.title)
-        .inner_size(1186.0, 793.0)
-        .min_inner_size(900.0, 560.0)
-        .center()
-        .initialization_script(&init)
-        .background_color(backdrop(&app))
-        .additional_browser_args(&args.0);
-    show_when_loaded(builder).build().map_err(|e| e.to_string())?;
-    Ok(())
+    open_tool(&app, &args, "ds-main", "__ATLAS_DS__", &req)
+}
+
+/// Structure Synchronization.
+#[tauri::command]
+pub async fn open_struct_sync(app: AppHandle, args: State<'_, WebviewArgs>, req: DataTransferOpen) -> Result<(), String> {
+    open_tool(&app, &args, "ss-main", "__ATLAS_SS__", &req)
 }

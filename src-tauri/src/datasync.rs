@@ -67,17 +67,17 @@ pub struct CompareSummary {
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct ProgressEvent<'a> {
-    id: &'a str,
-    text: String,
-    fraction: f64,
+pub(crate) struct ProgressEvent<'a> {
+    pub id: &'a str,
+    pub text: String,
+    pub fraction: f64,
 }
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct LogEvent<'a> {
-    id: &'a str,
-    line: String,
+pub(crate) struct LogEvent<'a> {
+    pub id: &'a str,
+    pub line: String,
 }
 
 #[tauri::command]
@@ -220,10 +220,10 @@ pub struct DeployCounts {
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct DeployProgress<'a> {
-    id: &'a str,
-    done: u64,
-    total: u64,
+pub(crate) struct DeployProgress<'a> {
+    pub id: &'a str,
+    pub done: u64,
+    pub total: u64,
 }
 
 #[tauri::command]
