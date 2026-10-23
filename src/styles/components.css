@@ -2089,3 +2089,14 @@ select.et-input {
 .role-list { flex: 1; min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--c-border); }
 .role-list-title { padding: 4px 8px; font-weight: 600; background: var(--c-surface-alt); border-bottom: 1px solid var(--c-border); }
 .role-list-body { flex: 1; overflow: auto; padding: 4px 8px; }
+
+/* Localizar no banco/schema. */
+.find-dialog { width: min(980px, 94vw); height: min(620px, 86vh); display: flex; flex-direction: column; }
+.find-form { padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; border-bottom: 1px solid var(--c-border); }
+.find-row { display: flex; gap: 8px; }
+.find-text { flex: 1; min-width: 0; }
+.find-options { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; }
+.find-sep { width: 1px; height: 14px; background: var(--c-border); }
+.find-results { flex: 1; min-height: 0; overflow: auto; }
+.find-results .grid-table { width: 100%; }
+.find-snippet { font: 12px/1.35 var(--font-mono); color: var(--c-text-muted); max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

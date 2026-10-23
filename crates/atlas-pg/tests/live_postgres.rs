@@ -484,6 +484,107 @@ async fn triggers_are_described_in_full() {
 }
 
 #[tokio::test]
+async fn find_searches_names_columns_definitions_and_comments() {
+    use atlas_pg::FindOptions;
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    let ns = format!("atlas_fd_{}", std::process::id());
+    let other = format!("{ns}_b");
+    atlas_pg::execute(
+        &s,
+        &format!(
+            "DROP SCHEMA IF EXISTS {ns} CASCADE; DROP SCHEMA IF EXISTS {other} CASCADE; CREATE SCHEMA {ns}; CREATE SCHEMA {other}; \
+             CREATE TABLE {ns}.clientes(id integer, cod_Zeta text, nome text); \
+             CREATE VIEW {ns}.v_vendas AS SELECT id FROM {ns}.clientes WHERE nome LIKE 'zeta%'; \
+             CREATE FUNCTION {ns}.calcula() RETURNS integer LANGUAGE sql AS $$ SELECT count(*)::integer FROM {ns}.clientes /* ZETA */ $$; \
+             CREATE TYPE {ns}.tipo_zeta AS ENUM ('a'); \
+             CREATE SEQUENCE {ns}.seq_zeta; \
+             COMMENT ON TABLE {ns}.clientes IS 'cadastro de zeta'; \
+             COMMENT ON COLUMN {ns}.clientes.nome IS 'nome do ZETA'; \
+             CREATE TABLE {other}.zeta_outro(id integer)"
+        ),
+        1,
+    )
+    .await
+    .unwrap();
+
+    let opts = |text: &str| FindOptions {
+        text: text.into(),
+        schema: Some(ns.clone()),
+        match_case: false,
+        regex: false,
+        names: true,
+        columns: true,
+        definitions: true,
+        comments: true,
+    };
+    let run = |o: FindOptions| {
+        let s = &s;
+        async move { atlas_pg::find(s, &o).await.unwrap() }
+    };
+    // Tudo que contém "zeta" no schema: nomes (tipo, sequência), coluna, definição de view e função, 2 comentários.
+    let all = run(opts("zeta")).await;
+    let summary: Vec<(String, String, String)> =
+        all.hits.iter().map(|h| (h.kind.clone(), h.name.clone(), format!("{}{}", h.matched_in, h.column.as_deref().map(|c| format!(":{c}")).unwrap_or_default()))).collect();
+    for want in [
+        ("type", "tipo_zeta", "name"),
+        ("sequence", "seq_zeta", "name"),
+        ("table", "clientes", "column:cod_zeta"),
+        ("view", "v_vendas", "definition"),
+        ("function", "calcula", "definition"),
+        ("table", "clientes", "comment"),
+        ("table", "clientes", "comment:nome"),
+    ] {
+        assert!(summary.iter().any(|(k, n, m)| (k.as_str(), n.as_str(), m.as_str()) == want), "{want:?} em {summary:?}");
+    }
+    // O outro schema só entra sem o filtro.
+    assert!(all.hits.iter().all(|h| h.schema == ns));
+    let mut everywhere = opts("zeta_outro");
+    everywhere.schema = None;
+    assert!(run(everywhere).await.hits.iter().any(|h| h.schema == other && h.name == "zeta_outro"));
+
+    // O trecho da definição mostra o contexto.
+    let f = all.hits.iter().find(|h| h.kind == "function" && h.matched_in == "definition").unwrap();
+    assert!(f.snippet.as_deref().unwrap().contains("ZETA"), "{:?}", f.snippet);
+    assert_eq!(f.identity.as_deref(), Some(""));
+
+    // Só nomes / diferenciar maiúsculas / regex.
+    let mut only_names = opts("zeta");
+    only_names.columns = false;
+    only_names.definitions = false;
+    only_names.comments = false;
+    assert!(run(only_names).await.hits.iter().all(|h| h.matched_in == "name"));
+    let mut case = opts("ZETA");
+    case.match_case = true;
+    case.names = false;
+    case.columns = false;
+    let hits = run(case).await.hits;
+    assert!(hits.iter().any(|h| h.matched_in == "definition") && hits.iter().all(|h| h.name != "tipo_zeta"), "{hits:?}");
+    let mut regex = opts("^(seq|tipo)_zeta$");
+    regex.regex = true;
+    regex.columns = false;
+    regex.definitions = false;
+    regex.comments = false;
+    let hits = run(regex).await.hits;
+    assert_eq!(hits.len(), 2, "{hits:?}");
+
+    // Curingas do LIKE valem como texto; regex inválida volta como erro do servidor.
+    assert!(run(opts("z%a")).await.hits.is_empty());
+    let mut bad = opts("(");
+    bad.regex = true;
+    assert!(atlas_pg::find(&s, &bad).await.is_err());
+    // Cada categoria sozinha também funciona (antes os literais sem tipo quebravam a ordenação num servidor 9.6).
+    for only in ["names", "columns", "definitions", "comments"] {
+        let mut o = opts("zeta");
+        (o.names, o.columns, o.definitions, o.comments) = (only == "names", only == "columns", only == "definitions", only == "comments");
+        assert!(!run(o).await.hits.is_empty(), "só {only}");
+    }
+    // Sem texto ou sem nenhuma categoria marcada: nada.
+    assert!(run(opts("")).await.hits.is_empty());
+    atlas_pg::execute(&s, &format!("DROP SCHEMA {ns} CASCADE; DROP SCHEMA {other} CASCADE"), 1).await.unwrap();
+}
+
+#[tokio::test]
 async fn syntax_error_reports_position() {
     let p = require_server!();
     let s = atlas_pg::connect(&p, None).await.expect("connect");

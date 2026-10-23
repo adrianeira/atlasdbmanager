@@ -124,6 +124,36 @@ export interface ViewDetail {
   populated: boolean;
 }
 
+export interface FindOptions {
+  text: string;
+  /** Só este schema; null = todos os schemas do usuário. */
+  schema: string | null;
+  matchCase: boolean;
+  /** Expressão regular do PostgreSQL em vez de texto simples. */
+  regex: boolean;
+  names: boolean;
+  columns: boolean;
+  definitions: boolean;
+  comments: boolean;
+}
+
+export interface FindHit {
+  schema: string;
+  kind: "table" | "view" | "matview" | "sequence" | "type" | "function";
+  name: string;
+  /** Funções: argumentos de identidade. */
+  identity: string | null;
+  column: string | null;
+  matchedIn: "name" | "column" | "definition" | "comment";
+  snippet: string | null;
+}
+
+export interface FindResult {
+  hits: FindHit[];
+  /** Havia mais achados que o limite. */
+  truncated: boolean;
+}
+
 export interface RoleDetail {
   name: string;
   superuser: boolean;
@@ -338,6 +368,7 @@ export const pg = {
     call<TableDetail>("pg_table_detail", { sessionId, database, schema, table }),
   viewDetail: (sessionId: string, database: string, schema: string, view: string) =>
     call<ViewDetail>("pg_view_detail", { sessionId, database, schema, view }),
+  find: (sessionId: string, database: string, options: FindOptions) => call<FindResult>("pg_find", { sessionId, database, options }),
   roleDetail: (sessionId: string, name: string) => call<RoleDetail>("pg_role_detail", { sessionId, name }),
   typeDetail: (sessionId: string, database: string, schema: string, name: string) =>
     call<TypeDetail>("pg_type_detail", { sessionId, database, schema, name }),

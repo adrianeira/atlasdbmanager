@@ -100,6 +100,18 @@ pub async fn pg_view_detail(
     atlas_pg::view_detail(&s, &schema, &view).await
 }
 
+/// "Localizar no banco/schema": nomes, colunas, definições e comentários.
+#[tauri::command]
+pub async fn pg_find(
+    sessions: State<'_, Sessions>,
+    session_id: String,
+    database: String,
+    options: atlas_pg::FindOptions,
+) -> Result<atlas_pg::FindResult, DatabaseError> {
+    let s = sessions.get(&session_id, Some(&database)).await?;
+    atlas_pg::find(&s, &options).await
+}
+
 #[tauri::command]
 pub async fn pg_role_detail(sessions: State<'_, Sessions>, session_id: String, name: String) -> Result<RoleDetail, DatabaseError> {
     let s = sessions.get(&session_id, None).await?;

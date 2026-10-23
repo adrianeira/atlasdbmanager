@@ -155,6 +155,16 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       transição aparecem só para leitura
       *(`src/documents/TableDesignerDoc.tsx`, `src/sql/ddl.ts`, `crates/atlas-pg/src/meta.rs`)*
 
+### Localizar no banco / schema
+- [x] **Localizar no banco de dados...** (menu do banco) e **Localizar no schema...** (menu do schema): procura em
+      **nomes** de objetos (tabelas, views, views materializadas, sequências, tipos, funções), **nomes de colunas**,
+      **definições** (views, views materializadas e corpo de funções) e **comentários** (de objetos e de colunas)
+- [x] Opções: diferenciar maiúsculas, **expressão regular** e restringir ao schema; texto simples vale literalmente
+      (`%` e `_` não são curingas); até 500 resultados com aviso de corte
+- [x] Cada resultado mostra o trecho em que achou; **duplo clique abre** o objeto (dados, designer da tabela para
+      colunas, designer de função, sequência ou tipo), carregando o schema se preciso
+      *(`src/components/FindDialog.tsx`, `crates/atlas-pg/src/find.rs`)*
+
 ### Navegação / Árvore
 - [x] **Fechar schema** no menu de contexto (colapsa + marca como não-carregado para rebuscar
       na próxima abertura) *(`src/App.tsx`)*
@@ -212,7 +222,7 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 
 ## 2. Árvore / Navegação
 - [ ] Filtro avançado da árvore *(`src/components/NavigationPane.tsx:172`)*
-- [ ] Find in Database / Find in Schema *(item `cmd.findInDatabase` sem handler)*
+- [x] Find in Database / Find in Schema (ver "Localizar no banco" em Entregues)
 - [ ] Console do servidor *(item `cmd.console` sem handler)*
 - [ ] Share *(`cmd.share` sem handler)*
 - [ ] Edit Database / Edit Schema *(sem handler)*
