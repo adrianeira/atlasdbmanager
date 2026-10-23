@@ -8,7 +8,8 @@
     "dt-*",
     "ds-*",
     "ss-*",
-    "dg-*"
+    "dg-*",
+    "dd-*"
   ],
   "permissions": [
     "core:default",

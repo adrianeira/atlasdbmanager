@@ -2,6 +2,7 @@ mod backup;
 mod builder;
 mod commands;
 mod datagen;
+mod dictionary;
 mod datasync;
 mod structsync;
 mod dump;
@@ -70,6 +71,7 @@ pub fn run() {
         .manage(tx::Transactions::default())
         .manage(datasync::Comparisons::default())
         .manage(structsync::StructComparisons::default())
+        .manage(dictionary::DictRuns::default())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Info).build())?;
@@ -180,6 +182,11 @@ pub fn run() {
             builder::open_data_sync,
             builder::open_struct_sync,
             builder::open_data_gen,
+            builder::open_data_dictionary,
+            dictionary::dict_generate,
+            dictionary::dict_cancel,
+            dictionary::dict_preview,
+            dictionary::dict_open,
             datagen::datagen_describe,
             datagen::datagen_preview,
             datagen::datagen_run,

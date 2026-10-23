@@ -133,6 +133,7 @@ name = "atlas-desktop"
 version = "0.1.0"
 dependencies = [
  "atlas-core",
+ "atlas-docs",
  "atlas-export",
  "atlas-import",
  "atlas-local",
