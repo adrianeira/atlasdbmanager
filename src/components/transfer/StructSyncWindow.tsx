@@ -28,6 +28,9 @@ interface Pick {
 interface DeployOptions {
   continueOnError: boolean;
   includeQuery: boolean;
+  /** Opções da comparação: donos (`OWNER TO`) e privilégios (`GRANT`/`REVOKE`). */
+  compareOwners: boolean;
+  comparePrivileges: boolean;
 }
 
 interface Statement {
@@ -51,7 +54,7 @@ const OP_GLYPH: Record<StructOp, string> = { add: "+", delete: "−", modify: "�
 
 const KIND_ICON: Record<StructKind, SmallIconName> = { table: "table", ftable: "table", view: "view", matview: "matview", sequence: "sequence", function: "function", type: "type" };
 const PART_ICON: Record<string, SmallIconName> = {
-  column: "column", primary: "columnPk", foreign: "columnFk", unique: "key", check: "key", constraint: "key", index: "columns", trigger: "function", options: "tableDesign",
+  privileges: "privilege", column: "column", primary: "columnPk", foreign: "columnFk", unique: "key", check: "key", constraint: "key", index: "columns", trigger: "function", options: "tableDesign",
 };
 
 export function StructSyncWindow() {
@@ -83,7 +86,7 @@ function Wizard({ params }: { params: Params }) {
 
   const [stmts, setStmts] = useState<Statement[]>([]);
   const [tab, setTab] = useState<"script" | "log">("script");
-  const [deployOpts, setDeployOpts] = useState<DeployOptions>({ continueOnError: false, includeQuery: false });
+  const [deployOpts, setDeployOpts] = useState<DeployOptions>({ continueOnError: false, includeQuery: false, compareOwners: false, comparePrivileges: false });
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [reorder, setReorder] = useState<Statement[] | null>(null);
   const [menu, setMenu] = useState<"save" | "load" | "deploy" | null>(null);
@@ -147,7 +150,7 @@ function Wizard({ params }: { params: Params }) {
     try {
       const list = await pg.structCompare({
         compareId: id, sourceConn: source.connId, sourceDatabase: source.database, targetConn: target.connId, targetDatabase: target.database,
-        spec: { sourceSchema: source.schema, targetSchema: target.schema },
+        spec: { sourceSchema: source.schema, targetSchema: target.schema, compareOwners: deployOpts.compareOwners, comparePrivileges: deployOpts.comparePrivileges },
       });
       setObjects(list);
       setPicks(initialPicks(list));
@@ -259,7 +262,7 @@ function Wizard({ params }: { params: Params }) {
   const loadProfile = (p: StructProfile) => {
     setSource(p.source);
     setTarget(p.target);
-    setDeployOpts(p.options);
+    setDeployOpts({ ...p.options, compareOwners: p.options.compareOwners ?? false, comparePrivileges: p.options.comparePrivileges ?? false });
     setObjects(null);
     setStep(0);
   };
@@ -284,7 +287,7 @@ function Wizard({ params }: { params: Params }) {
     setter(next);
   };
 
-  const partName = (p: StructPart) => (p.kind === "options" ? t("ss.tableOptions") : p.name);
+  const partName = (p: StructPart) => (p.kind === "options" ? t("ss.tableOptions") : p.kind === "privileges" ? t("ss.privileges") : p.name);
   const opCell = (op: StructOp) => <td className="ss-op-cell"><span className={`ss-op ss-op-${op}`}>{OP_GLYPH[op]}</span></td>;
 
   const renderObject = (o: StructObject) => {
@@ -491,6 +494,9 @@ function Wizard({ params }: { params: Params }) {
           <div className="modal exp-options-dialog" role="dialog" aria-label={t("dt.options")}>
             <div className="modal-header"><span className="modal-title">{t("dt.options")}</span><button type="button" className="modal-close" aria-label={t("tab.close")} onClick={() => setOptionsOpen(false)}><SmallIcon name="close" /></button></div>
             <div className="modal-body exp-options">
+              <div className="ss-opt-title">{t("ss.optCompare")}</div>
+              <label className="check-row"><input type="checkbox" checked={deployOpts.compareOwners} onChange={(e) => setDeployOpts({ ...deployOpts, compareOwners: e.target.checked })} /><span>{t("ss.opt.owners")}</span></label>
+              <label className="check-row"><input type="checkbox" checked={deployOpts.comparePrivileges} onChange={(e) => setDeployOpts({ ...deployOpts, comparePrivileges: e.target.checked })} /><span>{t("ss.opt.privileges")}</span></label>
               <div className="ss-opt-title">{t("ss.optTitle")}</div>
               <label className="check-row"><input type="checkbox" checked={deployOpts.continueOnError} onChange={(e) => setDeployOpts({ ...deployOpts, continueOnError: e.target.checked })} /><span>{t("ds.opt.continue")}</span></label>
               <label className="check-row"><input type="checkbox" checked={deployOpts.includeQuery} onChange={(e) => setDeployOpts({ ...deployOpts, includeQuery: e.target.checked })} /><span>{t("ss.opt.query")}</span></label>

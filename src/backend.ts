@@ -454,7 +454,7 @@ export interface StructCompareRequest {
   sourceDatabase: string;
   targetConn: string;
   targetDatabase: string;
-  spec: { sourceSchema: string; targetSchema: string };
+  spec: { sourceSchema: string; targetSchema: string; compareOwners?: boolean; comparePrivileges?: boolean };
 }
 export interface StructDeployRequest {
   deployId: string;

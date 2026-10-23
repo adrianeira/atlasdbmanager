@@ -369,8 +369,12 @@ views, exclusões), com a opção de reordenar ou desligar comandos, copiar, abr
 "Continuar em caso de erro" e "Incluir o comando no registro". Entre versões diferentes (9.6 ↔ 18) as definições se comparam
 sem espaços, parênteses e qualificadores, `EXECUTE PROCEDURE`/`FUNCTION` e `AS tipo` das sequências se ajustam ao destino.
 Testado ao vivo nos quatro sentidos (9.6→9.6, 18→18, 9.6→18, 18→9.6): comparar, implantar e comparar de novo sem diferenças.
-Fora desta entrega: privilégios, donos (só aparecem no DDL), opções de armazenamento, tabelas estrangeiras, mudança de
-expressão de coluna gerada e de tipos compostos/faixa (o script avisa por comentário).
+Também sincroniza as opções de armazenamento da tabela (`reloptions`, `LOGGED`/`UNLOGGED`), tipos compostos
+(`ADD/DROP/ALTER ATTRIBUTE`), domínios (`ALTER DOMAIN`), tabelas estrangeiras, colunas geradas (`SET EXPRESSION` no PostgreSQL 17,
+`DROP EXPRESSION` ou recriar a coluna nos demais) e, nas Options e desligados por padrão, donos (`OWNER TO`) e privilégios
+(`GRANT`/`REVOKE`, com `GRANT OPTION` e o padrão do servidor para funções e tipos novos).
+Fora desta entrega: privilégios por coluna, opções de armazenamento de índices e views, e a mudança do tipo base de um domínio e do
+subtipo de um tipo faixa (o script avisa por comentário).
 
 ## Limitações conhecidas
 - Exportar o resultado de uma consulta exige um único comando que devolva linhas.

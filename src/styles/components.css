@@ -2418,3 +2418,5 @@ select.et-input {
 .ss-reorder-row { display: flex; align-items: center; gap: 8px; padding: 2px 6px; white-space: nowrap; }
 .ss-reorder-row.is-sel { background: var(--c-selected); }
 .ss-reorder-row span { overflow: hidden; text-overflow: ellipsis; }
+
+.ss-opt-title:not(:first-child) { margin-top: 16px; }

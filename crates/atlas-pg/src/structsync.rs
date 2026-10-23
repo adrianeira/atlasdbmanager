@@ -15,13 +15,19 @@ use crate::meta::{sequence_detail, type_detail};
 use crate::transfer::{adapt_for_target, rewrite_schema};
 use atlas_core::{DatabaseError, ErrorKind, SequenceDetail, TypeDetail};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StructSpec {
     pub source_schema: String,
     pub target_schema: String,
+    /// Compara os donos (`ALTER ... OWNER TO`). Entre servidores o papel precisa existir no destino.
+    #[serde(default)]
+    pub compare_owners: bool,
+    /// Compara os privilégios (`GRANT`/`REVOKE`).
+    #[serde(default)]
+    pub compare_privileges: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -93,6 +99,9 @@ fn literal(s: &str) -> String {
 
 // ---------------------------------------------------------------- retrato do catálogo
 
+/// Privilégios de um objeto, sem os do dono: (quem recebeu, privilégio, com `GRANT OPTION`). `PUBLIC` é o papel público.
+type Acl = BTreeSet<(String, String, bool)>;
+
 #[derive(Clone)]
 struct Col {
     name: String,
@@ -129,6 +138,7 @@ struct TableSnap {
     constraints: Vec<Named>,
     indexes: Vec<Named>,
     triggers: Vec<Named>,
+    acl: Acl,
 }
 
 #[derive(Clone)]
@@ -140,6 +150,7 @@ struct ForeignSnap {
     owner: String,
     comment: Option<String>,
     columns: Vec<Col>,
+    acl: Acl,
 }
 
 #[derive(Clone)]
@@ -151,12 +162,14 @@ struct ViewSnap {
     comment: Option<String>,
     /// Índices da view materializada.
     indexes: Vec<Named>,
+    acl: Acl,
 }
 
 #[derive(Clone)]
 struct SeqSnap {
     name: String,
     detail: SequenceDetail,
+    acl: Acl,
 }
 
 #[derive(Clone)]
@@ -166,12 +179,15 @@ struct FuncSnap {
     procedure: bool,
     def: String,
     comment: Option<String>,
+    owner: String,
+    acl: Acl,
 }
 
 #[derive(Clone)]
 struct TypeSnap {
     name: String,
     detail: TypeDetail,
+    acl: Acl,
 }
 
 #[derive(Default, Clone)]
@@ -244,6 +260,7 @@ async fn load(s: &PgSession, schema: &str, hooks: &mut CompareHooks<'_>, side: &
             constraints: Vec::new(),
             indexes: Vec::new(),
             triggers: Vec::new(),
+            acl: Acl::new(),
         });
     }
 
@@ -273,7 +290,7 @@ async fn load(s: &PgSession, schema: &str, hooks: &mut CompareHooks<'_>, side: &
             .map(|o| o.split_once('=').map(|(k, v)| (k.to_string(), v.to_string())).unwrap_or_else(|| (o.clone(), String::new())))
             .collect();
         options.sort();
-        snap.foreign.push(ForeignSnap { name: r.get(1), server: r.get(2), options, owner: r.get(4), comment: r.get(5), columns: Vec::new() });
+        snap.foreign.push(ForeignSnap { name: r.get(1), server: r.get(2), options, owner: r.get(4), comment: r.get(5), columns: Vec::new(), acl: Acl::new() });
     }
 
     step("Getting table fields", 0.2, hooks)?;
@@ -388,7 +405,7 @@ async fn load(s: &PgSession, schema: &str, hooks: &mut CompareHooks<'_>, side: &
     let mut view_oids: HashMap<u32, usize> = HashMap::new();
     for r in rows {
         view_oids.insert(r.get(0), snap.views.len());
-        snap.views.push(ViewSnap { name: r.get(1), materialized: r.get(2), def: r.get(3), owner: r.get(4), comment: r.get(5), indexes: Vec::new() });
+        snap.views.push(ViewSnap { name: r.get(1), materialized: r.get(2), def: r.get(3), owner: r.get(4), comment: r.get(5), indexes: Vec::new(), acl: Acl::new() });
     }
     let ids: Vec<u32> = view_oids.keys().copied().collect();
     let rows = s
@@ -425,7 +442,7 @@ async fn load(s: &PgSession, schema: &str, hooks: &mut CompareHooks<'_>, side: &
     for r in rows {
         let name: String = r.get(0);
         let detail = sequence_detail(s, schema, &name).await?;
-        snap.seqs.push(SeqSnap { name, detail });
+        snap.seqs.push(SeqSnap { name, detail, acl: Acl::new() });
     }
 
     // ---- Funções e procedimentos.
@@ -436,7 +453,7 @@ async fn load(s: &PgSession, schema: &str, hooks: &mut CompareHooks<'_>, side: &
         .client
         .query(
             &format!(
-                "SELECT p.proname::text || '(' || pg_get_function_identity_arguments(p.oid) || ')', {is_proc}, pg_get_functiondef(p.oid), obj_description(p.oid, 'pg_proc') \
+                "SELECT p.proname::text || '(' || pg_get_function_identity_arguments(p.oid) || ')', {is_proc}, pg_get_functiondef(p.oid), obj_description(p.oid, 'pg_proc'), pg_get_userbyid(p.proowner)::text \
                    FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace \
                   WHERE n.nspname = ANY($1) AND {fn_filter} \
                     AND p.prolang NOT IN (SELECT oid FROM pg_catalog.pg_language WHERE lanname IN ('internal', 'c')) AND {} ORDER BY p.oid",
@@ -447,7 +464,7 @@ async fn load(s: &PgSession, schema: &str, hooks: &mut CompareHooks<'_>, side: &
         .await
         .map_err(sql_err)?;
     for r in rows {
-        snap.funcs.push(FuncSnap { key: r.get(0), procedure: r.get(1), def: r.get(2), comment: r.get(3) });
+        snap.funcs.push(FuncSnap { key: r.get(0), procedure: r.get(1), def: r.get(2), comment: r.get(3), owner: r.get(4), acl: Acl::new() });
     }
 
     // ---- Tipos.
@@ -469,9 +486,85 @@ async fn load(s: &PgSession, schema: &str, hooks: &mut CompareHooks<'_>, side: &
     for r in rows {
         let name: String = r.get(0);
         let detail = type_detail(s, schema, &name).await?;
-        snap.types.push(TypeSnap { name, detail });
+        snap.types.push(TypeSnap { name, detail, acl: Acl::new() });
     }
+    load_acls(s, schema, &mut snap).await?;
     Ok(snap)
+}
+
+/// Privilégios de todos os objetos do schema (os do dono ficam de fora: o dono sempre tem tudo).
+async fn load_acls(s: &PgSession, schema: &str, snap: &mut Snapshot) -> Result<(), DatabaseError> {
+    let grantee = "CASE a.grantee WHEN 0 THEN 'PUBLIC' ELSE (SELECT r.rolname::text FROM pg_catalog.pg_roles r WHERE r.oid = a.grantee) END";
+    let rows = s
+        .client
+        .query(
+            &format!(
+                "SELECT c.relname::text, {grantee}, a.privilege_type::text, a.is_grantable \
+                   FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace, \
+                        LATERAL pg_catalog.aclexplode(COALESCE(c.relacl, pg_catalog.acldefault((CASE WHEN c.relkind = 'S' THEN 's' ELSE 'r' END)::\"char\", c.relowner))) a \
+                  WHERE n.nspname = $1 AND c.relkind IN ('r','p','v','m','S','f') AND a.grantee <> c.relowner"
+            ),
+            &[&schema],
+        )
+        .await
+        .map_err(sql_err)?;
+    let mut relations: HashMap<String, Acl> = HashMap::new();
+    for r in rows {
+        relations.entry(r.get(0)).or_default().insert((r.get(1), r.get(2), r.get(3)));
+    }
+    for t in &mut snap.tables {
+        t.acl = relations.get(&t.name).cloned().unwrap_or_default();
+    }
+    for f in &mut snap.foreign {
+        f.acl = relations.get(&f.name).cloned().unwrap_or_default();
+    }
+    for v in &mut snap.views {
+        v.acl = relations.get(&v.name).cloned().unwrap_or_default();
+    }
+    for q in &mut snap.seqs {
+        q.acl = relations.get(&q.name).cloned().unwrap_or_default();
+    }
+    let rows = s
+        .client
+        .query(
+            &format!(
+                "SELECT p.proname::text || '(' || pg_get_function_identity_arguments(p.oid) || ')', {grantee}, a.privilege_type::text, a.is_grantable \
+                   FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace, \
+                        LATERAL pg_catalog.aclexplode(COALESCE(p.proacl, pg_catalog.acldefault('f', p.proowner))) a \
+                  WHERE n.nspname = $1 AND a.grantee <> p.proowner"
+            ),
+            &[&schema],
+        )
+        .await
+        .map_err(sql_err)?;
+    let mut funcs: HashMap<String, Acl> = HashMap::new();
+    for r in rows {
+        funcs.entry(r.get(0)).or_default().insert((r.get(1), r.get(2), r.get(3)));
+    }
+    for f in &mut snap.funcs {
+        f.acl = funcs.get(&f.key).cloned().unwrap_or_default();
+    }
+    let rows = s
+        .client
+        .query(
+            &format!(
+                "SELECT t.typname::text, {grantee}, a.privilege_type::text, a.is_grantable \
+                   FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace, \
+                        LATERAL pg_catalog.aclexplode(COALESCE(t.typacl, pg_catalog.acldefault('T', t.typowner))) a \
+                  WHERE n.nspname = $1 AND a.grantee <> t.typowner"
+            ),
+            &[&schema],
+        )
+        .await
+        .map_err(sql_err)?;
+    let mut types: HashMap<String, Acl> = HashMap::new();
+    for r in rows {
+        types.entry(r.get(0)).or_default().insert((r.get(1), r.get(2), r.get(3)));
+    }
+    for t in &mut snap.types {
+        t.acl = types.get(&t.name).cloned().unwrap_or_default();
+    }
+    Ok(())
 }
 
 /// `rewrite_schema` sempre põe aspas no schema novo, mas o catálogo só as usa quando o nome precisa. Tira as aspas de um
@@ -542,6 +635,9 @@ struct Ctx {
     loose: bool,
     /// Um dos lados é anterior ao PostgreSQL 10: a sequência é sempre `bigint`, então os limites não dizem nada.
     legacy_sequences: bool,
+    /// Opções da comparação (donos e privilégios).
+    owners: bool,
+    privileges: bool,
 }
 
 /// Forma usada para comparar definições de servidores diferentes.
@@ -663,6 +759,7 @@ fn table_ddl(cx: &Ctx, t: &TableSnap) -> String {
     out.extend(t.indexes.iter().map(|i| format!("{};", i.def)));
     out.extend(t.triggers.iter().map(|g| format!("{};", g.def)));
     out.extend(t.constraints.iter().filter(|c| c.kind == "f").map(|c| format!("ALTER TABLE {q} ADD CONSTRAINT {} {};", quote_ident(&c.name), c.def)));
+    out.extend(acl_changes(cx, "TABLE", &q, &t.acl, &Acl::new()));
     out.join("\n\n")
 }
 
@@ -685,6 +782,7 @@ fn foreign_ddl(cx: &Ctx, f: &ForeignSnap) -> String {
     if f.comment.is_some() {
         out.push(comment_on("FOREIGN TABLE", &q, &f.comment));
     }
+    out.extend(acl_changes(cx, "TABLE", &q, &f.acl, &Acl::new()));
     out.join("\n\n")
 }
 
@@ -706,6 +804,7 @@ fn view_ddl(cx: &Ctx, v: &ViewSnap) -> String {
         out.push(comment_on(kw, &q, &v.comment));
     }
     out.extend(v.indexes.iter().map(|i| format!("{};", i.def)));
+    out.extend(acl_changes(cx, "TABLE", &q, &v.acl, &Acl::new()));
     out.join("\n\n")
 }
 
@@ -768,10 +867,11 @@ fn type_create(cx: &Ctx, t: &TypeSnap) -> String {
 
 fn type_ddl(cx: &Ctx, t: &TypeSnap) -> String {
     let mut out = vec![type_create(cx, t)];
+    let kw = if t.detail.kind == "domain" { "DOMAIN" } else { "TYPE" };
     if t.detail.comment.is_some() {
-        let kw = if t.detail.kind == "domain" { "DOMAIN" } else { "TYPE" };
         out.push(comment_on(kw, &cx.q(&t.name), &t.detail.comment));
     }
+    out.extend(acl_changes(cx, kw, &cx.q(&t.name), &t.acl, &Acl::new()));
     out.join("\n\n")
 }
 
@@ -782,13 +882,70 @@ fn func_ddl(f: &FuncSnap) -> String {
 // ---------------------------------------------------------------- comparação
 
 // Fases do script: o que precisa existir (ou deixar de existir) antes do próximo passo.
+/// Palavra do `GRANT`/`REVOKE`: `ON TABLE`, `ON SEQUENCE`, `ON FUNCTION`, `ON TYPE`/`DOMAIN`. Devolve os comandos que levam os
+/// privilégios de `d` aos de `s`: primeiro as revogações, depois as concessões.
+fn privilege_changes(target: &str, s: &Acl, d: &Acl) -> Vec<String> {
+    // (quem, privilégio) → (na origem, no destino), cada um com o `GRANT OPTION` se existir.
+    type Pair = (Option<bool>, Option<bool>);
+    let mut state: BTreeMap<(&str, &str), Pair> = BTreeMap::new();
+    for (who, privilege, grantable) in s {
+        state.entry((who, privilege)).or_default().0 = Some(*grantable);
+    }
+    for (who, privilege, grantable) in d {
+        state.entry((who, privilege)).or_default().1 = Some(*grantable);
+    }
+    // (ação, quem, com opção de repasse) → privilégios.
+    let mut groups: BTreeMap<(u8, &str, bool), Vec<&str>> = BTreeMap::new();
+    for ((who, privilege), (new, old)) in state {
+        match (new, old) {
+            (Some(n), None) => groups.entry((2, who, n)).or_default().push(privilege),
+            (Some(true), Some(false)) => groups.entry((2, who, true)).or_default().push(privilege),
+            (Some(false), Some(true)) => groups.entry((1, who, false)).or_default().push(privilege),
+            (None, Some(_)) => groups.entry((0, who, false)).or_default().push(privilege),
+            _ => {}
+        }
+    }
+    let who = |w: &str| if w == "PUBLIC" { w.to_string() } else { quote_ident(w) };
+    groups
+        .into_iter()
+        .map(|((action, grantee, grantable), privileges)| {
+            let list = privileges.join(", ");
+            match action {
+                0 => format!("REVOKE {list} ON {target} FROM {};", who(grantee)),
+                1 => format!("REVOKE GRANT OPTION FOR {list} ON {target} FROM {};", who(grantee)),
+                _ => format!("GRANT {list} ON {target} TO {}{};", who(grantee), if grantable { " WITH GRANT OPTION" } else { "" }),
+            }
+        })
+        .collect()
+}
+
+/// Privilégios que um objeto novo já recebe do servidor: funções e tipos dão `EXECUTE`/`USAGE` a todos.
+fn default_acl(kw: &str) -> Acl {
+    match kw {
+        "FUNCTION" | "PROCEDURE" => Acl::from([("PUBLIC".to_string(), "EXECUTE".to_string(), false)]),
+        "TYPE" | "DOMAIN" => Acl::from([("PUBLIC".to_string(), "USAGE".to_string(), false)]),
+        _ => Acl::new(),
+    }
+}
+
+/// `GRANT`/`REVOKE` do objeto se a comparação de privilégios está ligada.
+fn acl_changes(cx: &Ctx, grant_kw: &str, name: &str, s: &Acl, d: &Acl) -> Vec<String> {
+    if cx.privileges { privilege_changes(&format!("{grant_kw} {name}"), s, d) } else { Vec::new() }
+}
+
+/// `ALTER ... OWNER TO` se a comparação de donos está ligada e o dono é outro (`old` vazio = objeto novo).
+fn owner_change(cx: &Ctx, kw: &str, name: &str, new: &str, old: Option<&str>) -> Option<String> {
+    (cx.owners && old != Some(new)).then(|| format!("ALTER {kw} {name} OWNER TO {};", quote_ident(new)))
+}
+
 const DROP_DEPENDENTS: u8 = 0;
 const CREATE_BASE: u8 = 1;
 const TABLES: u8 = 2;
 const TABLE_PARTS: u8 = 3;
 const FOREIGN_KEYS: u8 = 4;
 const VIEWS: u8 = 5;
-const DROP_OBJECTS: u8 = 6;
+const PRIVILEGES: u8 = 6;
+const DROP_OBJECTS: u8 = 7;
 
 /// Ajusta um comando de um servidor novo a um destino antigo: `AS tipo` nas sequências (antes do 10) e `EXECUTE FUNCTION`
 /// nos gatilhos (antes do 11).
@@ -966,6 +1123,9 @@ fn diff_table(cx: &Ctx, order: i64, src: Option<&TableSnap>, dst: Option<&TableS
             for c in t.constraints.iter().filter(|c| c.kind == "f") {
                 o.push(FOREIGN_KEYS, order, None, format!("ALTER TABLE {q} ADD CONSTRAINT {} {};", quote_ident(&c.name), c.def));
             }
+            for sql in owner_change(cx, "TABLE", &q, &t.owner, None).into_iter().chain(acl_changes(cx, "TABLE", &q, &t.acl, &Acl::new())) {
+                o.push(PRIVILEGES, order, None, sql);
+            }
             Op::Add
         }
         (None, Some(_)) => {
@@ -1010,10 +1170,19 @@ fn diff_table(cx: &Ctx, order: i64, src: Option<&TableSnap>, dst: Option<&TableS
             diff_named(&mut o, "index", &s.indexes, &d.indexes, order, &|n| format!("DROP INDEX {}.{};", quote_ident(&qi), quote_ident(&n.name)), &|n| (TABLE_PARTS, format!("{};", n.def)));
             diff_named(&mut o, "trigger", &s.triggers, &d.triggers, order, &|n| format!("DROP TRIGGER {} ON {qt};", quote_ident(&n.name)), &|n| (TABLE_PARTS, format!("{};", n.def)));
             let idx = o.parts.len();
-            let changes = table_option_changes(&q, s, d);
+            let mut changes = table_option_changes(&q, s, d);
+            changes.extend(owner_change(cx, "TABLE", &q, &s.owner, Some(&d.owner)));
             o.parts.push(Part { kind: "options".into(), name: "(Table Options)".into(), op: if changes.is_empty() { Op::Same } else { Op::Modify } });
             for sql in changes {
                 o.push(TABLES, order, Some(idx), sql);
+            }
+            if cx.privileges {
+                let grants = acl_changes(cx, "TABLE", &q, &s.acl, &d.acl);
+                let idx = o.parts.len();
+                o.parts.push(Part { kind: "privileges".into(), name: "(Privileges)".into(), op: if grants.is_empty() { Op::Same } else { Op::Modify } });
+                for sql in grants {
+                    o.push(PRIVILEGES, order, Some(idx), sql);
+                }
             }
             if o.parts.iter().all(|p| p.op == Op::Same) { Op::Same } else { Op::Modify }
         }
@@ -1031,6 +1200,9 @@ fn diff_foreign(cx: &Ctx, order: i64, src: Option<&ForeignSnap>, dst: Option<&Fo
             o.push(TABLES, order, None, create_foreign(cx, f));
             if f.comment.is_some() {
                 o.push(TABLE_PARTS, order, None, comment_on("FOREIGN TABLE", &q, &f.comment));
+            }
+            for sql in owner_change(cx, "FOREIGN TABLE", &q, &f.owner, None).into_iter().chain(acl_changes(cx, "TABLE", &q, &f.acl, &Acl::new())) {
+                o.push(PRIVILEGES, order, None, sql);
             }
             Op::Add
         }
@@ -1060,11 +1232,20 @@ fn diff_foreign(cx: &Ctx, order: i64, src: Option<&ForeignSnap>, dst: Option<&Fo
                 o.parts.push(Part { kind: "column".into(), name: c.name.clone(), op: Op::Delete });
                 o.push(TABLES, order, Some(idx), format!("ALTER FOREIGN TABLE {q} DROP COLUMN {};", quote_ident(&c.name)));
             }
-            let changes = foreign_option_changes(&q, s, d);
+            let mut changes = foreign_option_changes(&q, s, d);
+            changes.extend(owner_change(cx, "FOREIGN TABLE", &q, &s.owner, Some(&d.owner)));
             let idx = o.parts.len();
             o.parts.push(Part { kind: "options".into(), name: "(Table Options)".into(), op: if changes.is_empty() { Op::Same } else { Op::Modify } });
             for sql in changes {
                 o.push(TABLES, order, Some(idx), sql);
+            }
+            if cx.privileges {
+                let grants = acl_changes(cx, "TABLE", &q, &s.acl, &d.acl);
+                let idx = o.parts.len();
+                o.parts.push(Part { kind: "privileges".into(), name: "(Privileges)".into(), op: if grants.is_empty() { Op::Same } else { Op::Modify } });
+                for sql in grants {
+                    o.push(PRIVILEGES, order, Some(idx), sql);
+                }
             }
             if o.parts.iter().all(|p| p.op == Op::Same) { Op::Same } else { Op::Modify }
         }
@@ -1115,9 +1296,12 @@ fn diff_view(cx: &Ctx, order: i64, src: Option<&ViewSnap>, dst: Option<&ViewSnap
             o.push(VIEWS, order, None, format!("{};", i.def));
         }
     };
+    let mut extras: Vec<String> = Vec::new();
     let op = match (src, dst) {
         (Some(s), None) => {
             create(&mut o, s, false);
+            extras.extend(owner_change(cx, kw, &q, &s.owner, None));
+            extras.extend(acl_changes(cx, "TABLE", &q, &s.acl, &Acl::new()));
             Op::Add
         }
         (None, Some(_)) => {
@@ -1129,20 +1313,26 @@ fn diff_view(cx: &Ctx, order: i64, src: Option<&ViewSnap>, dst: Option<&ViewSnap
                 && s.comment == d.comment
                 && s.indexes.iter().map(|i| (&i.name, &i.def)).zip(d.indexes.iter().map(|i| (&i.name, &i.def))).all(|(a, b)| a.0 == b.0 && cx.same(a.1, b.1))
                 && s.indexes.len() == d.indexes.len();
-            if same {
-                Op::Same
-            } else if s.materialized {
-                // Uma view materializada não troca de definição: sai e volta.
+            if !same && s.materialized {
+                // Uma view materializada não troca de definição: sai e volta (dono e privilégios voltam do zero).
                 o.push(DROP_DEPENDENTS, -order, None, format!("DROP {kw} {q};"));
                 create(&mut o, s, false);
-                Op::Modify
+                extras.extend(owner_change(cx, kw, &q, &s.owner, None));
+                extras.extend(acl_changes(cx, "TABLE", &q, &s.acl, &Acl::new()));
             } else {
-                create(&mut o, s, true);
-                Op::Modify
+                if !same {
+                    create(&mut o, s, true);
+                }
+                extras.extend(owner_change(cx, kw, &q, &s.owner, Some(&d.owner)));
+                extras.extend(acl_changes(cx, "TABLE", &q, &s.acl, &d.acl));
             }
+            if same && extras.is_empty() { Op::Same } else { Op::Modify }
         }
         (None, None) => Op::Same,
     };
+    for sql in extras {
+        o.push(PRIVILEGES, order, None, sql);
+    }
     ObjectDiff { kind, name: v.name.clone(), op, parts: Vec::new(), source_ddl, target_ddl, stmts: o.stmts }
 }
 
@@ -1150,13 +1340,21 @@ fn diff_sequence(cx: &Ctx, order: i64, src: Option<&SeqSnap>, dst: Option<&SeqSn
     let name = src.or(dst).map(|s| s.name.clone()).unwrap_or_default();
     let mut o = Out { cx, stmts: Vec::new(), parts: Vec::new() };
     let with_type = |d: &SequenceDetail| cx.target_version >= 100000 && d.data_type != "bigint";
-    let ddl = |s: &SeqSnap| sequence_create(cx, &s.detail, with_type(&s.detail));
+    let ddl = |s: &SeqSnap| {
+        let mut out = vec![sequence_create(cx, &s.detail, with_type(&s.detail))];
+        out.extend(acl_changes(cx, "SEQUENCE", &cx.q(&s.name), &s.acl, &Acl::new()));
+        out.join("\n\n")
+    };
+    let q = cx.q(&name);
+    let mut extras: Vec<String> = Vec::new();
     let op = match (src, dst) {
         (Some(s), None) => {
             o.push(CREATE_BASE, order, None, sequence_create(cx, &s.detail, with_type(&s.detail)));
             if let Some(owner) = &s.detail.owned_by {
                 o.push(TABLE_PARTS, order, None, format!("ALTER SEQUENCE {} OWNED BY {owner};", cx.q(&s.name)));
             }
+            extras.extend(s.detail.owner.as_deref().and_then(|w| owner_change(cx, "SEQUENCE", &q, w, None)));
+            extras.extend(acl_changes(cx, "SEQUENCE", &q, &s.acl, &Acl::new()));
             Op::Add
         }
         (None, Some(_)) => {
@@ -1164,15 +1362,19 @@ fn diff_sequence(cx: &Ctx, order: i64, src: Option<&SeqSnap>, dst: Option<&SeqSn
             Op::Delete
         }
         (Some(s), Some(d)) => {
-            if sequence_same(cx, &s.detail, &d.detail) {
-                Op::Same
-            } else {
+            let same = sequence_same(cx, &s.detail, &d.detail);
+            if !same {
                 o.push(CREATE_BASE, order, None, sequence_alter(cx, &s.detail));
-                Op::Modify
             }
+            extras.extend(s.detail.owner.as_deref().and_then(|w| owner_change(cx, "SEQUENCE", &q, w, d.detail.owner.as_deref())));
+            extras.extend(acl_changes(cx, "SEQUENCE", &q, &s.acl, &d.acl));
+            if same && extras.is_empty() { Op::Same } else { Op::Modify }
         }
         (None, None) => Op::Same,
     };
+    for sql in extras {
+        o.push(PRIVILEGES, order, None, sql);
+    }
     ObjectDiff { kind: "sequence", name, op, parts: Vec::new(), source_ddl: src.map(ddl).unwrap_or_default(), target_ddl: dst.map(ddl).unwrap_or_default(), stmts: o.stmts }
 }
 
@@ -1195,11 +1397,17 @@ fn diff_function(cx: &Ctx, order: i64, src: Option<&FuncSnap>, dst: Option<&Func
         if f.comment.is_some() {
             t.push_str(&format!("\n\n{}", comment_on(kw, &sig, &f.comment)));
         }
+        for g in acl_changes(cx, kw, &sig, &f.acl, &Acl::new()) {
+            t.push_str(&format!("\n\n{g}"));
+        }
         t
     };
+    let mut extras: Vec<String> = Vec::new();
     let op = match (src, dst) {
         (Some(s), None) => {
             create(&mut o, s);
+            extras.extend(owner_change(cx, kw, &sig, &s.owner, None));
+            extras.extend(acl_changes(cx, kw, &sig, &s.acl, &default_acl(kw)));
             Op::Add
         }
         (None, Some(_)) => {
@@ -1207,15 +1415,19 @@ fn diff_function(cx: &Ctx, order: i64, src: Option<&FuncSnap>, dst: Option<&Func
             Op::Delete
         }
         (Some(s), Some(d)) => {
-            if cx.same(&func_ddl(s), &func_ddl(d)) && s.comment == d.comment {
-                Op::Same
-            } else {
+            let same = cx.same(&func_ddl(s), &func_ddl(d)) && s.comment == d.comment;
+            if !same {
                 create(&mut o, s);
-                Op::Modify
             }
+            extras.extend(owner_change(cx, kw, &sig, &s.owner, Some(&d.owner)));
+            extras.extend(acl_changes(cx, kw, &sig, &s.acl, &d.acl));
+            if same && extras.is_empty() { Op::Same } else { Op::Modify }
         }
         (None, None) => Op::Same,
     };
+    for sql in extras {
+        o.push(PRIVILEGES, order, None, sql);
+    }
     ObjectDiff { kind: "function", name: f.key.clone(), op, parts: Vec::new(), source_ddl: src.map(ddl).unwrap_or_default(), target_ddl: dst.map(ddl).unwrap_or_default(), stmts: o.stmts }
 }
 
@@ -1292,13 +1504,16 @@ fn diff_type(cx: &Ctx, order: i64, src: Option<&TypeSnap>, dst: Option<&TypeSnap
     let name = src.or(dst).map(|t| t.name.clone()).unwrap_or_default();
     let q = cx.q(&name);
     let mut o = Out { cx, stmts: Vec::new(), parts: Vec::new() };
+    let mut extras: Vec<String> = Vec::new();
     let op = match (src, dst) {
         (Some(s), None) => {
             o.push(CREATE_BASE, order, None, type_create(cx, s));
+            let kw = if s.detail.kind == "domain" { "DOMAIN" } else { "TYPE" };
             if s.detail.comment.is_some() {
-                let kw = if s.detail.kind == "domain" { "DOMAIN" } else { "TYPE" };
                 o.push(CREATE_BASE, order, None, comment_on(kw, &q, &s.detail.comment));
             }
+            extras.extend(s.detail.owner.as_deref().and_then(|w| owner_change(cx, kw, &q, w, None)));
+            extras.extend(acl_changes(cx, kw, &q, &s.acl, &default_acl(kw)));
             Op::Add
         }
         (None, Some(t)) => {
@@ -1311,10 +1526,16 @@ fn diff_type(cx: &Ctx, order: i64, src: Option<&TypeSnap>, dst: Option<&TypeSnap
             for sql in &changes {
                 o.push(CREATE_BASE, order, None, sql.clone());
             }
-            if changes.is_empty() { Op::Same } else { Op::Modify }
+            let kw = if s.detail.kind == "domain" { "DOMAIN" } else { "TYPE" };
+            extras.extend(s.detail.owner.as_deref().and_then(|w| owner_change(cx, kw, &q, w, d.detail.owner.as_deref())));
+            extras.extend(acl_changes(cx, kw, &q, &s.acl, &d.acl));
+            if changes.is_empty() && extras.is_empty() { Op::Same } else { Op::Modify }
         }
         (None, None) => Op::Same,
     };
+    for sql in extras {
+        o.push(PRIVILEGES, order, None, sql);
+    }
     ObjectDiff { kind: "type", name, op, parts: Vec::new(), source_ddl: src.map(|t| type_ddl(cx, t)).unwrap_or_default(), target_ddl: dst.map(|t| type_ddl(cx, t)).unwrap_or_default(), stmts: o.stmts }
 }
 
@@ -1341,6 +1562,8 @@ pub async fn compare(src: &PgSession, dst: &PgSession, spec: &StructSpec, mut ho
     let major = |v: i32| if v >= 100000 { v / 10000 } else { v / 100 };
     let cx = Ctx { schema: spec.target_schema.clone(), target_version: dst.server.version_num, loose: major(src.server.version_num) != major(dst.server.version_num),
         legacy_sequences: src.server.version_num.min(dst.server.version_num) < 100000,
+        owners: spec.compare_owners,
+        privileges: spec.compare_privileges,
     };
     let mut objects = Vec::new();
     let mut order = 0i64;
@@ -1407,12 +1630,13 @@ mod tests {
             constraints: vec![],
             indexes: vec![],
             triggers: vec![],
+            acl: Acl::new(),
         }
     }
 
     #[test]
     fn a_new_column_becomes_an_alter_and_the_table_is_modified() {
-        let cx = Ctx { schema: "public".into(), target_version: 180000, loose: false, legacy_sequences: false };
+        let cx = Ctx { schema: "public".into(), target_version: 180000, loose: false, legacy_sequences: false, owners: false, privileges: false };
         let s = table("t", vec![col("id", "integer"), col("status", "boolean")]);
         let d = table("t", vec![col("id", "integer")]);
         let diff = diff_table(&cx, 1, Some(&s), Some(&d));
@@ -1448,7 +1672,7 @@ mod tests {
 
     #[test]
     fn storage_options_are_set_and_reset() {
-        let cx = Ctx { schema: "public".into(), target_version: 180000, loose: false, legacy_sequences: false };
+        let cx = Ctx { schema: "public".into(), target_version: 180000, loose: false, legacy_sequences: false, owners: false, privileges: false };
         let mut s = table("t", vec![col("id", "integer")]);
         let mut d = s.clone();
         s.options = vec!["fillfactor=70".into()];
@@ -1483,13 +1707,13 @@ mod tests {
             subtype: None,
         };
         f(&mut detail);
-        TypeSnap { name: "t".into(), detail }
+        TypeSnap { name: "t".into(), detail, acl: Acl::new() }
     }
 
     #[test]
     fn composite_types_and_domains_are_altered_in_place() {
         use atlas_core::{TypeAttribute, TypeCheck};
-        let cx = Ctx { schema: "public".into(), target_version: 180000, loose: false, legacy_sequences: false };
+        let cx = Ctx { schema: "public".into(), target_version: 180000, loose: false, legacy_sequences: false, owners: false, privileges: false };
         let attr = |n: &str, t: &str| TypeAttribute { name: n.into(), data_type: t.into() };
         let s = type_snap("composite", |d| d.attributes = vec![attr("a", "integer"), attr("b", "text"), attr("c", "date")]);
         let d = type_snap("composite", |d| d.attributes = vec![attr("a", "bigint"), attr("b", "text"), attr("old", "text")]);
@@ -1529,7 +1753,7 @@ mod tests {
 
     #[test]
     fn foreign_table_options_and_columns_are_altered_in_place() {
-        let cx = Ctx { schema: "public".into(), target_version: 180000, loose: false, legacy_sequences: false };
+        let cx = Ctx { schema: "public".into(), target_version: 180000, loose: false, legacy_sequences: false, owners: false, privileges: false };
         let ft = |cols: Vec<Col>, options: Vec<(&str, &str)>| ForeignSnap {
             name: "f".into(),
             server: "srv".into(),
@@ -1537,6 +1761,7 @@ mod tests {
             owner: "o".into(),
             comment: None,
             columns: cols,
+            acl: Acl::new(),
         };
         let s = ft(vec![col("a", "integer"), col("b", "text")], vec![("table_name", "t2"), ("schema_name", "x")]);
         let d = ft(vec![col("a", "integer"), col("old", "text")], vec![("table_name", "t1"), ("fetch_size", "10")]);
@@ -1560,7 +1785,7 @@ mod tests {
         let generated = |expr: &str, kind: &str| Col { generated: kind.into(), default: Some(expr.into()), ..col("g", "integer") };
         let plain = |default: Option<&str>| Col { default: default.map(String::from), ..col("g", "integer") };
         let run = |version: i32, s: Col, d: Col| {
-            let cx = Ctx { schema: "public".into(), target_version: version, loose: false, legacy_sequences: false };
+            let cx = Ctx { schema: "public".into(), target_version: version, loose: false, legacy_sequences: false, owners: false, privileges: false };
             let diff = diff_table(&cx, 1, Some(&table("t", vec![s])), Some(&table("t", vec![d])));
             let c = StructComparison { objects: vec![diff] };
             script(&c, &[StructSelection { kind: "table".into(), name: "t".into(), parts: None }])
@@ -1575,16 +1800,59 @@ mod tests {
         assert!(run(170000, generated("a + 1", "s"), plain(None))[1].contains("DROP COLUMN"));
     }
 
+    fn acl(items: &[(&str, &str, bool)]) -> Acl {
+        items.iter().map(|(w, p, g)| (w.to_string(), p.to_string(), *g)).collect()
+    }
+
+    #[test]
+    fn privileges_are_revoked_then_granted() {
+        let s = acl(&[("PUBLIC", "SELECT", false), ("app", "SELECT", true), ("app", "UPDATE", false), ("ro", "SELECT", false)]);
+        let d = acl(&[("app", "SELECT", false), ("app", "DELETE", false), ("ro", "SELECT", true), ("gone", "SELECT", false)]);
+        assert_eq!(
+            privilege_changes("TABLE \"s\".\"t\"", &s, &d),
+            vec![
+                r#"REVOKE DELETE ON TABLE "s"."t" FROM "app";"#,
+                r#"REVOKE SELECT ON TABLE "s"."t" FROM "gone";"#,
+                r#"REVOKE GRANT OPTION FOR SELECT ON TABLE "s"."t" FROM "ro";"#,
+                r#"GRANT SELECT ON TABLE "s"."t" TO PUBLIC;"#,
+                r#"GRANT UPDATE ON TABLE "s"."t" TO "app";"#,
+                r#"GRANT SELECT ON TABLE "s"."t" TO "app" WITH GRANT OPTION;"#,
+            ]
+        );
+        assert!(privilege_changes("TABLE t", &s, &s.clone()).is_empty());
+    }
+
+    #[test]
+    fn owners_and_privileges_only_compare_when_asked() {
+        let mut cx = Ctx { schema: "public".into(), target_version: 180000, loose: false, legacy_sequences: false, owners: false, privileges: false };
+        let mut s = table("t", vec![col("id", "integer")]);
+        let mut d = s.clone();
+        s.owner = "new".into();
+        d.owner = "old".into();
+        s.acl = acl(&[("PUBLIC", "SELECT", false)]);
+        assert_eq!(diff_table(&cx, 1, Some(&s), Some(&d)).op, Op::Same);
+        cx.owners = true;
+        cx.privileges = true;
+        let diff = diff_table(&cx, 1, Some(&s), Some(&d));
+        assert_eq!(diff.op, Op::Modify);
+        let c = StructComparison { objects: vec![diff] };
+        let sql = script(&c, &[StructSelection { kind: "table".into(), name: "t".into(), parts: None }]);
+        assert_eq!(sql, vec![r#"ALTER TABLE "public"."t" OWNER TO "new";"#, r#"GRANT SELECT ON TABLE "public"."t" TO PUBLIC;"#]);
+        // Objeto novo: nasce com o dono e os privilégios da origem.
+        let sql = script(&StructComparison { objects: vec![diff_table(&cx, 1, Some(&s), None)] }, &[StructSelection { kind: "table".into(), name: "t".into(), parts: None }]);
+        assert!(sql[0].starts_with("CREATE TABLE") && sql[1].contains("OWNER TO \"new\"") && sql[2].starts_with("GRANT SELECT"), "{sql:?}");
+    }
+
     #[test]
     fn identical_tables_are_the_same() {
-        let cx = Ctx { schema: "public".into(), target_version: 180000, loose: false, legacy_sequences: false };
+        let cx = Ctx { schema: "public".into(), target_version: 180000, loose: false, legacy_sequences: false, owners: false, privileges: false };
         let t = table("t", vec![col("id", "integer")]);
         assert_eq!(diff_table(&cx, 1, Some(&t), Some(&t.clone())).op, Op::Same);
     }
 
     #[test]
     fn a_changed_constraint_is_dropped_before_the_new_one_is_added() {
-        let cx = Ctx { schema: "public".into(), target_version: 180000, loose: false, legacy_sequences: false };
+        let cx = Ctx { schema: "public".into(), target_version: 180000, loose: false, legacy_sequences: false, owners: false, privileges: false };
         let mut s = table("t", vec![col("a", "integer")]);
         let mut d = s.clone();
         s.constraints.push(Named { name: "c".into(), kind: "c".into(), def: "CHECK ((a > 1))".into() });

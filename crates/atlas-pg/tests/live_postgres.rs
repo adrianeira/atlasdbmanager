@@ -1653,7 +1653,8 @@ async fn structure_sync_compares_scripts_and_deploys() {
              CREATE TABLE {a}.orders(id serial PRIMARY KEY, client_id integer REFERENCES {a}.clients(id), amount numeric CONSTRAINT amount_ok CHECK (amount >= 0)); \
              CREATE TABLE {a}.only_src(id integer PRIMARY KEY); \
              CREATE VIEW {a}.v1 AS SELECT id, name FROM {a}.clients; \
-             CREATE FUNCTION {a}.f1(x integer) RETURNS integer LANGUAGE sql AS 'SELECT x + 1'; \n             CREATE FUNCTION {a}.trg() RETURNS trigger LANGUAGE plpgsql AS 'BEGIN RETURN NEW; END'; \n             CREATE TRIGGER clients_trg BEFORE INSERT ON {a}.clients FOR EACH ROW EXECUTE PROCEDURE {a}.trg();"
+             CREATE FUNCTION {a}.f1(x integer) RETURNS integer LANGUAGE sql AS 'SELECT x + 1'; \
+             GRANT SELECT ON {a}.clients TO PUBLIC; GRANT USAGE ON SEQUENCE {a}.seq1 TO PUBLIC; REVOKE EXECUTE ON FUNCTION {a}.f1(integer) FROM PUBLIC; \n             CREATE FUNCTION {a}.trg() RETURNS trigger LANGUAGE plpgsql AS 'BEGIN RETURN NEW; END'; \n             CREATE TRIGGER clients_trg BEFORE INSERT ON {a}.clients FOR EACH ROW EXECUTE PROCEDURE {a}.trg();"
         ),
         1,
     )
@@ -1677,7 +1678,7 @@ async fn structure_sync_compares_scripts_and_deploys() {
     )
     .await
     .expect("target ddl");
-    let spec = StructSpec { source_schema: a.clone(), target_schema: b.clone() };
+    let spec = StructSpec { source_schema: a.clone(), target_schema: b.clone(), compare_owners: true, compare_privileges: true };
 
     async fn run(src: &atlas_pg::PgSession, dst: &atlas_pg::PgSession, spec: &StructSpec) -> StructComparison {
         let mut steps = 0usize;
@@ -1783,7 +1784,7 @@ async fn structure_sync_alters_generated_columns() {
     )
     .await
     .expect("ddl");
-    let spec = StructSpec { source_schema: a.clone(), target_schema: b.clone() };
+    let spec = StructSpec { source_schema: a.clone(), target_schema: b.clone(), compare_owners: true, compare_privileges: true };
     let c = atlas_pg::compare_structure(&s, &s, &spec, CompareHooks { progress: &mut |_: &str, _: f64| {}, cancelled: &|| false }).await.expect("compare");
     let table = c.objects.iter().find(|o| o.kind == "table" && o.name == "t").expect("table");
     assert_eq!(table.op, StructOp::Modify);
