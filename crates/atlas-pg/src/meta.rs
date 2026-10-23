@@ -10,7 +10,8 @@ use atlas_core::{
     TriggerInfo, ViewDetail,
 };
 
-pub async fn list_databases(s: &PgSession) -> Result<DatabaseList, DatabaseError> {
+/// `include_hidden`: lista também os bancos que a conexão normalmente oculta (templates e os que não aceitam conexão).
+pub async fn list_databases(s: &PgSession, include_hidden: bool) -> Result<DatabaseList, DatabaseError> {
     let rows = s
         .client
         .query(
@@ -24,7 +25,7 @@ pub async fn list_databases(s: &PgSession) -> Result<DatabaseList, DatabaseError
     let mut comments = std::collections::BTreeMap::new();
     let mut hidden = 0;
     for r in rows {
-        if r.get::<_, bool>(1) {
+        if include_hidden || r.get::<_, bool>(1) {
             let name: String = r.get(0);
             if let Some(comment) = r.get::<_, Option<String>>(2).filter(|c| !c.is_empty()) {
                 comments.insert(name.clone(), comment);
@@ -38,12 +39,14 @@ pub async fn list_databases(s: &PgSession) -> Result<DatabaseList, DatabaseError
 }
 
 /// Schemas do usuário (sem `pg_*` e `information_schema`, como a referência faz por padrão), com o comentário de cada um.
-pub async fn list_schemas(s: &PgSession) -> Result<Vec<SchemaInfo>, DatabaseError> {
+/// `include_hidden`: inclui os de sistema (`pg_catalog`, `information_schema`...), menos os temporários e de TOAST de cada sessão.
+pub async fn list_schemas(s: &PgSession, include_hidden: bool) -> Result<Vec<SchemaInfo>, DatabaseError> {
+    let filter = if include_hidden { "nspname !~ '^pg_(toast|temp)'" } else { "nspname !~ '^pg_' AND nspname <> 'information_schema'" };
+    let sql = format!("SELECT nspname::text, obj_description(oid, 'pg_namespace') FROM pg_catalog.pg_namespace WHERE {filter} ORDER BY nspname");
     let rows = s
         .client
         .query(
-            "SELECT nspname::text, obj_description(oid, 'pg_namespace') FROM pg_catalog.pg_namespace \
-             WHERE nspname !~ '^pg_' AND nspname <> 'information_schema' ORDER BY nspname",
+            &sql,
             &[],
         )
         .await

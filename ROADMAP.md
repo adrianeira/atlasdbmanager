@@ -468,7 +468,7 @@ Hoje o menu Exibir tem só Lista, Detalhe e Ícones (`viewMode` em `src/App.tsx`
   inferior da referência, chaves para tabelas de outro schema (não têm cartão), tabelas com mais de 40 colunas mostram as
   40 primeiras e a linha "mais N colunas"
 - [ ] **Flatten Object List**: lista única dos objetos do schema, sem as pastas
-- [ ] **Sort**: ordenação da lista de objetos (nome, tipo...)
-- [ ] **Choose Columns**: escolher as colunas exibidas na lista de objetos *(o grid de dados já tem "Columns")*
-- [ ] **Show Hidden Items**: mostrar os bancos que a conexão oculta (templates e sem permissão de conexão) e os schemas de sistema
+- [x] **Sort**: ordenação da lista de objetos por qualquer coluna, crescente ou decrescente (também pelo clique no cabeçalho)
+- [x] **Choose Columns**: escolher as colunas exibidas na lista de objetos (por categoria; o nome nunca some)
+- [x] **Show Hidden Items**: mostra os bancos que a conexão oculta (templates e sem permissão de conexão) e os schemas de sistema; relê a árvore ao alternar
 - [ ] **Show Table Profiles**: perfil de cada tabela (resumo) na lista de objetos

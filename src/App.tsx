@@ -17,7 +17,7 @@ import { MainToolbar } from "./components/MainToolbar";
 import { MenuBar } from "./components/MenuBar";
 import { MessageDialog } from "./components/MessageDialog";
 import { connIdOf, NavigationPane } from "./components/NavigationPane";
-import { objectsFor, ObjectsView, type ViewMode } from "./components/ObjectsView";
+import { objectColumns, objectsFor, ObjectsView, type ViewMode } from "./components/ObjectsView";
 import { PopupMenu } from "./components/PopupMenu";
 import { StatusBar, type StatusCell } from "./components/StatusBar";
 import { TabBar, type DocTab } from "./components/TabBar";
@@ -33,6 +33,7 @@ import { ExtensionDesignerDoc, type ExtensionBackend } from "./documents/Extensi
 import { dropTypeSql } from "./sql/typedef";
 import { dropRoleSql } from "./sql/role";
 import { RoleDesignerDoc, type RoleBackend } from "./documents/RoleDesignerDoc";
+import { ColumnsDialog } from "./components/ColumnsDialog";
 import { FindDialog } from "./components/FindDialog";
 import { EditDatabaseDialog } from "./components/EditDatabaseDialog";
 import { EditSchemaDialog } from "./components/EditSchemaDialog";
@@ -69,6 +70,12 @@ interface Layout {
   erShowGrid: boolean;
   erSnapGrid: boolean;
   erShowFkNames: boolean;
+  /** Ordenação da lista de objetos (menu Exibir → Ordenar) e colunas ocultas por categoria (Escolher colunas). */
+  objSortKey: string;
+  objSortDir: 1 | -1;
+  hiddenObjCols: Record<string, string[]>;
+  /** "Mostrar itens ocultos": bancos que a conexão oculta e schemas de sistema. */
+  showHidden: boolean;
   showCaptions: boolean;
   theme: Theme;
   lang: Lang;
@@ -77,7 +84,7 @@ interface Layout {
 const LAYOUT_KEY = "atlas.layout.v1";
 const CONNECTIONS_KEY = "atlas.connections.v1";
 const DEFAULT_LAYOUT: Layout = {
-  navWidth: 384, navVisible: true, infoVisible: false, viewMode: "detail", erShowGrid: true, erSnapGrid: true, erShowFkNames: true, showCaptions: true, theme: "system", lang: detectLang(),
+  navWidth: 384, navVisible: true, infoVisible: false, viewMode: "detail", erShowGrid: true, erSnapGrid: true, erShowFkNames: true, objSortKey: "name", objSortDir: 1, hiddenObjCols: {}, showHidden: false, showCaptions: true, theme: "system", lang: detectLang(),
 };
 
 /* ---------- Persistência local do protótipo (no M1: SQLite local + cofre do SO) ---------- */
@@ -240,6 +247,7 @@ type Dialog =
   | { kind: "name"; title: string; label: string; initial: string; onSubmit: (value: string) => void }
   | { kind: "execFile"; connId: string; database: string; fileName: string; size: number; sql: string; busy?: boolean; error?: string }
   | { kind: "options" }
+  | { kind: "chooseColumns" }
   | { kind: "editDatabase"; connId: string; /** Id do nó do banco na árvore (para fechá-lo se for renomeado). */ nodeId: string; detail: DatabaseDetail }
   | { kind: "editSchema"; connId: string; database: string; detail: SchemaDetail }
   | { kind: "find"; connId: string; database: string; schema?: string }
@@ -259,6 +267,9 @@ export default function App() {
     document.documentElement.style.setProperty("--editor-font-size", `${appOptions.editorFontSize}px`);
   }, [appOptions.editorFontSize]);
   const patchLayout = useCallback((p: Partial<Layout>) => setLayout((l) => ({ ...l, ...p })), []);
+  /** Valor atual de "Mostrar itens ocultos", lido pelas funções que listam bancos e schemas (sempre o mais recente). */
+  const showHiddenRef = useRef(layout.showHidden ?? false);
+  showHiddenRef.current = layout.showHidden ?? false;
 
   useEffect(() => writeJson(LAYOUT_KEY, layout), [layout]);
   useEffect(() => {
@@ -425,7 +436,7 @@ export default function App() {
     if (!conn) return;
     // Sem senha digitada nesta sessão, o núcleo usa a do cofre (profileId); ela não vem para a UI.
     const info = await pg.open(connId, paramsFor(conn), conn.id);
-    const dbs = await pg.listDatabases(connId);
+    const dbs = await pg.listDatabases(connId, showHiddenRef.current);
     const roles = await pg.listRoles(connId).catch(() => []);
     updateConn(connId, (c) => ({
       ...c,
@@ -489,8 +500,8 @@ export default function App() {
     const db = conn?.databases.find((d) => d.name === dbName);
     if (!conn?.live || !db || (db.loaded && !force && !refresh)) return;
     const infos = refresh
-      ? await pg.listSchemas(connId, dbName)
-      : await withLoading(`db:${seg(connId)}/${seg(dbName)}`, () => pg.listSchemas(connId, dbName));
+      ? await pg.listSchemas(connId, dbName, showHiddenRef.current)
+      : await withLoading(`db:${seg(connId)}/${seg(dbName)}`, () => pg.listSchemas(connId, dbName, showHiddenRef.current));
     updateConn(connId, (c) => ({
       ...c,
       databases: c.databases.map((d) => (d.name !== dbName ? d : {
@@ -573,7 +584,7 @@ export default function App() {
     const fail = (e: unknown) => showError(t("cmd.refresh"), e);
     if (node.kind === "connection") {
       void withLoading(node.id, async () => {
-        const dbs = await pg.listDatabases(connId);
+        const dbs = await pg.listDatabases(connId, showHiddenRef.current);
         updateConn(connId, (cc) => ({ ...cc, hiddenDatabases: dbs.hidden, databases: mergeDatabases(cc.databases, dbs) }));
       }).catch(fail);
     } else if (node.kind === "database" && c.database) {
@@ -711,6 +722,25 @@ export default function App() {
     t("msg.confirmDelete", { kind: t(`kind.${kind}`), name });
   const askName = (title: string, label: string, initial: string, onSubmit: (value: string) => void) =>
     setDialog({ kind: "name", title, label, initial, onSubmit });
+
+  /**
+   * Exibir → Mostrar itens ocultos: liga/desliga e relê os bancos de cada conexão aberta e os schemas dos bancos já lidos,
+   * para a árvore refletir a escolha na hora.
+   */
+  const toggleShowHidden = () => {
+    const next = !(layout.showHidden ?? false);
+    showHiddenRef.current = next;
+    patchLayout({ showHidden: next });
+    for (const c of connectionsRef.current) {
+      if (!c.live || !openRef.current.has(c.id)) continue;
+      void pg.listDatabases(c.id, next)
+        .then((dbs) => {
+          updateConn(c.id, (cc) => ({ ...cc, hiddenDatabases: dbs.hidden, databases: mergeDatabases(cc.databases, dbs) }));
+          for (const d of c.databases) if (d.loaded) void loadDatabase(c.id, d.name, false, true).catch(() => undefined);
+        })
+        .catch((e) => showError(t("cmd.showHidden"), e));
+    }
+  };
 
   /** Novo schema no banco: pede o nome e cria direto. */
   const promptNewSchema = (connId: string, dbName: string) =>
@@ -1639,6 +1669,8 @@ export default function App() {
     viewList: { id: "viewList", label: "cmd.viewList", checked: layout.viewMode === "list", run: () => patchLayout({ viewMode: "list" }) },
     viewDetail: { id: "viewDetail", label: "cmd.viewDetail", checked: layout.viewMode === "detail", run: () => patchLayout({ viewMode: "detail" }) },
     viewIcons: { id: "viewIcons", label: "cmd.viewIcons", checked: layout.viewMode === "icons", run: () => patchLayout({ viewMode: "icons" }) },
+    chooseColumns: { id: "chooseColumns", label: "cmd.chooseColumns", run: () => setDialog({ kind: "chooseColumns" }) },
+    showHidden: { id: "showHidden", label: "cmd.showHidden", checked: layout.showHidden ?? false, run: () => toggleShowHidden() },
     viewEr: { id: "viewEr", label: "cmd.viewEr", checked: layout.viewMode === "er", run: () => patchLayout({ viewMode: "er" }) },
     erShowGrid: { id: "erShowGrid", label: "cmd.erShowGrid", checked: layout.erShowGrid ?? true, run: () => patchLayout({ erShowGrid: !(layout.erShowGrid ?? true) }) },
     erSnapGrid: { id: "erSnapGrid", label: "cmd.erSnapGrid", checked: layout.erSnapGrid ?? true, run: () => patchLayout({ erSnapGrid: !(layout.erSnapGrid ?? true) }) },
@@ -1701,9 +1733,24 @@ export default function App() {
     ),
   };
   const editMenu: MenuDef = { label: "menu.edit", items: entries("undo", "redo", "-", "cut", "copy", "paste", "selectAll", "-", "find") };
+  // Exibir → Ordenar: as colunas da lista de objetos da categoria atual (marca a ordenação vigente) e o sentido.
+  const sortKey = layout.objSortKey ?? "name";
+  const sortDir = layout.objSortDir ?? 1;
+  const sortSubmenu: MenuEntry = {
+    kind: "sub",
+    label: "cmd.sort",
+    items: [
+      ...objectColumns(category, layout.lang, ctx.connection?.provider).map((c): MenuEntry => ({
+        kind: "item", text: t(c.label), checked: sortKey === c.key || undefined, run: () => patchLayout({ objSortKey: c.key }),
+      })),
+      { kind: "sep" },
+      { kind: "item", text: t("cmd.sortAsc"), checked: sortDir === 1 || undefined, run: () => patchLayout({ objSortDir: 1 }) },
+      { kind: "item", text: t("cmd.sortDesc"), checked: sortDir === -1 || undefined, run: () => patchLayout({ objSortDir: -1 }) },
+    ],
+  };
   const viewMenu: MenuDef = {
     label: "menu.view",
-    items: entries("navigationPane", "informationPane", "toolbarCaptions", "-", "viewList", "viewDetail", "viewIcons", "viewEr", "-", "erShowGrid", "erSnapGrid", "erShowFkNames", "-", "themeSystem", "themeLight", "themeDark", "-", "langPt", "langEn", "-", "resetLayout"),
+    items: entries("navigationPane", "informationPane", "toolbarCaptions", "-", "viewList", "viewDetail", "viewIcons", "viewEr", "-", sortSubmenu, "chooseColumns", "-", "showHidden", "-", "erShowGrid", "erSnapGrid", "erShowFkNames", "-", "themeSystem", "themeLight", "themeDark", "-", "langPt", "langEn", "-", "resetLayout"),
   };
   const queryMenu: MenuDef = { label: "menu.query", items: entries("run", "runSelected", "stop", "-", "explain", "-", "beautify", "queryBuilder") };
   const formatMenu: MenuDef = { label: "menu.format", items: entries("indent", "outdent", "-", "toggleComment", "-", "upper", "lower") };
@@ -2268,6 +2315,9 @@ export default function App() {
                   connectionOpen={connectionOpen}
                   viewMode={layout.viewMode}
                   erOptions={{ showGrid: layout.erShowGrid ?? true, snapToGrid: layout.erSnapGrid ?? true, showFkNames: layout.erShowFkNames ?? true }}
+                  sort={{ key: layout.objSortKey ?? "name", dir: layout.objSortDir ?? 1 }}
+                  onSort={(s) => patchLayout({ objSortKey: s.key, objSortDir: s.dir })}
+                  hiddenColumns={layout.hiddenObjCols?.[category] ?? []}
                   lang={layout.lang}
                   selected={selectedObjects}
                   onSelect={setSelectedObjects}
@@ -2342,6 +2392,27 @@ export default function App() {
       )}
 
       {dialog?.kind === "dump" && <DumpDialog target={dialog} onClose={() => setDialog(null)} />}
+
+      {dialog?.kind === "chooseColumns" && (() => {
+        // Exibir → Escolher colunas: as colunas da lista de objetos da categoria atual; o nome (a primeira) não some.
+        const cols = objectColumns(category, layout.lang, ctx.connection?.provider);
+        const hiddenKeys = layout.hiddenObjCols?.[category] ?? [];
+        const setHidden = (keys: string[]) => patchLayout({ hiddenObjCols: { ...(layout.hiddenObjCols ?? {}), [category]: keys } });
+        return (
+          <ColumnsDialog
+            columns={cols.map((c) => ({ name: t(c.label), type: "" }))}
+            hidden={new Set(cols.filter((c) => hiddenKeys.includes(c.key)).map((c) => t(c.label)))}
+            onToggle={(label) => {
+              const c = cols.find((x) => t(x.label) === label);
+              if (!c || c.key === cols[0].key) return;
+              setHidden(hiddenKeys.includes(c.key) ? hiddenKeys.filter((k) => k !== c.key) : [...hiddenKeys, c.key]);
+            }}
+            onShowAll={() => setHidden([])}
+            onHideAll={() => setHidden(cols.slice(1).map((c) => c.key))}
+            onClose={() => setDialog(null)}
+          />
+        );
+      })()}
 
       {dialog?.kind === "editDatabase" && (() => {
         const conn = connections.find((c) => c.id === dialog.connId);

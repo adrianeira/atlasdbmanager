@@ -568,9 +568,12 @@ export const pg = {
   close: (sessionId: string) => call<void>("pg_close", { sessionId }),
   closeDatabase: (sessionId: string, database: string) => call<void>("pg_close_database", { sessionId, database }),
   /** `comments`: comentário de cada banco que tem um (dica na árvore). */
-  listDatabases: (sessionId: string) =>
-    call<{ databases: string[]; hidden: number; comments: Record<string, string> }>("pg_list_databases", { sessionId }),
-  listSchemas: (sessionId: string, database: string) => call<SchemaInfo[]>("pg_list_schemas", { sessionId, database }),
+  /** `includeHidden`: inclui também os bancos que a conexão normalmente oculta (templates e sem conexão). */
+  listDatabases: (sessionId: string, includeHidden = false) =>
+    call<{ databases: string[]; hidden: number; comments: Record<string, string> }>("pg_list_databases", { sessionId, includeHidden }),
+  /** `includeHidden`: inclui os schemas de sistema (`pg_catalog`, `information_schema`...). */
+  listSchemas: (sessionId: string, database: string, includeHidden = false) =>
+    call<SchemaInfo[]>("pg_list_schemas", { sessionId, database, includeHidden }),
   listObjects: (sessionId: string, database: string, schema: string) => call<SchemaObjects>("pg_list_objects", { sessionId, database, schema }),
   tableDetail: (sessionId: string, database: string, schema: string, table: string) =>
     call<TableDetail>("pg_table_detail", { sessionId, database, schema, table }),

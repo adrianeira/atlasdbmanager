@@ -108,6 +108,11 @@ interface Column {
   value: (o: DbObject) => string;
 }
 
+/** Colunas da lista de objetos de uma categoria (chave e rótulo), para "Ordenar" e "Escolher colunas" do menu Exibir. */
+export function objectColumns(category: Category, lang: string, provider?: string): { key: string; label: MessageKey }[] {
+  return columnsFor(category, lang, provider).map((c) => ({ key: c.key, label: c.label }));
+}
+
 function columnsFor(category: Category, lang: string, provider?: string): Column[] {
   const name: Column = { key: "name", label: "col.name", width: 248, value: (o) => o.name };
   const comment: Column = { key: "comment", label: "col.comment", width: 220, value: (o) => o.comment ?? "" };
@@ -195,6 +200,11 @@ interface Props {
   connectionOpen: boolean;
   viewMode: ViewMode;
   erOptions: ErOptions;
+  /** Ordenação da lista (vale em todas as categorias; sem a coluna, ordena pelo nome). */
+  sort: { key: string; dir: 1 | -1 };
+  onSort: (s: { key: string; dir: 1 | -1 }) => void;
+  /** Chaves das colunas ocultas (a primeira, o nome, nunca some). */
+  hiddenColumns: string[];
   lang: string;
   selected: string[];
   onSelect: (names: string[]) => void;
@@ -203,11 +213,10 @@ interface Props {
   onContextMenu?: (name: string | null, x: number, y: number) => void;
 }
 
-export function ObjectsView({ category, ctx, connectionOpen, viewMode, erOptions, lang, selected, onSelect, onAction, onContextMenu }: Props) {
+export function ObjectsView({ category, ctx, connectionOpen, viewMode, erOptions, sort, onSort, hiddenColumns, lang, selected, onSelect, onAction, onContextMenu }: Props) {
   const t = useT();
   const [search, setSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
-  const [sort, setSort] = useState<{ key: string; dir: 1 | -1 }>({ key: "name", dir: 1 });
   const [newMenu, setNewMenu] = useState(false);
   const newRef = useRef<HTMLDivElement>(null);
 
@@ -226,11 +235,12 @@ export function ObjectsView({ category, ctx, connectionOpen, viewMode, erOptions
   const all = objectsFor(category, ctx, connectionOpen);
   const hasContext = all !== null;
   // Com conexão selecionada (mesmo sem schema) as colunas já seguem o provedor, como na referência.
-  const columns = ctx.connection ? columnsFor(category, lang, ctx.connection.provider) : EMPTY_TABLE_COLUMNS;
+  const allColumns = ctx.connection ? columnsFor(category, lang, ctx.connection.provider) : EMPTY_TABLE_COLUMNS;
+  const columns = allColumns.filter((c, i) => i === 0 || !hiddenColumns.includes(c.key));
   const objects = useMemo(() => {
     const q = search.trim().toLowerCase();
     const list = (all ?? []).filter((o) => !q || o.name.toLowerCase().includes(q));
-    const col = columns.find((c) => c.key === sort.key);
+    const col = allColumns.find((c) => c.key === sort.key);
     const numeric = sort.key === "rows" || sort.key === "size" || sort.key === "dataLength";
     return [...list].sort((a, b) => {
       if (numeric) {
@@ -242,9 +252,9 @@ export function ObjectsView({ category, ctx, connectionOpen, viewMode, erOptions
       const vb = col ? col.value(b) : b.name;
       return va.localeCompare(vb, lang) * sort.dir;
     });
-  }, [all, search, sort, columns, lang]);
+  }, [all, search, sort, allColumns, lang]);
 
-  const toggleSort = (key: string) => setSort((s) => (s.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: 1 }));
+  const toggleSort = (key: string) => onSort(sort.key === key ? { key, dir: sort.dir === 1 ? -1 : 1 } : { key, dir: 1 });
 
   const enabled = (a: ActionDef) => {
     if (!hasContext || !a.kind) return false;

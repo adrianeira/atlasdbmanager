@@ -63,10 +63,20 @@ async fn wrong_password_is_typed_error() {
 async fn lists_catalog() {
     let p = require_server!();
     let s = atlas_pg::connect(&p, None).await.expect("connect");
-    let dbs = atlas_pg::list_databases(&s).await.expect("databases");
+    let dbs = atlas_pg::list_databases(&s, false).await.expect("databases");
     assert!(dbs.databases.iter().any(|d| d == &p.database));
-    let schemas = atlas_pg::list_schemas(&s).await.expect("schemas");
+    let schemas = atlas_pg::list_schemas(&s, false).await.expect("schemas");
     assert!(!schemas.iter().any(|n| n.name.starts_with("pg_")));
+
+    // "Show Hidden Items": com ele, entram os bancos ocultos (template0/template1) e os schemas de sistema.
+    assert!(dbs.hidden >= 1, "o servidor tem ao menos um template oculto");
+    let todos = atlas_pg::list_databases(&s, true).await.expect("databases com ocultos");
+    assert_eq!(todos.hidden, 0);
+    assert!(todos.databases.len() as u32 == dbs.databases.len() as u32 + dbs.hidden, "os ocultos passam a vir na lista");
+    assert!(todos.databases.iter().any(|d| d == "template1"));
+    let sistema = atlas_pg::list_schemas(&s, true).await.expect("schemas com ocultos");
+    assert!(sistema.iter().any(|n| n.name == "pg_catalog") && sistema.iter().any(|n| n.name == "information_schema"));
+    assert!(!sistema.iter().any(|n| n.name.starts_with("pg_temp") || n.name.starts_with("pg_toast")), "temporários e TOAST ficam de fora");
     let objs = atlas_pg::list_objects(&s, "public").await.expect("objects");
     eprintln!("public: {} tabelas, {} views, {} funções", objs.tables.len(), objs.views.len(), objs.functions.len());
     let roles = atlas_pg::list_roles(&s).await.expect("roles");
@@ -559,10 +569,10 @@ async fn database_detail_reads_attributes_and_edit_commands_apply() {
     assert_eq!(atlas_pg::database_detail(&s, &p.database).await.expect("current").name, p.database);
 
     // O comentário aparece na lista de bancos da árvore (dica ao passar o mouse); sem comentário, o banco não consta.
-    let sem = atlas_pg::list_databases(&s).await.expect("databases");
+    let sem = atlas_pg::list_databases(&s, false).await.expect("databases");
     assert!(sem.databases.contains(&antigo) && !sem.comments.contains_key(&antigo));
     atlas_pg::execute(&s, &format!("COMMENT ON DATABASE \"{antigo}\" IS 'na árvore'"), 1).await.unwrap();
-    let com = atlas_pg::list_databases(&s).await.expect("databases");
+    let com = atlas_pg::list_databases(&s, false).await.expect("databases");
     assert_eq!(com.comments.get(&antigo).map(String::as_str), Some("na árvore"));
 
     if s.server.version_num >= 90500 {
@@ -606,7 +616,7 @@ async fn schema_detail_reads_owner_comment_and_rename_applies() {
     assert!(!d.owner.is_empty());
     assert_eq!(d.comment.as_deref(), Some("schema de 'teste'"));
     // O comentário também vem na lista de schemas da árvore.
-    let lista = atlas_pg::list_schemas(&s).await.expect("schemas");
+    let lista = atlas_pg::list_schemas(&s, false).await.expect("schemas");
     assert_eq!(lista.iter().find(|x| x.name == antigo).and_then(|x| x.comment.as_deref()), Some("schema de 'teste'"));
 
     atlas_pg::execute(&s, &format!("COMMENT ON SCHEMA {antigo} IS NULL; ALTER SCHEMA {antigo} RENAME TO {novo}"), 1).await.unwrap();

@@ -54,15 +54,20 @@ pub async fn pg_close_database(sessions: State<'_, Sessions>, session_id: String
 }
 
 #[tauri::command]
-pub async fn pg_list_databases(sessions: State<'_, Sessions>, session_id: String) -> Result<DatabaseList, DatabaseError> {
+pub async fn pg_list_databases(sessions: State<'_, Sessions>, session_id: String, include_hidden: bool) -> Result<DatabaseList, DatabaseError> {
     let s = sessions.get(&session_id, None).await?;
-    atlas_pg::list_databases(&s).await
+    atlas_pg::list_databases(&s, include_hidden).await
 }
 
 #[tauri::command]
-pub async fn pg_list_schemas(sessions: State<'_, Sessions>, session_id: String, database: String) -> Result<Vec<SchemaInfo>, DatabaseError> {
+pub async fn pg_list_schemas(
+    sessions: State<'_, Sessions>,
+    session_id: String,
+    database: String,
+    include_hidden: bool,
+) -> Result<Vec<SchemaInfo>, DatabaseError> {
     let s = sessions.get(&session_id, Some(&database)).await?;
-    atlas_pg::list_schemas(&s).await
+    atlas_pg::list_schemas(&s, include_hidden).await
 }
 
 #[tauri::command]
