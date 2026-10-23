@@ -1643,6 +1643,8 @@ async fn structure_sync_compares_scripts_and_deploys() {
         &format!(
             "DROP SCHEMA IF EXISTS {a} CASCADE; CREATE SCHEMA {a}; \
              CREATE TYPE {a}.mood AS ENUM ('sad', 'ok', 'happy'); \
+             CREATE TYPE {a}.pair AS (x integer, y text, z date); \
+             CREATE DOMAIN {a}.posint AS integer DEFAULT 1 NOT NULL CONSTRAINT posint_ck CHECK (VALUE > 0); \
              CREATE SEQUENCE {a}.seq1 INCREMENT BY 2; \
              CREATE SEQUENCE {a}.only_seq; \
              CREATE TABLE {a}.clients(id integer PRIMARY KEY, name varchar(50) NOT NULL DEFAULT 'x', status boolean, humor {a}.mood) WITH (fillfactor=70); \
@@ -1662,6 +1664,8 @@ async fn structure_sync_compares_scripts_and_deploys() {
         &format!(
             "DROP SCHEMA IF EXISTS {b} CASCADE; CREATE SCHEMA {b}; \
              CREATE TYPE {b}.mood AS ENUM ('sad', 'ok'); \
+             CREATE TYPE {b}.pair AS (x bigint, y text, old text); \
+             CREATE DOMAIN {b}.posint AS integer CONSTRAINT posint_ck CHECK (VALUE >= 0); \
              CREATE SEQUENCE {b}.seq1; \
              CREATE TABLE {b}.clients(id integer PRIMARY KEY, name varchar(20), old integer); \
              CREATE TABLE {b}.orders(id integer PRIMARY KEY, client_id integer, amount numeric CONSTRAINT amount_ok CHECK (amount > 0)); \
@@ -1691,6 +1695,8 @@ async fn structure_sync_compares_scripts_and_deploys() {
     let op = |kind: &str, name: &str| c.objects.iter().find(|o| o.kind == kind && o.name == name).unwrap_or_else(|| panic!("{kind} {name} missing")).op;
     assert_eq!(op("type", "mood"), StructOp::Modify);
     assert_eq!(op("sequence", "seq1"), StructOp::Modify);
+    assert_eq!(op("type", "pair"), StructOp::Modify);
+    assert_eq!(op("type", "posint"), StructOp::Modify);
     assert_eq!(op("sequence", "only_seq"), StructOp::Add);
     assert_eq!(op("table", "clients"), StructOp::Modify);
     assert_eq!(op("table", "orders"), StructOp::Modify);

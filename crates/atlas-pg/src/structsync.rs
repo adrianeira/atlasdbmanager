@@ -1037,6 +1037,75 @@ fn diff_function(cx: &Ctx, order: i64, src: Option<&FuncSnap>, dst: Option<&Func
     ObjectDiff { kind: "function", name: f.key.clone(), op, parts: Vec::new(), source_ddl: src.map(ddl).unwrap_or_default(), target_ddl: dst.map(ddl).unwrap_or_default(), stmts: o.stmts }
 }
 
+/// Comandos que igualam um tipo ao da origem: rótulos novos de enum, atributos de tipo composto, padrão, `NOT NULL` e
+/// restrições de domínio e o comentário. O que não tem `ALTER` (tipo base do domínio, subtipo da faixa, mudança de
+/// espécie) vira um comentário no script.
+fn type_changes(cx: &Ctx, q: &str, s: &TypeSnap, d: &TypeSnap) -> Vec<String> {
+    let (sd, dd) = (&s.detail, &d.detail);
+    let mut out = Vec::new();
+    let kw = if sd.kind == "domain" { "DOMAIN" } else { "TYPE" };
+    if sd.kind != dd.kind {
+        out.push(format!("-- type {q} changed from {} to {} and cannot be altered automatically", dd.kind, sd.kind));
+        return out;
+    }
+    match sd.kind.as_str() {
+        "enum" => {
+            for l in sd.labels.iter().filter(|l| !dd.labels.contains(l)) {
+                out.push(format!("ALTER TYPE {q} ADD VALUE {};", literal(l)));
+            }
+        }
+        "composite" => {
+            for a in &sd.attributes {
+                match dd.attributes.iter().find(|x| x.name == a.name) {
+                    None => out.push(format!("ALTER TYPE {q} ADD ATTRIBUTE {} {};", quote_ident(&a.name), a.data_type)),
+                    Some(x) if x.data_type != a.data_type => out.push(format!("ALTER TYPE {q} ALTER ATTRIBUTE {} TYPE {};", quote_ident(&a.name), a.data_type)),
+                    Some(_) => {}
+                }
+            }
+            for a in dd.attributes.iter().filter(|a| !sd.attributes.iter().any(|x| x.name == a.name)) {
+                out.push(format!("ALTER TYPE {q} DROP ATTRIBUTE {};", quote_ident(&a.name)));
+            }
+        }
+        "domain" => {
+            if !cx.same_opt(&sd.base_type, &dd.base_type) {
+                out.push(format!("-- domain {q}: the base type differs and cannot be altered automatically"));
+            }
+            if !cx.same_opt(&sd.default, &dd.default) {
+                out.push(match &sd.default {
+                    Some(x) => format!("ALTER DOMAIN {q} SET DEFAULT {x};"),
+                    None => format!("ALTER DOMAIN {q} DROP DEFAULT;"),
+                });
+            }
+            if sd.not_null != dd.not_null {
+                out.push(format!("ALTER DOMAIN {q} {} NOT NULL;", if sd.not_null { "SET" } else { "DROP" }));
+            }
+            for c in &sd.checks {
+                match dd.checks.iter().find(|x| x.name == c.name) {
+                    Some(x) if cx.same(&x.definition, &c.definition) => {}
+                    found => {
+                        if found.is_some() {
+                            out.push(format!("ALTER DOMAIN {q} DROP CONSTRAINT {};", quote_ident(&c.name)));
+                        }
+                        out.push(format!("ALTER DOMAIN {q} ADD CONSTRAINT {} {};", quote_ident(&c.name), c.definition));
+                    }
+                }
+            }
+            for c in dd.checks.iter().filter(|c| !sd.checks.iter().any(|x| x.name == c.name)) {
+                out.push(format!("ALTER DOMAIN {q} DROP CONSTRAINT {};", quote_ident(&c.name)));
+            }
+        }
+        _ => {
+            if !cx.same_opt(&sd.subtype, &dd.subtype) {
+                out.push(format!("-- type {q}: the range subtype differs and cannot be altered automatically"));
+            }
+        }
+    }
+    if sd.comment != dd.comment {
+        out.push(comment_on(kw, q, &sd.comment));
+    }
+    out
+}
+
 fn diff_type(cx: &Ctx, order: i64, src: Option<&TypeSnap>, dst: Option<&TypeSnap>) -> ObjectDiff {
     let name = src.or(dst).map(|t| t.name.clone()).unwrap_or_default();
     let q = cx.q(&name);
@@ -1056,20 +1125,11 @@ fn diff_type(cx: &Ctx, order: i64, src: Option<&TypeSnap>, dst: Option<&TypeSnap
             Op::Delete
         }
         (Some(s), Some(d)) => {
-            if cx.same(&type_ddl(cx, s), &type_ddl(cx, d)) {
-                Op::Same
-            } else if s.detail.kind == "enum" && d.detail.kind == "enum" {
-                for l in s.detail.labels.iter().filter(|l| !d.detail.labels.contains(l)) {
-                    o.push(CREATE_BASE, order, None, format!("ALTER TYPE {q} ADD VALUE {};", literal(l)));
-                }
-                if s.detail.comment != d.detail.comment {
-                    o.push(CREATE_BASE, order, None, comment_on("TYPE", &q, &s.detail.comment));
-                }
-                Op::Modify
-            } else {
-                o.push(CREATE_BASE, order, None, format!("-- type {q} differs and cannot be altered automatically"));
-                Op::Modify
+            let changes = type_changes(cx, &q, s, d);
+            for sql in &changes {
+                o.push(CREATE_BASE, order, None, sql.clone());
             }
+            if changes.is_empty() { Op::Same } else { Op::Modify }
         }
         (None, None) => Op::Same,
     };
@@ -1221,6 +1281,65 @@ mod tests {
             ]
         );
         assert!(create_table(&cx, &s).contains("WITH (fillfactor=70)"));
+    }
+
+    fn type_snap(kind: &str, f: impl FnOnce(&mut TypeDetail)) -> TypeSnap {
+        let mut detail = TypeDetail {
+            name: "t".into(),
+            kind: kind.into(),
+            owner: None,
+            comment: None,
+            labels: vec![],
+            attributes: vec![],
+            base_type: None,
+            default: None,
+            not_null: false,
+            checks: vec![],
+            subtype: None,
+        };
+        f(&mut detail);
+        TypeSnap { name: "t".into(), detail }
+    }
+
+    #[test]
+    fn composite_types_and_domains_are_altered_in_place() {
+        use atlas_core::{TypeAttribute, TypeCheck};
+        let cx = Ctx { schema: "public".into(), target_version: 180000, loose: false, legacy_sequences: false };
+        let attr = |n: &str, t: &str| TypeAttribute { name: n.into(), data_type: t.into() };
+        let s = type_snap("composite", |d| d.attributes = vec![attr("a", "integer"), attr("b", "text"), attr("c", "date")]);
+        let d = type_snap("composite", |d| d.attributes = vec![attr("a", "bigint"), attr("b", "text"), attr("old", "text")]);
+        let sql = type_changes(&cx, "\"public\".\"t\"", &s, &d);
+        assert_eq!(
+            sql,
+            vec![
+                r#"ALTER TYPE "public"."t" ALTER ATTRIBUTE "a" TYPE integer;"#,
+                r#"ALTER TYPE "public"."t" ADD ATTRIBUTE "c" date;"#,
+                r#"ALTER TYPE "public"."t" DROP ATTRIBUTE "old";"#,
+            ]
+        );
+        let check = |n: &str, def: &str| TypeCheck { name: n.into(), definition: def.into() };
+        let s = type_snap("domain", |d| {
+            d.base_type = Some("integer".into());
+            d.default = Some("1".into());
+            d.not_null = true;
+            d.checks = vec![check("pos", "CHECK ((VALUE > 0))")];
+        });
+        let d = type_snap("domain", |d| {
+            d.base_type = Some("integer".into());
+            d.checks = vec![check("pos", "CHECK ((VALUE >= 0))"), check("gone", "CHECK ((VALUE < 9))")];
+        });
+        let sql = type_changes(&cx, "\"public\".\"t\"", &s, &d);
+        assert_eq!(
+            sql,
+            vec![
+                r#"ALTER DOMAIN "public"."t" SET DEFAULT 1;"#,
+                r#"ALTER DOMAIN "public"."t" SET NOT NULL;"#,
+                r#"ALTER DOMAIN "public"."t" DROP CONSTRAINT "pos";"#,
+                r#"ALTER DOMAIN "public"."t" ADD CONSTRAINT "pos" CHECK ((VALUE > 0));"#,
+                r#"ALTER DOMAIN "public"."t" DROP CONSTRAINT "gone";"#,
+            ]
+        );
+        assert!(type_changes(&cx, "q", &s, &s.clone()).is_empty());
     }
 
     #[test]
