@@ -6,6 +6,7 @@ mod find;
 mod import;
 mod transfer;
 mod connect;
+mod datasync;
 mod error;
 mod exec;
 mod meta;
@@ -17,6 +18,7 @@ pub use exec::{
     execute, execute_in_schema, is_single_statement, quote_ident, search_path_for, select_sql, stream_rows, table_count, table_rows, wrap_query,
 };
 pub use dump::{DumpOptions, DumpPlan, DumpScope, DumpTable, begin_snapshot, copy_header, copy_table, data_select, end_snapshot, header as dump_header, plan as dump_plan};
+pub use datasync::{CompareHooks, Comparison, DeployHooks, DeployStats, DiffKind, DiffRow, SyncSpec, SyncTable, TableDiff, TableSelection, compare as compare_data, deploy as deploy_data, script as data_script};
 pub use transfer::{FieldMap, Hooks as TransferHooks, TableOverride, TransferSpec, TransferStats, rewrite_schema, run as run_transfer};
 pub use import::{Feed, Hooks as ImportHooks, ImportMode, ImportSpec, ImportStats, TargetColumn, run as run_import};
 pub use find::{FindHit, FindOptions, FindResult, find};

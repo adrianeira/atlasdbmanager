@@ -246,7 +246,7 @@ async fn run_statements(
     Ok(true)
 }
 
-async fn fetch_batch(src: &PgSession, cursor: &str, n: usize, columns: usize) -> Result<Vec<Vec<Option<String>>>, DatabaseError> {
+pub(crate) async fn fetch_batch(src: &PgSession, cursor: &str, n: usize, columns: usize) -> Result<Vec<Vec<Option<String>>>, DatabaseError> {
     let msgs = src.client.simple_query(&format!("FETCH {n} FROM {cursor}")).await.map_err(sql_err)?;
     let mut rows = Vec::new();
     for m in msgs {

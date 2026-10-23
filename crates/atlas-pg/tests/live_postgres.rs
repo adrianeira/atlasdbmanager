@@ -1257,6 +1257,127 @@ async fn transfer_copies_objects_between_schemas_and_servers() {
 }
 
 #[tokio::test]
+async fn data_sync_compares_scripts_and_deploys() {
+    use atlas_pg::{CompareHooks, DeployHooks, DiffKind, SyncSpec, SyncTable, TableSelection};
+    let p = require_server!();
+    let src = atlas_pg::connect(&p, None).await.expect("connect source");
+    let mut tp = p.clone();
+    if let Some(port) = std::env::var("ATLAS_TEST_PG_TARGET_PORT").ok().and_then(|x| x.parse().ok()) {
+        tp.port = port;
+    }
+    let dst = atlas_pg::connect(&tp, None).await.expect("connect target");
+    let pid = std::process::id();
+    let (a, b) = (format!("atlas_ds_a_{pid}"), format!("atlas_ds_b_{pid}"));
+    let ddl = |ns: &str| {
+        format!(
+            "DROP SCHEMA IF EXISTS {ns} CASCADE; CREATE SCHEMA {ns}; \
+             CREATE TABLE {ns}.t(id integer PRIMARY KEY, nome text, valor numeric(10,2), f double precision, ativo boolean, nota text, ts timestamptz); \
+             CREATE TABLE {ns}.sempk(x integer); \
+             CREATE TABLE {ns}.comp(a integer, b text, v text, PRIMARY KEY (a, b));"
+        )
+    };
+    atlas_pg::execute(&src, &ddl(&a), 1).await.expect("source ddl");
+    atlas_pg::execute(&dst, &ddl(&b), 1).await.expect("target ddl");
+    atlas_pg::execute(
+        &src,
+        &format!(
+            "INSERT INTO {a}.t VALUES (1, 'Ana', 10.50, 0.1, true, 'x', '2026-01-02 03:04:05+00'), (2, 'Bruno', 20, 0.2, false, NULL, '2026-02-02 00:00:00+00'), \
+             (3, 'Carla', NULL, NULL, NULL, E'linha1\\nlinha2 \\\\ barra ''aspas''', NULL), (4, 'Novo', 4.40, 4.4, true, 'inserir', '2026-04-04 04:04:04+00'); \
+             INSERT INTO {a}.sempk VALUES (1); \
+             INSERT INTO {a}.comp VALUES (1, 'x', 'p'), (1, 'y', 'q')"
+        ),
+        1,
+    )
+    .await
+    .unwrap();
+    atlas_pg::execute(
+        &dst,
+        &format!(
+            "INSERT INTO {b}.t VALUES (1, 'Ana', 10.50, 0.1, true, 'x', '2026-01-02 03:04:05+00'), (2, 'Bruno X', 21, 0.2, false, NULL, '2026-02-02 00:00:00+00'), \
+             (3, 'Carla', NULL, NULL, NULL, E'linha1\\nlinha2 \\\\ barra ''aspas''', NULL), (5, 'Sobra', 5, 5, false, NULL, NULL); \
+             INSERT INTO {b}.comp VALUES (1, 'x', 'p'), (2, 'z', 'r')"
+        ),
+        1,
+    )
+    .await
+    .unwrap();
+    let table = |s: &str| SyncTable { source: s.into(), target: s.into(), key: None, fields: None };
+    let spec = SyncSpec { source_schema: a.clone(), target_schema: b.clone(), tables: vec![table("t"), table("sempk"), table("comp")] };
+
+    async fn run_compare(src: &atlas_pg::PgSession, dst: &atlas_pg::PgSession, spec: &SyncSpec) -> atlas_pg::Comparison {
+        let mut steps = 0usize;
+        let c = {
+            let mut on_progress = |_: &str, f: f64| {
+                assert!((0.0..=1.0).contains(&f));
+                steps += 1;
+            };
+            atlas_pg::compare_data(src, dst, spec, CompareHooks { progress: &mut on_progress, cancelled: &|| false }).await.expect("compare")
+        };
+        assert!(steps > 0, "o progresso deve ser avisado");
+        c
+    }
+    let c = run_compare(&src, &dst, &spec).await;
+    let (t, sempk, comp) = (&c.tables[0], &c.tables[1], &c.tables[2]);
+    assert_eq!((t.insert, t.update, t.delete, t.same), (1, 1, 1, 2), "{:?}", t.message);
+    assert_eq!(sempk.message.as_deref(), Some("Source table do not have primary key"));
+    assert_eq!((comp.insert, comp.update, comp.delete, comp.same), (1, 0, 1, 1), "{:?}", comp.message);
+    // A atualização mostra origem e destino e marca só os campos que mudam (nome e valor).
+    let upd = t.rows.iter().find(|r| r.kind == DiffKind::Update).expect("update row");
+    assert_eq!(upd.source.as_ref().unwrap()[1].as_deref(), Some("Bruno"));
+    assert_eq!(upd.target.as_ref().unwrap()[1].as_deref(), Some("Bruno X"));
+    let changed: Vec<&str> = t.source_fields.iter().zip(&upd.changed).filter(|(_, c)| **c).map(|(f, _)| f.as_str()).collect();
+    assert_eq!(changed, vec!["nome", "valor"]);
+
+    let all = |table: &str, insert, update, delete| TableSelection { table: table.into(), insert, update, delete, excluded: vec![] };
+    // Só atualizações: um UPDATE.
+    let only_update = atlas_pg::data_script(&c, &[all("t", false, true, false)]);
+    assert_eq!(only_update.len(), 1, "{only_update:?}");
+    assert!(only_update[0].starts_with("UPDATE") && only_update[0].contains("WHERE \"id\" = 2"), "{only_update:?}");
+    // Desmarcar a linha da inclusão a tira do script.
+    let ins_idx = t.rows.iter().position(|r| r.kind == DiffKind::Insert).unwrap() as u32;
+    let no_insert = atlas_pg::data_script(&c, &[TableSelection { excluded: vec![ins_idx], ..all("t", true, false, false) }]);
+    assert!(no_insert.is_empty(), "{no_insert:?}");
+
+    // Tudo: INSERT, UPDATE e DELETE (os DELETE no fim).
+    let statements = atlas_pg::data_script(&c, &[all("t", true, true, true), all("comp", true, true, true)]);
+    assert_eq!(statements.len(), 5, "{statements:#?}");
+    assert!(statements.iter().any(|s| s.starts_with("INSERT INTO") && s.contains("'linha")) || statements.iter().any(|s| s.contains("'inserir'")));
+    assert!(statements.last().unwrap().starts_with("DELETE"));
+    let mut log = Vec::new();
+    let stats = {
+        let mut on_log = |l: String| log.push(l);
+        let mut on_progress = |_: u64, _: u64| {};
+        atlas_pg::deploy_data(&dst, &statements, true, false, DeployHooks { log: &mut on_log, progress: &mut on_progress, cancelled: &|| false }).await.expect("deploy")
+    };
+    assert_eq!((stats.done, stats.errors), (5, 0), "{log:#?}");
+    assert!(log.iter().any(|l| l == "--Transaction - Commit--") && log.iter().any(|l| l == "Executed Query: 5"), "{log:#?}");
+    // Depois de implantar, comparar de novo não acha diferença.
+    let again = run_compare(&src, &dst, &spec).await;
+    for tb in [&again.tables[0], &again.tables[2]] {
+        assert_eq!((tb.insert, tb.update, tb.delete), (0, 0, 0), "{} {:?}", tb.source, tb.message);
+    }
+    assert_eq!(again.tables[0].same, 4);
+    let q = |ns: String| format!("SELECT string_agg(id || ':' || coalesce(nome,'~') || ':' || coalesce(valor::text,'~') || ':' || coalesce(nota,'~'), ' | ' ORDER BY id) FROM {ns}.t");
+    async fn text(s: &atlas_pg::PgSession, sql: String) -> String {
+        atlas_pg::execute(s, &sql, 10).await.unwrap().statements[0].result.as_ref().unwrap().rows[0][0].clone().unwrap_or_default()
+    }
+    assert_eq!(text(&dst, q(b.clone())).await, text(&src, q(a.clone())).await);
+
+    // Um erro dentro da transação desfaz tudo.
+    let bad = vec!["INSERT INTO ".to_string() + &b + ".t (id) VALUES (900);", "INSERT INTO ".to_string() + &b + ".t (id) VALUES (1);"];
+    let stats = {
+        let mut on_log = |_: String| {};
+        let mut on_progress = |_: u64, _: u64| {};
+        atlas_pg::deploy_data(&dst, &bad, true, false, DeployHooks { log: &mut on_log, progress: &mut on_progress, cancelled: &|| false }).await.expect("deploy")
+    };
+    assert!(stats.rolled_back && stats.errors == 1);
+    assert_eq!(text(&dst, format!("SELECT count(*) FROM {b}.t WHERE id = 900")).await, "0");
+
+    atlas_pg::execute(&src, &format!("DROP SCHEMA {a} CASCADE"), 1).await.unwrap();
+    atlas_pg::execute(&dst, &format!("DROP SCHEMA {b} CASCADE"), 1).await.unwrap();
+}
+
+#[tokio::test]
 async fn syntax_error_reports_position() {
     let p = require_server!();
     let s = atlas_pg::connect(&p, None).await.expect("connect");
