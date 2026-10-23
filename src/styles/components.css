@@ -2216,3 +2216,9 @@ select.et-input {
 .qb-edge { position: absolute; z-index: 2; }
 .qb-edge-x { top: 0; right: -3px; width: 6px; height: calc(100% - 14px); cursor: ew-resize; }
 .qb-edge-y { left: 0; bottom: -3px; height: 6px; width: calc(100% - 14px); cursor: ns-resize; }
+.qb-table-line line:not(.qb-hit) { stroke-width: 2; }
+.qb-venn { cursor: pointer; }
+.qb-venn-bg { fill: var(--c-surface); stroke: none; }
+.qb-venn-fill { fill: #3aa0e0; opacity: 0.55; stroke: none; }
+.qb-venn-ring { fill: none; stroke: #3aa0e0; stroke-width: 2; }
+.qb-table-line.is-selected .qb-venn-ring { stroke: #0078d7; stroke-width: 2.5; }

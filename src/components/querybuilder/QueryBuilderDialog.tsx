@@ -363,7 +363,7 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
     const top = tb.y + HEAD_H + PAD;
     const raw = top + idx * ROW_H - (scrolls[tb.id] ?? 0) + ROW_H / 2;
     // Campo rolado para fora do cartão: a linha prende na borda de cima ou de baixo.
-    const y = mode === "table" ? tb.y + HEAD_H / 2 : Math.min(top + visible * ROW_H - ROW_H / 2, Math.max(top + ROW_H / 2, raw));
+    const y = mode === "table" ? tb.y + (HEAD_H + bodyH(tb)) / 2 : Math.min(top + visible * ROW_H - ROW_H / 2, Math.max(top + ROW_H / 2, raw));
     const right = tb.x + cardW(tb) / 2 < otherX;
     return { x: right ? tb.x + cardW(tb) : tb.x, y };
   };
@@ -641,15 +641,33 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
                   <svg className="qb-lines" width={size.w} height={size.h}>
                     <defs>
                       <marker id="qb-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L8 4L0 8z" fill="currentColor" /></marker>
+                      <marker id="qb-dot" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="6" markerHeight="6"><circle cx="4" cy="4" r="3" fill="currentColor" /></marker>
+                      <clipPath id="qb-clip-l"><circle cx="-6" cy="0" r="11" /></clipPath>
                     </defs>
-                    {lines.map(({ j, a, b }) => (
+                    {lines.map(({ j, a, b }) => (mode === "table" ? (
+                      <g key={j.id} className={`qb-line qb-table-line${selJoin === j.id ? " is-selected" : ""}`} onContextMenu={(e) => { setSelJoin(j.id); showMenu(e, lineMenu(j.id, j.type)); }}>
+                        <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} className="qb-hit" />
+                        <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} markerStart="url(#qb-dot)" markerEnd="url(#qb-dot)" />
+                        <g className="qb-venn" transform={`translate(${(a.x + b.x) / 2} ${(a.y + b.y) / 2})`} onClick={(e) => { setSelJoin(j.id); showMenu(e, lineMenu(j.id, j.type)); }}>
+                          <circle cx="-6" cy="0" r="11" className="qb-venn-bg" />
+                          <circle cx="6" cy="0" r="11" className="qb-venn-bg" />
+                          {j.type === "INNER" && <circle cx="6" cy="0" r="11" className="qb-venn-fill" clipPath="url(#qb-clip-l)" />}
+                          {(j.type === "LEFT" || j.type === "FULL") && <circle cx="-6" cy="0" r="11" className="qb-venn-fill" />}
+                          {(j.type === "RIGHT" || j.type === "FULL") && <circle cx="6" cy="0" r="11" className="qb-venn-fill" />}
+                          <circle cx="-6" cy="0" r="11" className="qb-venn-ring" />
+                          <circle cx="6" cy="0" r="11" className="qb-venn-ring" />
+                        </g>
+                        <title>{`${j.type} JOIN: ${labelOf(j.left)} = ${labelOf(j.right)}`}</title>
+                      </g>
+                    ) : (
+
                       <g key={j.id} className={`qb-line${selJoin === j.id ? " is-selected" : ""}`} onClick={() => { setSelJoin(j.id); setTab("FROM"); }} onContextMenu={(e) => { setSelJoin(j.id); showMenu(e, lineMenu(j.id, j.type)); }}>
                         <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} className="qb-hit" />
                         <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} markerStart="url(#qb-arrow)" markerEnd="url(#qb-arrow)" />
                         {j.type !== "INNER" && <text className="qb-join-label" x={(a.x + b.x) / 2} y={(a.y + b.y) / 2 - 4} textAnchor="middle">{j.type}</text>}
                         <title>{`${j.type} JOIN: ${labelOf(j.left)} = ${labelOf(j.right)}`}</title>
                       </g>
-                    ))}
+                    )))}
                     {link && (() => {
                       const a = anchor(link.from, link.x);
                       return <line x1={a.x} y1={a.y} x2={link.x} y2={link.y} className="qb-rubber" />;

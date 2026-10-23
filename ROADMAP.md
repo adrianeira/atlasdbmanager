@@ -94,7 +94,8 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       fechar a aba de consulta fecha a janela do builder dela; janela separada verificada no PostgreSQL 9.6 e 18
 - [x] Ajustes pela referência: apelido da tabela com `AS` (`clients AS teste`), seta nas duas pontas da relação, botão
       `+` ao lado do último campo do SELECT e aviso claro quando a tabela do SELECT não existe no schema da aba
-- [ ] "Table Relation" foi montado sem referência visual (linha entre os títulos dos cartões); conferir com o original
+- [x] **Table Relation** como no original: a linha liga o centro de cada cartão (bolinhas nas pontas) e leva no meio o
+      ícone de diagrama de Venn do tipo de JOIN (INNER, LEFT, RIGHT, FULL); clicar no ícone abre o menu do tipo
 
 ### Importação de dados
 - [x] **Assistente de importação em 7 etapas** (formato → arquivos → opções da origem → tabela de destino →
