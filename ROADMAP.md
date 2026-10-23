@@ -359,6 +359,19 @@ origem × destino; depois vêm o Script de implantação (copiar), a implantaç�
 o Registro, perfis salvos e opções padrão. Testado ao vivo entre PG 9.6 e PG 18 (comparação, script, implantação e nova
 comparação sem diferenças).
 
+### Structure Synchronization
+Tools → Structure Synchronization abre uma janela do sistema (como o Data Transfer): origem e destino com conexão que abre
+sozinha e o painel Information. A comparação cobre tabelas (colunas, restrições, índices, gatilhos e as opções da tabela),
+views, views materializadas, sequências, funções/procedimentos e tipos, e mostra a árvore agrupada por operação ou por tipo,
+com caixa de marcação por objeto, grupo e parte, o DDL dos dois lados com as linhas diferentes realçadas e a prévia do script.
+O script sai em fases (derrubar dependentes, tipos/sequências/funções, tabelas, restrições e índices, chaves estrangeiras,
+views, exclusões), com a opção de reordenar ou desligar comandos, copiar, abrir numa aba de consulta, perfis salvos,
+"Continuar em caso de erro" e "Incluir o comando no registro". Entre versões diferentes (9.6 ↔ 18) as definições se comparam
+sem espaços, parênteses e qualificadores, `EXECUTE PROCEDURE`/`FUNCTION` e `AS tipo` das sequências se ajustam ao destino.
+Testado ao vivo nos quatro sentidos (9.6→9.6, 18→18, 9.6→18, 18→9.6): comparar, implantar e comparar de novo sem diferenças.
+Fora desta entrega: privilégios, donos (só aparecem no DDL), opções de armazenamento, tabelas estrangeiras, mudança de
+expressão de coluna gerada e de tipos compostos/faixa (o script avisa por comentário).
+
 ## Limitações conhecidas
 - Exportar o resultado de uma consulta exige um único comando que devolva linhas.
 - Exportação de tabela sem filtro/ordenação usa a ordem natural do servidor.
@@ -442,7 +455,7 @@ comparação sem diferenças).
 - [x] Dump SQL completo (ver "Dump SQL" em Entregues)
 - [x] Data Transfer entre conexões e bancos (ver "Data Transfer" em Entregues)
 - [x] Data Synchronization entre conexões e bancos (ver "Data Synchronization" em Entregues)
-- [ ] Structure Synchronization (capturas em `capturas/Tools/Structure Synchronization`)
+- [x] Structure Synchronization entre conexões e bancos (ver "Structure Synchronization" em Entregues)
 
 ## 8. Backup / Restore
 - [x] **Novo backup do schema ou do banco inteiro** (menu do banco, do schema e categoria Backup) no formato da referência: abas **Geral**

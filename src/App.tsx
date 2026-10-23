@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  appReady, errorText, isDesktop, local, openDataSync, openDataTransfer, pg, toAtlasError,
+  appReady, errorText, isDesktop, local, onOpenScript, openDataSync, openDataTransfer, openStructSync, pg, toAtlasError, type OpenScriptRequest,
   type ConnectionParams, type DatabaseDetail, type DumpScope, type FindHit, type ProfileRecord, type SchemaDetail,
 } from "./backend";
 import { entries, matchesShortcut, sub, type CommandMap, type MenuDef, type MenuEntry } from "./commands";
@@ -680,6 +680,22 @@ export default function App() {
       connectionId: conn?.id, database: db?.name, schema: ctx.schema?.name ?? db?.schemas[0]?.name, sql: sqlText,
     });
   };
+
+  // Pedido de uma janela de ferramenta (ex.: Structure Synchronization): o script abre numa aba de consulta.
+  const openScript = useRef((_r: OpenScriptRequest) => {});
+  openScript.current = (r) => {
+    const conn = connections.find((c) => c.id === r.connId);
+    openTab({
+      kind: "query", title: t("tab.untitledQuery"), windowTitle: t("tab.untitledQuery"), icon: "query",
+      connectionId: conn?.id, database: r.database, schema: r.schema, sql: r.sql,
+    });
+  };
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    let alive = true;
+    void onOpenScript((r) => openScript.current(r)).then((f) => { if (alive) off = f; else f(); });
+    return () => { alive = false; off?.(); };
+  }, []);
 
   /* ---------- Ações do menu da conexão ---------- */
   const duplicateConnection = (conn: ConnectionMock) => {
@@ -1804,7 +1820,21 @@ export default function App() {
         }).catch((e) => showError(t("ds.title"), e));
       },
     },
-    structureSync: { id: "structureSync", label: "cmd.structureSync" },
+    structureSync: {
+      id: "structureSync", label: "cmd.structureSync",
+      run: () => {
+        const live = connections.filter((c) => c.live);
+        if (live.length === 0) return;
+        void openStructSync(t("ss.title"), {
+          connections: live.map((c) => ({
+            id: c.id, name: c.name, provider: c.provider, host: c.host, port: c.port, user: c.user,
+            version: c.serverVersion, versionNum: c.serverVersionNum, open: openConnections.has(c.id),
+            initialDatabase: c.initialDatabase, sslMode: c.sslMode, hasPassword: c.hasPassword,
+          })),
+          source: ctx.connection?.live && ctx.database && ctx.schema ? { connId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name } : undefined,
+        }).catch((e) => showError(t("ss.title"), e));
+      },
+    },
     serverMonitor: { id: "serverMonitor", label: "cmd.serverMonitor" },
     options: { id: "options", label: "cmd.options", run: () => setDialog({ kind: "options" }) },
     nextTab: { id: "nextTab", label: "cmd.nextTab", shortcut: "Ctrl+Tab", run: () => cycleTab(1) },

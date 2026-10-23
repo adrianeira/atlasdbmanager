@@ -483,6 +483,8 @@ struct Ctx {
     /// Os servidores são de versões principais diferentes: o mesmo objeto sai escrito de outro jeito (`SELECT id` ou
     /// `SELECT clientes.id`), então as definições se comparam sem espaços, parênteses e qualificadores.
     loose: bool,
+    /// Um dos lados é anterior ao PostgreSQL 10: a sequência é sempre `bigint`, então os limites não dizem nada.
+    legacy_sequences: bool,
 }
 
 /// Forma usada para comparar definições de servidores diferentes.
@@ -520,7 +522,8 @@ fn loosen(sql: &str) -> String {
             i += 1;
         }
     }
-    out
+    // Antes do PostgreSQL 11 o gatilho diz `EXECUTE PROCEDURE`; depois, `EXECUTE FUNCTION`.
+    out.replace("EXECUTEPROCEDURE", "EXECUTEFUNCTION")
 }
 
 impl Ctx {
@@ -648,8 +651,8 @@ fn sequence_alter(cx: &Ctx, d: &SequenceDetail) -> String {
     )
 }
 
-fn sequence_same(a: &SequenceDetail, b: &SequenceDetail) -> bool {
-    (&a.start, &a.increment, &a.min, &a.max, &a.cache, a.cycle) == (&b.start, &b.increment, &b.min, &b.max, &b.cache, b.cycle)
+fn sequence_same(cx: &Ctx, a: &SequenceDetail, b: &SequenceDetail) -> bool {
+    (&a.start, &a.increment, &a.cache, a.cycle) == (&b.start, &b.increment, &b.cache, b.cycle) && (cx.legacy_sequences || (&a.min, &a.max) == (&b.min, &b.max))
 }
 
 fn type_create(cx: &Ctx, t: &TypeSnap) -> String {
@@ -702,6 +705,16 @@ const FOREIGN_KEYS: u8 = 4;
 const VIEWS: u8 = 5;
 const DROP_OBJECTS: u8 = 6;
 
+/// Ajusta um comando de um servidor novo a um destino antigo: `AS tipo` nas sequências (antes do 10) e `EXECUTE FUNCTION`
+/// nos gatilhos (antes do 11).
+fn adapt(sql: &str, target_version: i32) -> String {
+    let sql = adapt_for_target(sql, target_version);
+    if target_version < 110000 && (sql.starts_with("CREATE TRIGGER ") || sql.starts_with("CREATE CONSTRAINT TRIGGER ")) {
+        return sql.replace(" EXECUTE FUNCTION ", " EXECUTE PROCEDURE ");
+    }
+    sql
+}
+
 struct Out<'a> {
     cx: &'a Ctx,
     stmts: Vec<Stmt>,
@@ -710,7 +723,7 @@ struct Out<'a> {
 
 impl Out<'_> {
     fn push(&mut self, phase: u8, order: i64, part: Option<usize>, sql: String) {
-        self.stmts.push(Stmt { phase, order, part, sql: adapt_for_target(&sql, self.cx.target_version) });
+        self.stmts.push(Stmt { phase, order, part, sql: adapt(&sql, self.cx.target_version) });
     }
 }
 
@@ -939,7 +952,7 @@ fn diff_sequence(cx: &Ctx, order: i64, src: Option<&SeqSnap>, dst: Option<&SeqSn
             Op::Delete
         }
         (Some(s), Some(d)) => {
-            if sequence_same(&s.detail, &d.detail) {
+            if sequence_same(cx, &s.detail, &d.detail) {
                 Op::Same
             } else {
                 o.push(CREATE_BASE, order, None, sequence_alter(cx, &s.detail));
@@ -1054,7 +1067,9 @@ pub async fn compare(src: &PgSession, dst: &PgSession, spec: &StructSpec, mut ho
     retarget(&mut a, &spec.source_schema, &spec.target_schema);
     (hooks.progress)("Comparing...", 0.98);
     let major = |v: i32| if v >= 100000 { v / 10000 } else { v / 100 };
-    let cx = Ctx { schema: spec.target_schema.clone(), target_version: dst.server.version_num, loose: major(src.server.version_num) != major(dst.server.version_num) };
+    let cx = Ctx { schema: spec.target_schema.clone(), target_version: dst.server.version_num, loose: major(src.server.version_num) != major(dst.server.version_num),
+        legacy_sequences: src.server.version_num.min(dst.server.version_num) < 100000,
+    };
     let mut objects = Vec::new();
     let mut order = 0i64;
     let mut next = || {
@@ -1121,7 +1136,7 @@ mod tests {
 
     #[test]
     fn a_new_column_becomes_an_alter_and_the_table_is_modified() {
-        let cx = Ctx { schema: "public".into(), target_version: 180000, loose: false };
+        let cx = Ctx { schema: "public".into(), target_version: 180000, loose: false, legacy_sequences: false };
         let s = table("t", vec![col("id", "integer"), col("status", "boolean")]);
         let d = table("t", vec![col("id", "integer")]);
         let diff = diff_table(&cx, 1, Some(&s), Some(&d));
@@ -1148,15 +1163,23 @@ mod tests {
     }
 
     #[test]
+    fn triggers_use_execute_procedure_for_old_targets() {
+        let stmt = "CREATE TRIGGER t AFTER INSERT ON s.a FOR EACH ROW EXECUTE FUNCTION s.f();";
+        assert!(adapt(stmt, 90619).contains("EXECUTE PROCEDURE s.f()"));
+        assert_eq!(adapt(stmt, 180006), stmt);
+        assert_eq!(loosen("EXECUTE PROCEDURE s.f()"), loosen("EXECUTE FUNCTION s.f()"));
+    }
+
+    #[test]
     fn identical_tables_are_the_same() {
-        let cx = Ctx { schema: "public".into(), target_version: 180000, loose: false };
+        let cx = Ctx { schema: "public".into(), target_version: 180000, loose: false, legacy_sequences: false };
         let t = table("t", vec![col("id", "integer")]);
         assert_eq!(diff_table(&cx, 1, Some(&t), Some(&t.clone())).op, Op::Same);
     }
 
     #[test]
     fn a_changed_constraint_is_dropped_before_the_new_one_is_added() {
-        let cx = Ctx { schema: "public".into(), target_version: 180000, loose: false };
+        let cx = Ctx { schema: "public".into(), target_version: 180000, loose: false, legacy_sequences: false };
         let mut s = table("t", vec![col("a", "integer")]);
         let mut d = s.clone();
         s.constraints.push(Named { name: "c".into(), kind: "c".into(), def: "CHECK ((a > 1))".into() });

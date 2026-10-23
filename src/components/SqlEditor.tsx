@@ -4,7 +4,7 @@ import { PostgreSQL, sql } from "@codemirror/lang-sql";
 import { bracketMatching, foldGutter, HighlightStyle, indentOnInput, syntaxHighlighting } from "@codemirror/language";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import {
-  drawSelection, EditorView, highlightActiveLineGutter, keymap, lineNumbers, placeholder as cmPlaceholder,
+  Decoration, drawSelection, EditorView, highlightActiveLineGutter, keymap, lineNumbers, placeholder as cmPlaceholder,
 } from "@codemirror/view";
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, snippet } from "@codemirror/autocomplete";
 import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
@@ -32,6 +32,8 @@ const atlasTheme = EditorView.theme({
   ".cm-foldGutter": { width: "14px", fontSize: "var(--editor-font-size, 13px)" },
   ".cm-foldGutter .cm-gutterElement": { padding: "0", textAlign: "center" },
   ".cm-activeLineGutter": { backgroundColor: "transparent", color: "var(--c-text)" },
+  ".cm-mark-add": { backgroundColor: "var(--diff-add)" },
+  ".cm-mark-remove": { backgroundColor: "var(--diff-remove)" },
   "&.cm-focused": { outline: "none" },
   ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": { backgroundColor: "var(--editor-selection) !important" },
   ".cm-tooltip": { border: "1px solid var(--c-border-strong)", backgroundColor: "var(--c-surface)" },
@@ -58,16 +60,19 @@ interface Props {
   schema?: Record<string, string[]>;
   defaultSchema?: string;
   placeholder?: string;
+  /** Linhas (a partir de 1) com o fundo marcado: `add` em verde e `remove` em vermelho (comparação de DDL). */
+  lineMarks?: { add?: number[]; remove?: number[] };
   onChange?: (text: string) => void;
   onCursor?: (line: number, col: number) => void;
   onRun?: (selectionOnly: boolean) => void;
   handleRef?: (h: SqlEditorHandle | null) => void;
 }
 
-export function SqlEditor({ value, readOnly, schema, defaultSchema, placeholder, onChange, onCursor, onRun, handleRef }: Props) {
+export function SqlEditor({ value, readOnly, schema, defaultSchema, placeholder, lineMarks, onChange, onCursor, onRun, handleRef }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const langConf = useRef(new Compartment());
+  const marksConf = useRef(new Compartment());
   const cbs = useRef({ onChange, onCursor, onRun });
   cbs.current = { onChange, onCursor, onRun };
 
@@ -98,6 +103,7 @@ export function SqlEditor({ value, readOnly, schema, defaultSchema, placeholder,
       syntaxHighlighting(atlasHighlight),
       atlasTheme,
       langConf.current.of(sql({ dialect: PostgreSQL, schema, defaultSchema, upperCaseKeywords: true })),
+      marksConf.current.of([]),
       autocompletion({ activateOnTyping: true }),
       runKeys,
       keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...completionKeymap, indentWithTab]),
@@ -163,6 +169,21 @@ export function SqlEditor({ value, readOnly, schema, defaultSchema, placeholder,
     const v = view.current;
     if (v && readOnly && v.state.doc.toString() !== value) v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: value } });
   }, [value, readOnly]);
+
+  // Marcas de linha (depois do valor, que pode ter trocado o texto).
+  useEffect(() => {
+    const v = view.current;
+    if (!v) return;
+    const doc = v.state.doc;
+    const ranges = [
+      ...(lineMarks?.add ?? []).map((n) => ["cm-mark-add", n] as const),
+      ...(lineMarks?.remove ?? []).map((n) => ["cm-mark-remove", n] as const),
+    ]
+      .filter(([, n]) => n >= 1 && n <= doc.lines)
+      .sort((a, b) => a[1] - b[1])
+      .map(([cls, n]) => Decoration.line({ class: cls }).range(doc.line(n).from));
+    v.dispatch({ effects: marksConf.current.reconfigure(EditorView.decorations.of(Decoration.set(ranges))) });
+  }, [lineMarks, value, readOnly]);
 
   // Autocomplete acompanha o schema selecionado.
   useEffect(() => {

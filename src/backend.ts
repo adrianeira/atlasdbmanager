@@ -280,6 +280,11 @@ export const openQueryBuilder = (req: QueryBuilderOpen) => call<void>("open_quer
 export const closeQueryBuilder = (id: string) => call<void>("close_query_builder", { id });
 
 /** A janela do Query Builder devolveu um SELECT (Build / Build and Run). */
+/** A janela principal ouve os pedidos das ferramentas para abrir um script numa aba de consulta. */
+export async function onOpenScript(cb: (r: OpenScriptRequest) => void): Promise<() => void> {
+  return listen<OpenScriptRequest>("tool-open-query", (e) => cb(e.payload));
+}
+
 export async function onQueryBuilderBuild(id: string, cb: (r: QueryBuilderResult) => void): Promise<() => void> {
   return listen<QueryBuilderResult>("qb-build", (e) => {
     if (e.payload.id === id) cb(e.payload);
@@ -434,6 +439,37 @@ export async function onSyncDeployProgress(id: string, cb: (done: number, total:
     if (e.payload.id === id) cb(e.payload.done, e.payload.total);
   });
 }
+
+/* ----- Structure Synchronization (janela separada) ----- */
+
+export type StructOp = "add" | "delete" | "modify" | "same";
+export type StructKind = "table" | "view" | "matview" | "sequence" | "function" | "type";
+export interface StructPart { kind: string; name: string; op: StructOp }
+export interface StructObject { kind: StructKind; name: string; op: StructOp; parts: StructPart[]; sourceDdl: string; targetDdl: string }
+/** `parts` ausente (null) = todas as partes do objeto. */
+export interface StructSelection { kind: string; name: string; parts: number[] | null }
+export interface StructCompareRequest {
+  compareId: string;
+  sourceConn: string;
+  sourceDatabase: string;
+  targetConn: string;
+  targetDatabase: string;
+  spec: { sourceSchema: string; targetSchema: string };
+}
+export interface StructDeployRequest {
+  deployId: string;
+  targetConn: string;
+  targetDatabase: string;
+  statements: string[];
+  continueOnError: boolean;
+  includeQuery: boolean;
+}
+
+/** Abre (ou traz para a frente) a janela do Structure Synchronization. */
+export const openStructSync = (title: string, params: DataTransferParams) => call<void>("open_struct_sync", { req: { title, params: { ...params, title } } });
+
+/** O que a janela de ferramenta pede à principal: abrir um script numa aba de consulta. */
+export interface OpenScriptRequest { connId: string; database: string; schema: string; sql: string }
 
 /** O que o dump SQL cobre. */
 export type DumpScope =
@@ -758,6 +794,10 @@ export const pg = {
   syncScript: (compareId: string, selection: SyncSelection[]) => call<SyncScript>("datasync_script", { compareId, selection }),
   syncScriptFull: (compareId: string, selection: SyncSelection[]) => call<string>("datasync_script_full", { compareId, selection }),
   syncDeploy: (req: SyncDeployRequest) => call<SyncDeployCounts>("datasync_deploy", { req }),
+  structCompare: (req: StructCompareRequest) => call<StructObject[]>("structsync_compare", { req }),
+  structScript: (compareId: string, selection: StructSelection[]) => call<string[]>("structsync_script", { compareId, selection }),
+  structDeploy: (req: StructDeployRequest) => call<SyncDeployCounts>("structsync_deploy", { req }),
+  structForget: (compareId: string) => call<void>("structsync_forget", { compareId }),
   syncForget: (compareId: string) => call<void>("datasync_forget", { compareId }),
   transfer: (req: TransferRequest) => call<TransferCounts>("pg_transfer", { req }),
   importListTables: (path: string, format: ImportFormat) => call<string[]>("import_list_tables", { path, format }),

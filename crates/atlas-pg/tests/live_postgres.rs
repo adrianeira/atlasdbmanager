@@ -1651,7 +1651,7 @@ async fn structure_sync_compares_scripts_and_deploys() {
              CREATE TABLE {a}.orders(id serial PRIMARY KEY, client_id integer REFERENCES {a}.clients(id), amount numeric CONSTRAINT amount_ok CHECK (amount >= 0)); \
              CREATE TABLE {a}.only_src(id integer PRIMARY KEY); \
              CREATE VIEW {a}.v1 AS SELECT id, name FROM {a}.clients; \
-             CREATE FUNCTION {a}.f1(x integer) RETURNS integer LANGUAGE sql AS 'SELECT x + 1';"
+             CREATE FUNCTION {a}.f1(x integer) RETURNS integer LANGUAGE sql AS 'SELECT x + 1'; \n             CREATE FUNCTION {a}.trg() RETURNS trigger LANGUAGE plpgsql AS 'BEGIN RETURN NEW; END'; \n             CREATE TRIGGER clients_trg BEFORE INSERT ON {a}.clients FOR EACH ROW EXECUTE PROCEDURE {a}.trg();"
         ),
         1,
     )

@@ -4,6 +4,7 @@ import App from "./App";
 import { QueryBuilderWindow } from "./components/querybuilder/QueryBuilderWindow";
 import { DataSyncWindow } from "./components/transfer/DataSyncWindow";
 import { DataTransferWindow } from "./components/transfer/DataTransferWindow";
+import { StructSyncWindow } from "./components/transfer/StructSyncWindow";
 import "./styles/tokens.css";
 import "./styles/shell.css";
 import "./styles/components.css";
@@ -12,5 +13,6 @@ import "./styles/components.css";
 const builder = (window as { __ATLAS_QB__?: unknown }).__ATLAS_QB__;
 const transfer = (window as { __ATLAS_DT__?: unknown }).__ATLAS_DT__;
 const sync = (window as { __ATLAS_DS__?: unknown }).__ATLAS_DS__;
+const structure = (window as { __ATLAS_SS__?: unknown }).__ATLAS_SS__;
 
-createRoot(document.getElementById("root")!).render(<StrictMode>{builder ? <QueryBuilderWindow /> : transfer ? <DataTransferWindow /> : sync ? <DataSyncWindow /> : <App />}</StrictMode>);
+createRoot(document.getElementById("root")!).render(<StrictMode>{builder ? <QueryBuilderWindow /> : transfer ? <DataTransferWindow /> : sync ? <DataSyncWindow /> : structure ? <StructSyncWindow /> : <App />}</StrictMode>);

@@ -69,6 +69,8 @@
   --c-grid-focus-border: #7eb4ea;
 
   /* Editor SQL */
+  --diff-add: rgba(80, 170, 90, 0.22);
+  --diff-remove: rgba(220, 80, 80, 0.16);
   --sql-keyword: #0b5fd6;
   --sql-type: #0b5fd6;
   --sql-string: #c2185b;
@@ -116,6 +118,8 @@
     --c-grid-active-col: #264f78;
     --c-grid-focus: #2f5a85;
     --c-grid-focus-border: #4ca0e0;
+    --diff-add: rgba(80, 170, 90, 0.3);
+    --diff-remove: rgba(220, 80, 80, 0.26);
     --sql-keyword: #6cb6ff;
     --sql-type: #6cb6ff;
     --sql-string: #f48fb1;
@@ -162,6 +166,8 @@
   --c-grid-active-col: #264f78;
   --c-grid-focus: #2f5a85;
   --c-grid-focus-border: #4ca0e0;
+  --diff-add: rgba(80, 170, 90, 0.3);
+  --diff-remove: rgba(220, 80, 80, 0.26);
   --sql-keyword: #6cb6ff;
   --sql-type: #6cb6ff;
   --sql-string: #f48fb1;
