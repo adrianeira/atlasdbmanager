@@ -427,7 +427,7 @@ pub async fn run(src: &PgSession, dst: &PgSession, spec: &TransferSpec, mut hook
         if spec.target_schema != "public" {
             dst.client.batch_execute(&format!("CREATE SCHEMA IF NOT EXISTS {}", quote_ident(&spec.target_schema))).await.map_err(sql_err)?;
         }
-        let target_version = dst.server.version_num as i32;
+        let target_version = dst.server.version_num;
         let rewrite = |list: &[String]| -> Vec<String> {
             list.iter().map(|s| adapt_for_target(&rewrite_schema(s, &spec.source_schema, &spec.target_schema), target_version)).collect()
         };
