@@ -440,6 +440,66 @@ export async function onSyncDeployProgress(id: string, cb: (done: number, total:
   });
 }
 
+/* ----- Data Dictionary (janela separada) ----- */
+
+export interface DictFont { family: string; size: number }
+export type DictTemplate = "orange" | "red" | "blackWhite" | "blue" | "green";
+export interface DictSettings {
+  template: DictTemplate;
+  includeCover: boolean;
+  coverHeader: string;
+  coverTitle: string;
+  coverSubtitle: string;
+  coverRemarks: string;
+  coverBackground: "default" | "custom" | "none";
+  includeToc: boolean;
+  breadcrumbs: boolean;
+  breadcrumbFont: DictFont;
+  headingFont: DictFont;
+  subheadingFont: DictFont;
+  leftFooter: boolean;
+  leftFooterText: string;
+  pageNumber: boolean;
+  footerFont: DictFont;
+  includeIntro: boolean;
+  introText: string;
+  bodyFont: string;
+  paper: string;
+  landscape: boolean;
+  /** Centímetros: esquerda, direita, topo e base. */
+  margins: [number, number, number, number];
+  now: [number, number, number, number, number, number];
+}
+export interface DictSchemaSel { name: string; info: boolean; tables: string[] | null; views: string[] | null; functions: string[] | null }
+export interface DictDbSel { name: string; info: boolean; schemas: DictSchemaSel[] }
+export interface DictServerSel { connId: string; name: string; product: string; info: [string, string][] | null; databases: DictDbSel[] }
+export interface DictGenerateRequest {
+  runId: string;
+  servers: DictServerSel[];
+  settings: DictSettings;
+  path: string;
+  appendTimestamp: boolean;
+  overwrite: boolean;
+  continueOnError: boolean;
+}
+export interface DictCounts { tables: number; views: number; functions: number; errors: number; fraction: number }
+export interface DictResult extends DictCounts { path: string | null; elapsedMs: number }
+export interface DictPreviewPage { svg: string; width: number; height: number }
+
+/** Abre (ou traz para a frente) a janela do Data Dictionary. */
+export const openDataDictionary = (title: string, params: DataTransferParams) => call<void>("open_data_dictionary", { req: { title, params: { ...params, title } } });
+
+export async function onDictLog(id: string, cb: (line: string) => void): Promise<() => void> {
+  return listen<{ id: string; line: string }>("dict-log", (e) => {
+    if (e.payload.id === id) cb(e.payload.line);
+  });
+}
+export async function onDictProgress(id: string, cb: (c: DictCounts) => void): Promise<() => void> {
+  return listen<DictCounts & { id: string }>("dict-progress", (e) => {
+    if (e.payload.id === id) cb(e.payload);
+  });
+}
+
 /* ----- Data Generation (janela separada) ----- */
 
 export type TextStyle = "sentence" | "words" | "letters";
@@ -835,6 +895,11 @@ export const pg = {
   syncScript: (compareId: string, selection: SyncSelection[]) => call<SyncScript>("datasync_script", { compareId, selection }),
   syncScriptFull: (compareId: string, selection: SyncSelection[]) => call<string>("datasync_script_full", { compareId, selection }),
   syncDeploy: (req: SyncDeployRequest) => call<SyncDeployCounts>("datasync_deploy", { req }),
+  dictDefaults: (title: string) => call<DictSettings>("dict_defaults", { title }),
+  dictPreview: (servers: DictServerSel[], settings: DictSettings, which: string) => call<DictPreviewPage | null>("dict_preview", { servers, settings, which }),
+  dictGenerate: (req: DictGenerateRequest) => call<DictResult>("dict_generate", { req }),
+  dictCancel: (runId: string) => call<void>("dict_cancel", { runId }),
+  dictOpen: (path: string, reveal: boolean) => call<void>("dict_open", { path, reveal }),
   genDescribe: (conn: string, database: string, schema: string) => call<GenTableMeta[]>("datagen_describe", { conn, database, schema }),
   genPreview: (conn: string, database: string, schema: string, table: GenTableSpec, rows: number) => call<GenPreview>("datagen_preview", { conn, database, schema, table, rows }),
   genRun: (req: { runId: string; conn: string; database: string; spec: GenSpec }) => call<GenResult>("datagen_run", { req }),

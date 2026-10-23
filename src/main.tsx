@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import { QueryBuilderWindow } from "./components/querybuilder/QueryBuilderWindow";
+import { DataDictionaryWindow } from "./components/transfer/DataDictionaryWindow";
 import { DataGenWindow } from "./components/transfer/DataGenWindow";
 import { DataSyncWindow } from "./components/transfer/DataSyncWindow";
 import { DataTransferWindow } from "./components/transfer/DataTransferWindow";
@@ -16,5 +17,6 @@ const transfer = (window as { __ATLAS_DT__?: unknown }).__ATLAS_DT__;
 const sync = (window as { __ATLAS_DS__?: unknown }).__ATLAS_DS__;
 const structure = (window as { __ATLAS_SS__?: unknown }).__ATLAS_SS__;
 const generation = (window as { __ATLAS_DG__?: unknown }).__ATLAS_DG__;
+const dictionary = (window as { __ATLAS_DD__?: unknown }).__ATLAS_DD__;
 
-createRoot(document.getElementById("root")!).render(<StrictMode>{builder ? <QueryBuilderWindow /> : transfer ? <DataTransferWindow /> : sync ? <DataSyncWindow /> : structure ? <StructSyncWindow /> : generation ? <DataGenWindow /> : <App />}</StrictMode>);
+createRoot(document.getElementById("root")!).render(<StrictMode>{builder ? <QueryBuilderWindow /> : transfer ? <DataTransferWindow /> : sync ? <DataSyncWindow /> : structure ? <StructSyncWindow /> : generation ? <DataGenWindow /> : dictionary ? <DataDictionaryWindow /> : <App />}</StrictMode>);

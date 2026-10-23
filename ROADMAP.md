@@ -390,6 +390,21 @@ porcentagem de nulos. Testado ao vivo em 9.6 e 18 (descrever, prévia, gerar, fa
 Fora desta entrega: chaves estrangeiras compostas (cada coluna sorteia o valor sozinha), tipos sem gerador próprio (que saem
 nulos ou vazios até o usuário escolher um) e o painel de propriedades por coluna, que foi desenhado sem captura da referência.
 
+### Data Dictionary
+Tools → Data Dictionary abre uma janela do sistema com as cinco etapas da referência: (1) árvore de conexões, bancos e schemas
+com caixas de marcação e o painel de informações do item (conexões fechadas abrem ao expandir); (2) objetos por schema (Server /
+Database / Schema Information, Tables, Views e Functions, com escolha item a item) e a ordem de servidores, bancos e schemas
+(setas e busca); (3) cinco modelos de capa (laranja, vermelho, preto e branco, azul e verde); (4) layout com as abas Capa,
+Sumário, Cabeçalho/Rodapé, Conteúdo e Papel, com a pré-visualização da página ao lado (zoom, página inteira) e os
+"Restore Defaults"; (5) arquivo de saída (data e hora no nome, sobrescrever, continuar em erro). A geração mostra os
+contadores, o log `[DDI]`, a barra de progresso e o botão Abrir (arquivo ou pasta).
+O PDF é escrito pelo novo crate `atlas-docs`, sem dependências: capa, sumário numerado com pontilhado, introdução com a
+lista de servidores, e por tabela os campos (chave, Auto Increment, Not Null, padrão), índices, chaves estrangeiras, checks e
+gatilhos; views e funções com a definição; cabeçalho com o caminho, rodapé e número de página; papéis A3, A4, A5, Letter e Legal,
+retrato ou paisagem e margens. A tela e o PDF usam o mesmo desenho (a prévia é o SVG da mesma página).
+Fora desta entrega: imagem própria de fundo e logotipo da capa, fontes incorporadas (o PDF usa as padrão: Helvetica, Times e
+Courier, então caracteres fora do Latin-1 saem como "?") e a prévia do conteúdo real nas abas de layout (usa uma tabela de exemplo).
+
 ## Limitações conhecidas
 - Exportar o resultado de uma consulta exige um único comando que devolva linhas.
 - Exportação de tabela sem filtro/ordenação usa a ordem natural do servidor.

@@ -185,6 +185,7 @@ pub fn run() {
             builder::open_data_dictionary,
             dictionary::dict_generate,
             dictionary::dict_cancel,
+            dictionary::dict_defaults,
             dictionary::dict_preview,
             dictionary::dict_open,
             datagen::datagen_describe,

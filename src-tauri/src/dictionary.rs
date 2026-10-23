@@ -421,6 +421,12 @@ pub fn dict_preview(servers: Vec<DictServer>, settings: doc::Settings, which: St
     Ok(index.and_then(|i| rendered.pages.get(i)).map(|p| PreviewPage { svg: p.to_svg(), width: p.width, height: p.height }))
 }
 
+/// Os ajustes de layout de fábrica (a tela os usa ao abrir e nos "Restore Defaults").
+#[tauri::command]
+pub fn dict_defaults(title: String) -> doc::Settings {
+    doc::Settings::defaults(&title)
+}
+
 /// Abre o arquivo (ou a pasta que o contém) no aplicativo padrão do sistema.
 #[tauri::command]
 pub fn dict_open(path: String, reveal: bool) -> Result<(), DatabaseError> {
