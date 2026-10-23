@@ -230,7 +230,12 @@ function Wizard({ params }: { params: Params }) {
     const sel = selectionOf(list);
     try {
       const s = await pg.syncScript(compareId.current, sel);
-      if (s.statements === 0) { setMessage(t("ds.nothing")); return; }
+      if (s.statements === 0) {
+        const comparable = list.filter((x) => !x.message);
+        const differences = comparable.reduce((n, x) => n + x.insert + x.update + x.delete, 0);
+        setMessage(t(comparable.length === 0 ? "ds.nothingKey" : differences === 0 ? "ds.nothingSame" : "ds.nothing"));
+        return;
+      }
       setScript({ text: s.text, statements: s.statements, truncated: s.truncated });
       setTab(deployNow ? "log" : "script");
       setStep(3);
