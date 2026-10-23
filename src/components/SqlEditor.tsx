@@ -27,6 +27,7 @@ const atlasTheme = EditorView.theme({
   ".cm-content": { fontFamily: "var(--font-mono)", caretColor: "var(--c-text)" },
   ".cm-scroller": { fontFamily: "var(--font-mono)", lineHeight: "1.45" },
   ".cm-gutters": { backgroundColor: "var(--c-surface-alt)", color: "var(--c-text-disabled)", border: "none", borderRight: "1px solid var(--c-border)" },
+  ".cm-lineNumbers .cm-gutterElement": { textAlign: "center", padding: "0 6px", minWidth: "30px" },
   ".cm-activeLineGutter": { backgroundColor: "transparent", color: "var(--c-text)" },
   "&.cm-focused": { outline: "none" },
   ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": { backgroundColor: "var(--editor-selection) !important" },
