@@ -7,7 +7,7 @@ import { SmallIcon } from "../../icons";
 import { MessageDialog } from "../MessageDialog";
 import { PopupMenu } from "../PopupMenu";
 import {
-  AGGREGATES, JOIN_TYPES, NO_VALUE, OPERATORS, buildSql, emptyState, foreignKeyJoins, layoutId, layoutKey, uid,
+  AGGREGATES, JOIN_TYPES, NO_VALUE, OPERATORS, buildSql, emptyState, foreignKeyJoins, layoutId, layoutKey, tableSetKey, uid,
   type Aggregate, type JoinType, type Operator, type QbCond, type QbLayout, type QbRef, type QbState, type QbTable,
 } from "../../sql/querybuilder";
 
@@ -31,6 +31,8 @@ const CARD_W = 160;
 const HEAD_H = 26;
 const ROW_H = 20;
 const PAD = 4;
+/** Linhas visíveis de um cartão; acima disso ele rola por dentro. */
+const MAX_ROWS = 12;
 
 interface Objects {
   tables: string[];
@@ -97,6 +99,7 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
   const [treeDrag, setTreeDrag] = useState<{ schema: string; name: string; view: boolean; x: number; y: number; sx: number; sy: number; moved: boolean } | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const [fromSql, setFromSql] = useState(false);
+  const [scrolls, setScrolls] = useState<Record<string, number>>({});
   const [aliasEdit, setAliasEdit] = useState<string | null>(null);
   const [win, setWin] = useState<"normal" | "max" | "min">("normal");
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuEntry[] } | null>(null);
@@ -150,7 +153,7 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
       try {
         const tables: QbTable[] = [];
         const saved = await local.getPref<{ k: string; p: QbLayout }[]>(LAYOUTS_KEY).catch(() => null);
-        const layout = Array.isArray(saved) ? saved.find((e) => e.k === layoutKey(text))?.p : undefined;
+        const exact = Array.isArray(saved) ? saved.find((e) => e.k === layoutKey(text))?.p : undefined;
         for (const [n, pt] of parsed.tables.entries()) {
           const schema = pt.schema ?? defaultSchema;
           const d = await pg.tableDetail(connId, database, schema, pt.name);
@@ -161,10 +164,10 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
             id: uid("t"), schema, name: pt.name, alias: pt.alias, view: false, columns: d.columns.map((c) => c.name), fks,
             x: 24 + (n % 4) * 200, y: 24 + Math.floor(n / 4) * 220,
           });
-          const last = tables[tables.length - 1];
-          const at = layout?.[layoutId(last)];
-          if (at) Object.assign(last, at);
         }
+        // Mesmo texto: posição exata. Texto mudado: cai no desenho guardado para o mesmo conjunto de tabelas.
+        const layout = exact ?? (Array.isArray(saved) ? saved.find((e) => e.k === tableSetKey(tables))?.p : undefined);
+        if (layout) for (const tb of tables) { const at = layout[layoutId(tb)]; if (at) Object.assign(tb, at); }
         const resolve = (r: PRef): QbRef => {
           const hit = r.q
             ? tables.find((x) => (x.alias || x.name).toLowerCase() === r.q?.toLowerCase()) ?? tables.find((x) => x.name.toLowerCase() === r.q?.toLowerCase())
@@ -335,7 +338,11 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
     const tb = st.tables.find((x) => x.id === r.table);
     if (!tb) return { x: 0, y: 0 };
     const idx = r.column === "*" ? 0 : tb.columns.indexOf(r.column) + 1;
-    const y = mode === "table" ? tb.y + HEAD_H / 2 : tb.y + HEAD_H + PAD + idx * ROW_H + ROW_H / 2;
+    const visible = Math.min(tb.columns.length + 1, MAX_ROWS);
+    const top = tb.y + HEAD_H + PAD;
+    const raw = top + idx * ROW_H - (scrolls[tb.id] ?? 0) + ROW_H / 2;
+    // Campo rolado para fora do cartão: a linha prende na borda de cima ou de baixo.
+    const y = mode === "table" ? tb.y + HEAD_H / 2 : Math.min(top + visible * ROW_H - ROW_H / 2, Math.max(top + ROW_H / 2, raw));
     const right = tb.x + CARD_W / 2 < otherX;
     return { x: right ? tb.x + CARD_W : tb.x, y };
   };
@@ -343,7 +350,7 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
 
   const size = useMemo(() => ({
     w: Math.max(600, ...st.tables.map((x) => x.x + CARD_W + 40)),
-    h: Math.max(300, ...st.tables.map((x) => x.y + HEAD_H + PAD * 2 + (x.columns.length + 1) * ROW_H + 40)),
+    h: Math.max(300, ...st.tables.map((x) => x.y + HEAD_H + PAD * 2 + Math.min(x.columns.length + 1, MAX_ROWS) * ROW_H + 40)),
   }), [st.tables]);
 
   /* ---------- Etapas de edição ---------- */
@@ -520,8 +527,9 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
     void local.getPref<{ k: string; p: QbLayout }[]>(LAYOUTS_KEY)
       .catch(() => null)
       .then((saved) => {
-        const rest = (Array.isArray(saved) ? saved : []).filter((e) => e.k !== key);
-        return local.setPref(LAYOUTS_KEY, [{ k: key, p: layout }, ...rest].slice(0, MAX_LAYOUTS));
+        const setKey = tableSetKey(st.tables);
+        const rest = (Array.isArray(saved) ? saved : []).filter((e) => e.k !== key && e.k !== setKey);
+        return local.setPref(LAYOUTS_KEY, [{ k: key, p: layout }, { k: setKey, p: layout }, ...rest].slice(0, MAX_LAYOUTS));
       })
       .catch(() => undefined);
     onBuild(sql, run, fromSql);
@@ -647,7 +655,7 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
                         }}>
                         <span>{tb.alias.trim() ? `${tb.name} ( ${tb.alias.trim()} )` : tb.name}</span>
                       </div>
-                      <div className="qb-card-body" style={{ padding: PAD }}>
+                      <div className="qb-card-body" style={{ padding: PAD, maxHeight: MAX_ROWS * ROW_H + PAD * 2 }} onScroll={(e) => { const top = e.currentTarget.scrollTop; setScrolls((m) => (m[tb.id] === top ? m : { ...m, [tb.id]: top })); }}>
                         {tb.columns.length === 0 ? <div className="qb-row-col muted">{t("qb.loading")}</div> : ["*", ...tb.columns].map((c) => (
                           <label key={c} className="qb-row-col" data-qb-table={tb.id} data-qb-column={c}>
                             <input type="checkbox" checked={st.fields.some((f) => f.ref.table === tb.id && f.ref.column === c)} onChange={(e) => toggleColumn(tb.id, c, e.target.checked)} />

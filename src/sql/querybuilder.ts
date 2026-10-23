@@ -236,3 +236,6 @@ export function layoutKey(sql: string): string {
 
 /** Identifica um cartão entre aberturas do builder (o `id` muda a cada vez). */
 export const layoutId = (t: Pick<QbTable, "schema" | "name" | "alias">) => `${t.schema}.${t.name}#${t.alias.trim()}`;
+
+/** Chave pelo conjunto de tabelas do desenho: serve quando o texto do SELECT mudou mas as tabelas são as mesmas. */
+export const tableSetKey = (tables: Pick<QbTable, "schema" | "name" | "alias">[]) => `tables:${tables.map(layoutId).sort().join("|")}`;

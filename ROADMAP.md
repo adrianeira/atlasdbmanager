@@ -79,7 +79,13 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       remover), rótulo do tipo na linha (LEFT/RIGHT/FULL), minimizar/maximizar a janela
 - [x] **Posição dos cartões lembrada**: ao dar Build, o desenho é guardado pelo texto do SELECT e volta igual ao
       reabrir o builder a partir dele (últimas 100 consultas, no armazenamento local)
-- [ ] Cartão de tabela com muitas colunas: hoje cresce até mostrar todas (o canvas rola); falta limitar a altura
+- [x] Cartão com muitas colunas: mostra até 12 linhas e rola por dentro (a linha da relação acompanha o campo e
+      prende na borda quando ele rola para fora); posição dos cartões também volta quando o texto do SELECT mudou
+      mas as tabelas são as mesmas
+- [x] Verificado: FK composta (uma linha por coluna e `ON ... AND ...`), 400 tabelas na árvore (~0,3 s), 30 cartões
+      no canvas, views, outro schema, tema escuro e PostgreSQL 9.6 e 18
+- [ ] "Table Relation" foi montado sem referência visual (linha entre os títulos dos cartões); conferir com o original
+- [ ] Ao reabrir de um SELECT, views aparecem como tabelas (cor/ícone do cartão); falta consultar o tipo do objeto
 
 ### Importação de dados
 - [x] **Assistente de importação em 7 etapas** (formato → arquivos → opções da origem → tabela de destino →
