@@ -161,6 +161,7 @@ pub fn run() {
             tx::pg_tx_end,
             app_ready,
             builder::open_query_builder,
+            builder::close_query_builder,
             export::pg_export,
             dump::pg_dump_sql,
             export::pg_export_cancel,

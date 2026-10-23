@@ -222,6 +222,9 @@ export interface QueryBuilderResult { id: string; sql: string; run: boolean; rep
 /** Abre (ou traz para a frente) a janela do Query Builder. */
 export const openQueryBuilder = (req: QueryBuilderOpen) => call<void>("open_query_builder", { req });
 
+/** Fecha a janela do Query Builder da aba (se estiver aberta). */
+export const closeQueryBuilder = (id: string) => call<void>("close_query_builder", { id });
+
 /** A janela do Query Builder devolveu um SELECT (Build / Build and Run). */
 export async function onQueryBuilderBuild(id: string, cb: (r: QueryBuilderResult) => void): Promise<() => void> {
   return listen<QueryBuilderResult>("qb-build", (e) => {

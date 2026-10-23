@@ -46,3 +46,12 @@ pub async fn open_query_builder(app: AppHandle, args: State<'_, WebviewArgs>, re
     builder.build().map_err(|e| e.to_string())?;
     Ok(())
 }
+
+/// Fecha a janela do Query Builder de uma aba (a aba de consulta foi fechada).
+#[tauri::command]
+pub async fn close_query_builder(app: AppHandle, id: String) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window(&format!("qb-{id}")) {
+        window.close().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}

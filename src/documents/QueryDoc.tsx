@@ -11,7 +11,7 @@ import { ProviderIcon, SmallIcon, type SmallIconName } from "../icons";
 import { mockRows, type CellValue, type ConnectionMock } from "../model";
 import { columnType } from "../sql/ddl";
 import { beautifySql } from "../sql/format";
-import { errorText, onQueryBuilderBuild, openQueryBuilder, toAtlasError, type QueryBuilderResult } from "../backend";
+import { closeQueryBuilder, errorText, onQueryBuilderBuild, openQueryBuilder, toAtlasError, type QueryBuilderResult } from "../backend";
 import { useOptions } from "../options";
 
 export interface QueryContext {
@@ -395,10 +395,13 @@ export function QueryDoc({
   useEffect(() => {
     let stop: (() => void) | undefined;
     let alive = true;
-    void onQueryBuilderBuild(builderDoc.current, (r) => applyBuildRef.current(r)).then((un) => (alive ? (stop = un) : un()));
+    const id = builderDoc.current;
+    void onQueryBuilderBuild(id, (r) => applyBuildRef.current(r)).then((un) => (alive ? (stop = un) : un()));
     return () => {
       alive = false;
       stop?.();
+      // Aba fechada: a janela do builder dela não tem mais para onde devolver o SELECT.
+      void closeQueryBuilder(id).catch(() => undefined);
     };
   }, []);
 
