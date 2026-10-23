@@ -416,7 +416,8 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [ ] Notificações por e-mail
 
 ## 10. Modelagem (Model)
-- [ ] ER Diagram (criar, importar via "Reverse Schema to Model")
+- [ ] ER Diagram de **modelo** (criar, importar via "Reverse Schema to Model"); o modo Exibir → ER Diagram da área de
+      objetos está na seção 14
 - [ ] Forward engineer (model → SQL)
 - [ ] Compare models
 
@@ -441,3 +442,17 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [ ] Conta (login do serviço em nuvem) *(`src/components/MainToolbar.tsx:100`)*
 - [ ] Beautify de célula
 - [ ] Hex / Binary editor próprio
+
+## 14. Área de objetos / menu Exibir
+Hoje o menu Exibir tem só Lista, Detalhe e Ícones (`viewMode` em `src/App.tsx`). O que falta para igualar o da referência:
+- [ ] **ER Diagram** como modo de exibição da área de objetos (Exibir → ER Diagram): desenha ao vivo as tabelas do
+      schema como cartões, com as chaves estrangeiras como linhas e o nome da FK sobre elas; opções **Show Grid**,
+      **Snap to Grid** e **Show Foreign Key Names**; barra inferior com Refresh, ferramentas de selecionar, mover e
+      ligar, Preview e Size. Não é a Modelagem da seção 10 (projetar um modelo): aqui é a visão do schema como ele
+      está no banco. Dá para reaproveitar o canvas de cartões e relações do Query Builder
+      *(`src/components/querybuilder/`)*
+- [ ] **Flatten Object List**: lista única dos objetos do schema, sem as pastas
+- [ ] **Sort**: ordenação da lista de objetos (nome, tipo...)
+- [ ] **Choose Columns**: escolher as colunas exibidas na lista de objetos *(o grid de dados já tem "Columns")*
+- [ ] **Show Hidden Items**: mostrar os bancos que a conexão oculta (templates e sem permissão de conexão) e os schemas de sistema
+- [ ] **Show Table Profiles**: perfil de cada tabela (resumo) na lista de objetos
