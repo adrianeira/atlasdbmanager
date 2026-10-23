@@ -148,7 +148,7 @@ export function QueryDoc({
   const [historyOpen, setHistoryOpen] = useState(false);
   // O Query Builder é uma janela do sistema; `builder` guarda o texto do editor com que ela foi aberta (a seleção, se houver).
   const builderDoc = useRef(crypto.randomUUID());
-  const builder = useRef<{ selection: boolean } | null>(null);
+  const builder = useRef<{ selection: boolean; source: string } | null>(null);
   // Gerenciador de snippets; guarda a seleção do editor para oferecê-la como snippet novo.
   const [snippets, setSnippets] = useState<{ selection: string } | null>(null);
   const [outcome, setOutcome] = useState<RunOutcome | null>(null);
@@ -371,17 +371,21 @@ export function QueryDoc({
   const applyBuild = (r: QueryBuilderResult) => {
     const ed = editor.current;
     if (!ed) return;
-    const wasSelection = builder.current?.selection ?? false;
+    const b = builder.current;
+    const wasSelection = b?.selection ?? false;
     const current = ed.getText();
     const text = `${r.sql};`;
-    if (r.replaced && wasSelection) ed.replaceSelection(text);
-    else if (r.replaced || !current.trim()) ed.replaceAll(text);
+    // O desenho veio do texto do editor: só o substitui se esse texto continua igual ao de quando a janela abriu
+    // (senão acrescenta ao fim, para não apagar o que foi escrito nesse meio tempo).
+    const replace = r.replaced && !!b && (wasSelection ? ed.getSelection() === b.source : current === b.source);
+    if (replace && wasSelection) ed.replaceSelection(text);
+    else if (replace || !current.trim()) ed.replaceAll(text);
     else ed.replaceAll(`${current.replace(/\s+$/, "")}\n\n${text}`);
     ed.focus();
     // Com texto antigo no editor, `run` usaria o documento inteiro: seleciona só o SELECT montado.
     if (r.run) {
       window.setTimeout(() => {
-        if (!r.replaced && current.trim()) ed.selectLast(text);
+        if (!replace && current.trim()) ed.selectLast(text);
         run(false);
       }, 60);
     }
@@ -407,7 +411,7 @@ export function QueryDoc({
         {tool("queryBuilder", "query.builder", backend && conn && ctx.database ? () => {
           const ed = editor.current;
           const sel = ed?.getSelection() ?? "";
-          builder.current = { selection: !!sel.trim() };
+          builder.current = { selection: !!sel.trim(), source: sel.trim() ? sel : ed?.getText() ?? "" };
           void openQueryBuilder({
             id: builderDoc.current, connId: conn.id, database: ctx.database ?? "", defaultSchema: ctx.schema ?? "public",
             initialSql: sel.trim() ? sel : ed?.getText() ?? "", title: t("query.builder"),
