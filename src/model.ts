@@ -354,11 +354,47 @@ export function resolveNode(id: string | null, connections: ConnectionMock[]): N
   return { connection, database, schema, category, objectName: name, object };
 }
 
+/** Como o texto da busca da árvore casa com os nomes (menu do funil). */
+export interface FilterOptions {
+  /** `contains`: em qualquer parte do nome; `starts`: só no começo. */
+  mode: "contains" | "starts";
+  caseSensitive: boolean;
+}
+
+export const DEFAULT_FILTER_OPTIONS: FilterOptions = { mode: "contains", caseSensitive: false };
+
+/** Posição do trecho que o filtro encontra em `label` (para destacar), ou null. */
+export function filterRange(label: string, filter: string, opts: FilterOptions): { start: number; length: number } | null {
+  const f = filter.trim();
+  if (!f) return null;
+  const hay = opts.caseSensitive ? label : label.toLowerCase();
+  const needle = opts.caseSensitive ? f : f.toLowerCase();
+  const at = opts.mode === "starts" ? (hay.startsWith(needle) ? 0 : -1) : hay.indexOf(needle);
+  return at < 0 ? null : { start: at, length: needle.length };
+}
+
+type Named = { name: string; objects: Partial<Record<Category, { name: string }[]>> };
+
+/** Um banco aparece se o nome combina ou se algum schema ou objeto dele (já lido) combina. */
+export function databaseVisible(db: { name: string; schemas: Named[] }, matches: (label: string) => boolean): boolean {
+  const schemaOk = (sc: Named) => matches(sc.name) || Object.values(sc.objects).some((list) => (list ?? []).some((o) => matches(o.name)));
+  return matches(db.name) || db.schemas.some(schemaOk);
+}
+
+export function schemaVisible(sc: Named, matches: (label: string) => boolean): boolean {
+  return matches(sc.name) || Object.values(sc.objects).some((list) => (list ?? []).some((o) => matches(o.name)));
+}
+
+export function makeMatcher(filter: string, opts: FilterOptions): (label: string) => boolean {
+  return (label) => !filter.trim() || filterRange(label, filter, opts) !== null;
+}
+
 export interface TreeState {
   expanded: Set<string>;
   openConnections: Set<string>;
   openDatabases: Set<string>;
   filter: string;
+  filterOptions?: FilterOptions;
   /** Mostrar só conexões com estrela (botão ★ da busca). */
   starredOnly?: boolean;
 }
@@ -374,14 +410,9 @@ export function buildVisibleTree(
   rootLabel: string,
 ): TreeNode[] {
   const out: TreeNode[] = [];
-  const filter = state.filter.trim().toLowerCase();
-  const matches = (label: string) => !filter || label.toLowerCase().includes(filter);
-  // Um schema aparece se o nome combina ou se algum objeto dele (já lido) combina.
-  const schemaMatches = (sc: { name: string; objects: Partial<Record<Category, { name: string }[]>> }) =>
-    matches(sc.name) || Object.values(sc.objects).some((list) => (list ?? []).some((o) => matches(o.name)));
-  // Um banco aparece se o nome combina ou se algum schema dele (já lido) combina.
-  const databaseMatches = (db: { name: string; schemas: { name: string; objects: Partial<Record<Category, { name: string }[]>> }[] }) =>
-    matches(db.name) || db.schemas.some(schemaMatches);
+  const matches = makeMatcher(state.filter, state.filterOptions ?? DEFAULT_FILTER_OPTIONS);
+  const schemaMatches = (sc: Named) => schemaVisible(sc, matches);
+  const databaseMatches = (db: { name: string; schemas: Named[] }) => databaseVisible(db, matches);
 
   out.push({ id: "root", kind: "root", label: rootLabel, depth: 0, expandable: false });
 

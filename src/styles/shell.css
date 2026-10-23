@@ -1042,3 +1042,4 @@ input {
 }
 
 .tree-match { background: #ffe94d; color: inherit; padding: 0; }
+.nav-filter-wrap { position: relative; display: inline-flex; }

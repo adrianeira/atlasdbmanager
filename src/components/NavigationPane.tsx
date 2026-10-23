@@ -1,19 +1,19 @@
-import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import type { MenuEntry } from "../commands";
+import { PopupMenu } from "./PopupMenu";
 import { useT } from "../i18n";
 import { ProviderIcon, SmallIcon } from "../icons";
-import { parentId, type TreeNode } from "../model";
+import { filterRange, parentId, type FilterOptions, type TreeNode } from "../model";
 
 /** O texto do filtro destacado (em amarelo) dentro do nome. */
-function highlight(label: string, filter: string) {
-  const f = filter.trim();
-  if (!f) return label;
-  const at = label.toLowerCase().indexOf(f.toLowerCase());
-  if (at < 0) return label;
+function highlight(label: string, filter: string, opts: FilterOptions) {
+  const r = filterRange(label, filter, opts);
+  if (!r) return label;
   return (
     <>
-      {label.slice(0, at)}
-      <mark className="tree-match">{label.slice(at, at + f.length)}</mark>
-      {label.slice(at + f.length)}
+      {label.slice(0, r.start)}
+      <mark className="tree-match">{label.slice(r.start, r.start + r.length)}</mark>
+      {label.slice(r.start + r.length)}
     </>
   );
 }
@@ -28,6 +28,8 @@ interface Props {
   /** Ids de nós sendo lidos do servidor (spinner no lugar da seta). */
   loading: Set<string>;
   filter: string;
+  filterOptions: FilterOptions;
+  onFilterOptions: (o: FilterOptions) => void;
   onFilter: (v: string) => void;
   onSelect: (id: string) => void;
   onActivate: (node: TreeNode) => void;
@@ -43,6 +45,22 @@ export const connIdOf = (nodeId: string) => decodeURIComponent(nodeId.slice(5));
 
 export function NavigationPane(p: Props) {
   const t = useT();
+  const [filterMenu, setFilterMenu] = useState(false);
+  const setOpts = (o: Partial<FilterOptions>) => p.onFilterOptions({ ...p.filterOptions, ...o });
+  const filterItems: MenuEntry[] = [
+    { kind: "item", text: t("nav.filterContains"), checked: p.filterOptions.mode === "contains", run: () => setOpts({ mode: "contains" }) },
+    { kind: "item", text: t("nav.filterStarts"), checked: p.filterOptions.mode === "starts", run: () => setOpts({ mode: "starts" }) },
+    { kind: "sep" },
+    { kind: "item", text: t("nav.filterCase"), checked: p.filterOptions.caseSensitive, run: () => setOpts({ caseSensitive: !p.filterOptions.caseSensitive }) },
+  ];
+  useEffect(() => {
+    if (!filterMenu) return;
+    const close = (e: MouseEvent) => {
+      if (!(e.target as Element | null)?.closest?.(".nav-filter-wrap")) setFilterMenu(false);
+    };
+    window.addEventListener("mousedown", close);
+    return () => window.removeEventListener("mousedown", close);
+  }, [filterMenu]);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -174,7 +192,7 @@ export function NavigationPane(p: Props) {
                 </span>
               )}
               <span className="tree-icon">{icon(n)}</span>
-              <span className="tree-label" title={treeTitle(n)}>{highlight(n.label, n.kind === "folder" || n.kind === "column" || n.kind === "root" ? "" : p.filter)}</span>
+              <span className="tree-label" title={treeTitle(n)}>{highlight(n.label, n.kind === "folder" || n.kind === "column" || n.kind === "root" ? "" : p.filter, p.filterOptions)}</span>
               {n.starred && <span className="tree-star" aria-label="★"><SmallIcon name="starFilled" size={12} /></span>}
               {busy && n.kind === "connection" && <span className="tree-busy">{t("nav.connecting")}</span>}
             </div>
@@ -191,9 +209,27 @@ export function NavigationPane(p: Props) {
           aria-label={t("nav.search")}
           onChange={(e) => p.onFilter(e.target.value)}
         />
-        <button type="button" className="icon-button" title={t("nav.filter")} disabled>
-          <SmallIcon name="filter" />
-        </button>
+        <div className="nav-filter-wrap">
+          <button
+            type="button"
+            className={`icon-button${filterMenu || p.filterOptions.mode !== "contains" || p.filterOptions.caseSensitive ? " is-active" : ""}`}
+            title={t("nav.filter")}
+            aria-haspopup="menu"
+            aria-expanded={filterMenu}
+            onClick={() => setFilterMenu((o) => !o)}
+          >
+            <SmallIcon name="filter" />
+          </button>
+          {filterMenu && (
+            <PopupMenu
+              items={filterItems}
+              commands={{}}
+              onClose={() => setFilterMenu(false)}
+              className="nav-filter-menu"
+              style={{ position: "absolute", left: 0, bottom: "100%", zIndex: 50 }}
+            />
+          )}
+        </div>
         <button
           type="button"
           className={`icon-button${p.starredOnly ? " is-active" : ""}`}

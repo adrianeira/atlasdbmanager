@@ -346,7 +346,10 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       Snowflake etc. (hoje: só PostgreSQL; Firebird planejado)
 
 ## 2. Árvore / Navegação
-- [ ] Filtro avançado da árvore *(`src/components/NavigationPane.tsx:172`)*
+- [x] **Filtro avançado da árvore**: o funil ao lado da busca abre o menu **Contém** / **Começa com** e **Diferenciar maiúsculas**
+      (lembrado entre sessões); o destaque em amarelo segue a regra escolhida e a barra de status conta os itens que o filtro
+      esconde (`11 Databases (2 items hidden)` vira `2 Databases (11 items hidden)`); com um banco selecionado mostra os schemas
+      *(`filterRange`/`makeMatcher` em `src/model.ts`, `NavigationPane.tsx`)*
 - [x] Find in Database / Find in Schema (ver "Localizar no banco" em Entregues)
 - [ ] Console do servidor *(item `cmd.console` sem handler)*
 - [ ] Share *(`cmd.share` sem handler)*

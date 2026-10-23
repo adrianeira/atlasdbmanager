@@ -49,7 +49,7 @@ import { FunctionDesignerDoc, type FunctionBackend } from "./documents/FunctionD
 import { detectLang, I18nContext, makeTranslator, type Lang, type MessageKey } from "./i18n";
 import { ProviderIcon, SmallIcon } from "./icons";
 import {
-  buildVisibleTree, CONNECTION_COLORS, INITIAL_CONNECTIONS, mockRows, quoteIdent, resolveNode, seg,
+  buildVisibleTree, DEFAULT_FILTER_OPTIONS, databaseVisible, makeMatcher, schemaVisible, type FilterOptions, CONNECTION_COLORS, INITIAL_CONNECTIONS, mockRows, quoteIdent, resolveNode, seg,
   type Category, type ConnectionColor, type ConnectionMock, type DatabaseMock, type DbObject, type NodeContext, type ProviderId, type TreeNode,
 } from "./model";
 
@@ -388,9 +388,25 @@ export default function App() {
   const [recentProviders, setRecentProviders] = useState<ProviderId[]>(["postgresql"]);
 
   const [starredOnly, setStarredOnly] = useState(false);
+  // Opções do funil da busca da árvore (lembradas entre sessões).
+  const [filterOptions, setFilterOptions] = useState<FilterOptions>(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem("atlas.nav.filter") ?? "null") as Partial<FilterOptions> | null;
+      return { mode: raw?.mode === "starts" ? "starts" : "contains", caseSensitive: !!raw?.caseSensitive };
+    } catch {
+      return DEFAULT_FILTER_OPTIONS;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("atlas.nav.filter", JSON.stringify(filterOptions));
+    } catch {
+      // Sem armazenamento: as opções só valem nesta sessão.
+    }
+  }, [filterOptions]);
   const nodes = useMemo(
-    () => buildVisibleTree(connections, { expanded, openConnections, openDatabases, filter, starredOnly }, (c) => t(FOLDER_LABEL[c] ?? CATEGORY_LABEL[c]), t("nav.myConnections")),
-    [connections, expanded, openConnections, openDatabases, filter, starredOnly, t],
+    () => buildVisibleTree(connections, { expanded, openConnections, openDatabases, filter, filterOptions, starredOnly }, (c) => t(FOLDER_LABEL[c] ?? CATEGORY_LABEL[c]), t("nav.myConnections")),
+    [connections, expanded, openConnections, openDatabases, filter, filterOptions, starredOnly, t],
   );
 
   const add = (set: Set<string>, id: string) => new Set(set).add(id);
@@ -1918,9 +1934,17 @@ export default function App() {
       if (ctx.schema) cells.push({ text: <span className="sb-chip"><SmallIcon name="schema" />{ctx.schema.name}</span> });
     }
     if (selectedNode?.startsWith("conn:") && ctx.connection && connectionOpen) {
-      const n = ctx.connection.databases.length;
-      const h = ctx.connection.hiddenDatabases;
-      return { left: h ? t("status.databasesHidden", { n, h }) : t("status.databases", { n }), cells };
+      // Bancos que o filtro da árvore esconde entram na conta de "itens ocultos".
+      const matches = makeMatcher(filter, filterOptions);
+      const shown = ctx.connection.databases.filter((db) => databaseVisible(db, matches)).length;
+      const h = ctx.connection.hiddenDatabases + (ctx.connection.databases.length - shown);
+      return { left: h ? t("status.databasesHidden", { n: shown, h }) : t("status.databases", { n: shown }), cells };
+    }
+    if (selectedNode?.startsWith("db:") && ctx.database && connectionOpen && openDatabases.has(selectedNode)) {
+      const matches = makeMatcher(filter, filterOptions);
+      const shown = ctx.database.schemas.filter((sc) => schemaVisible(sc, matches)).length;
+      const h = ctx.database.schemas.length - shown;
+      return { left: h ? t("status.schemasHidden", { n: shown, h }) : t("status.schemas", { n: shown }), cells };
     }
     if (objects) {
       const left = selectedObjects.length > 1 ? t("status.selected", { n: selectedObjects.length }) : t(COUNT_LABEL[category], { n: objects.length });
@@ -2367,6 +2391,8 @@ export default function App() {
                   connecting={connecting}
                   loading={loadingNodes}
                   filter={filter}
+                  filterOptions={filterOptions}
+                  onFilterOptions={setFilterOptions}
                   onFilter={setFilter}
                   onSelect={selectNode}
                   onActivate={activate}
