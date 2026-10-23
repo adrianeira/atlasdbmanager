@@ -376,6 +376,12 @@ export function buildVisibleTree(
   const out: TreeNode[] = [];
   const filter = state.filter.trim().toLowerCase();
   const matches = (label: string) => !filter || label.toLowerCase().includes(filter);
+  // Um schema aparece se o nome combina ou se algum objeto dele (já lido) combina.
+  const schemaMatches = (sc: { name: string; objects: Partial<Record<Category, { name: string }[]>> }) =>
+    matches(sc.name) || Object.values(sc.objects).some((list) => (list ?? []).some((o) => matches(o.name)));
+  // Um banco aparece se o nome combina ou se algum schema dele (já lido) combina.
+  const databaseMatches = (db: { name: string; schemas: { name: string; objects: Partial<Record<Category, { name: string }[]>> }[] }) =>
+    matches(db.name) || db.schemas.some(schemaMatches);
 
   out.push({ id: "root", kind: "root", label: rootLabel, depth: 0, expandable: false });
 
@@ -388,12 +394,14 @@ export function buildVisibleTree(
     if (!isOpen || !state.expanded.has(connId)) continue;
 
     for (const db of conn.databases) {
+      if (!databaseMatches(db)) continue;
       const dbId = `db:${seg(conn.id)}/${seg(db.name)}`;
       const dbOpen = state.openDatabases.has(dbId);
       out.push({ id: dbId, kind: "database", label: db.name, depth: 1, expandable: true, comment: db.comment });
       if (!dbOpen || !state.expanded.has(dbId)) continue;
 
       for (const sc of db.schemas) {
+        if (!schemaMatches(sc)) continue;
         const scPath = `${seg(conn.id)}/${seg(db.name)}/${seg(sc.name)}`;
         const scId = `schema:${scPath}`;
         out.push({ id: scId, kind: "schema", label: sc.name, depth: 2, expandable: true, comment: sc.comment });

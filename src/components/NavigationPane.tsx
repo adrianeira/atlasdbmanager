@@ -3,6 +3,21 @@ import { useT } from "../i18n";
 import { ProviderIcon, SmallIcon } from "../icons";
 import { parentId, type TreeNode } from "../model";
 
+/** O texto do filtro destacado (em amarelo) dentro do nome. */
+function highlight(label: string, filter: string) {
+  const f = filter.trim();
+  if (!f) return label;
+  const at = label.toLowerCase().indexOf(f.toLowerCase());
+  if (at < 0) return label;
+  return (
+    <>
+      {label.slice(0, at)}
+      <mark className="tree-match">{label.slice(at, at + f.length)}</mark>
+      {label.slice(at + f.length)}
+    </>
+  );
+}
+
 interface Props {
   nodes: TreeNode[];
   selectedId: string | null;
@@ -159,7 +174,7 @@ export function NavigationPane(p: Props) {
                 </span>
               )}
               <span className="tree-icon">{icon(n)}</span>
-              <span className="tree-label" title={treeTitle(n)}>{n.label}</span>
+              <span className="tree-label" title={treeTitle(n)}>{highlight(n.label, n.kind === "folder" || n.kind === "column" || n.kind === "root" ? "" : p.filter)}</span>
               {n.starred && <span className="tree-star" aria-label="★"><SmallIcon name="starFilled" size={12} /></span>}
               {busy && n.kind === "connection" && <span className="tree-busy">{t("nav.connecting")}</span>}
             </div>

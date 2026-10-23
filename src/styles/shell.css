@@ -1026,3 +1026,5 @@ input {
   border-color: var(--c-selected-border);
   color: var(--c-text);
 }
+
+.tree-match { background: #ffe94d; color: inherit; padding: 0; }

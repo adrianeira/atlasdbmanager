@@ -267,6 +267,9 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       *(`src/components/OptionsDialog.tsx`, `src/options.ts`)*
 
 ### Navegação / Árvore
+- [x] **Filtro da árvore em todos os níveis**: bancos, schemas e objetos são filtrados pelo texto (os pais de quem combina
+      continuam visíveis) e o trecho encontrado fica destacado em amarelo; antes só filtrava conexões fechadas e objetos
+      *(`buildVisibleTree` em `src/model.ts`, `NavigationPane.tsx`)*
 - [x] **Fechar schema** no menu de contexto (colapsa + marca como não-carregado para rebuscar
       na próxima abertura) *(`src/App.tsx`)*
 - [x] Ícone do schema fica **cinza** quando fechado *(`src/components/NavigationPane.tsx`,
