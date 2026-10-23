@@ -9,8 +9,10 @@ import {
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, snippet } from "@codemirror/autocomplete";
 import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
 import { tags } from "@lezer/highlight";
+import { onZoom, zoomIn, zoomOut, zoomReset } from "../editorZoom";
 
 /* Cores de sintaxe próprias, legíveis nos temas claro e escuro (via variáveis CSS). */
+
 const atlasHighlight = HighlightStyle.define([
   { tag: [tags.keyword, tags.operatorKeyword], color: "var(--sql-keyword)" },
   { tag: [tags.typeName, tags.standard(tags.name)], color: "var(--sql-type)" },
@@ -21,7 +23,7 @@ const atlasHighlight = HighlightStyle.define([
 ]);
 
 const atlasTheme = EditorView.theme({
-  "&": { height: "100%", fontSize: "var(--editor-font-size, 13px)", backgroundColor: "var(--c-surface)", color: "var(--c-text)" },
+  "&": { height: "100%", fontSize: "calc(var(--editor-font-size, 13px) * var(--editor-zoom, 1))", backgroundColor: "var(--c-surface)", color: "var(--c-text)" },
   ".cm-content": { fontFamily: "var(--font-mono)", caretColor: "var(--c-text)" },
   ".cm-scroller": { fontFamily: "var(--font-mono)", lineHeight: "1.45" },
   ".cm-gutters": { backgroundColor: "var(--c-surface-alt)", color: "var(--c-text-disabled)", border: "none", borderRight: "1px solid var(--c-border)" },
@@ -73,6 +75,10 @@ export function SqlEditor({ value, readOnly, schema, defaultSchema, placeholder,
       { key: "Mod-Enter", preventDefault: true, run: () => (cbs.current.onRun?.(true), true) },
       { key: "Mod-Shift-r", preventDefault: true, run: () => (cbs.current.onRun?.(true), true) },
       { key: "Mod-/", run: toggleComment },
+      { key: "Mod-=", preventDefault: true, run: () => (zoomIn(), true) },
+      { key: "Mod-+", preventDefault: true, run: () => (zoomIn(), true) },
+      { key: "Mod--", preventDefault: true, run: () => (zoomOut(), true) },
+      { key: "Mod-0", preventDefault: true, run: () => (zoomReset(), true) },
     ]);
     const extensions: Extension[] = [
       lineNumbers(),
@@ -91,6 +97,16 @@ export function SqlEditor({ value, readOnly, schema, defaultSchema, placeholder,
       autocompletion({ activateOnTyping: true }),
       runKeys,
       keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...completionKeymap, indentWithTab]),
+      // Ctrl + roda do mouse: zoom do texto.
+      EditorView.domEventHandlers({
+        wheel: (e) => {
+          if (!e.ctrlKey) return false;
+          e.preventDefault();
+          if (e.deltaY < 0) zoomIn();
+          else if (e.deltaY > 0) zoomOut();
+          return true;
+        },
+      }),
       EditorState.readOnly.of(!!readOnly),
       EditorView.editable.of(!readOnly),
       EditorView.updateListener.of((u) => {
@@ -105,6 +121,7 @@ export function SqlEditor({ value, readOnly, schema, defaultSchema, placeholder,
     if (placeholder) extensions.push(cmPlaceholder(placeholder));
     const v = new EditorView({ state: EditorState.create({ doc: value, extensions }), parent: host.current });
     view.current = v;
+    const stopZoom = onZoom(() => v.requestMeasure());
     handleRef?.({
       getText: () => v.state.doc.toString(),
       getSelection: () => {
@@ -128,6 +145,7 @@ export function SqlEditor({ value, readOnly, schema, defaultSchema, placeholder,
       focus: () => v.focus(),
     });
     return () => {
+      stopZoom();
       handleRef?.(null);
       v.destroy();
       view.current = null;

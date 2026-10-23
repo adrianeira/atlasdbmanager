@@ -58,6 +58,8 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [x] Cabeçalho único nos diálogos (assistentes, Opções, Histórico, Snippets, Localizar, Dump, Colunas, Filtro e
       ordenação): fundo branco, sem borda inferior, ícone do aplicativo e título sem negrito
       *(`.modal-header` em `src/styles/components.css`)*
+- [x] **Zoom do editor SQL**: Ctrl + roda do mouse, Ctrl + / Ctrl - e Ctrl 0 (50% a 400%), igual em todos os editores
+      e lembrado entre sessões *(`src/editorZoom.ts`)*
 - [ ] Botão de fechar (X) no cabeçalho de todos os diálogos (hoje só Conexão e Mensagem têm)
 
 ### Query Builder *(prioridade máxima)*
