@@ -149,6 +149,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas-docs"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "atlas-export"
 version = "0.1.0"
 dependencies = [

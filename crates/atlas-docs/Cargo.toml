@@ -1,0 +1,11 @@
+[package]
+name = "atlas-docs"
+description = "Atlas DB Manager — geração de documentos (PDF) a partir de um modelo de páginas"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde.workspace = true
