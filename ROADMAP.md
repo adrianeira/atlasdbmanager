@@ -12,7 +12,7 @@ entrada" no código (botão/ação existente, só falta implementar o comportame
 > **12 (Features cross-cutting)** não serão trabalhadas no ciclo atual. Ficam listadas aqui
 > apenas como referência de paridade futura com o produto de referência.
 
-## Entregues neste ciclo (até 2026-10-22)
+## Entregues neste ciclo (até 2026-10-23)
 
 Fora da lista original de paridade: ajustes de UX, novos recursos e polimento visual.
 
@@ -58,8 +58,6 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [x] Cabeçalho único nos diálogos (assistentes, Opções, Histórico, Snippets, Localizar, Dump, Colunas, Filtro e
       ordenação): fundo branco, sem borda inferior, ícone do aplicativo e título sem negrito
       *(`.modal-header` em `src/styles/components.css`)*
-- [x] **Zoom do editor SQL**: Ctrl + roda do mouse, Ctrl + / Ctrl - e Ctrl 0 (50% a 400%), igual em todos os editores
-      e lembrado entre sessões *(`src/editorZoom.ts`)*
 - [ ] Botão de fechar (X) no cabeçalho de todos os diálogos (hoje só Conexão e Mensagem têm)
 
 ### Query Builder *(prioridade máxima)*
@@ -241,6 +239,11 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [x] **Novo schema...** no menu de contexto do banco (cria e recarrega a árvore)
 
 ### Editor SQL / Toolbar da consulta
+- [x] **Zoom do editor SQL**: Ctrl + roda do mouse, Ctrl + / Ctrl - e Ctrl 0 (50% a 400%), igual em todos os editores
+      e lembrado entre sessões *(`src/editorZoom.ts`)*
+- [x] Sem fundo na linha ativa do editor (só o número da linha atual fica em destaque) e **números de linha
+      centralizados na calha** inteira, com a coluna de dobrar código fixa (14 px) fora do zoom
+      *(`src/components/SqlEditor.tsx`)*
 - [x] **Dropdown próprio** (connection/database/schema) no lugar do `<select>` nativo —
       hover/selecionado controlados por CSS (o popup do Chromium pintava cinza escuro no hover
       e ignorava o CSS) *(`src/components/Dropdown.tsx`)*
