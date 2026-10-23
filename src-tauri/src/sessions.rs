@@ -38,6 +38,12 @@ impl Sessions {
         }
     }
 
+    /// Parâmetros da conexão aberta (para as ferramentas externas de backup/restauração).
+    pub async fn params(&self, id: &str) -> Result<ConnectionParams, DatabaseError> {
+        let map = self.inner.lock().await;
+        map.get(id).map(|s| s.params.clone()).ok_or_else(|| DatabaseError::new(ErrorKind::SessionNotFound, "connection is not open"))
+    }
+
     /// Conexão física nova e exclusiva (para transações que não podem misturar com outras abas).
     pub async fn dedicated(&self, id: &str, database: &str) -> Result<PgSession, DatabaseError> {
         let params = {

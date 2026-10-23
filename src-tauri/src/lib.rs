@@ -1,3 +1,4 @@
+mod backup;
 mod builder;
 mod commands;
 mod dump;
@@ -61,6 +62,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(sessions::Sessions::default())
         .manage(export::Exports::default())
+        .manage(backup::Backups::default())
         .manage(tx::Transactions::default())
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -169,6 +171,12 @@ pub fn run() {
             builder::close_query_builder,
             export::pg_export,
             dump::pg_dump_sql,
+            backup::pg_tools_locate,
+            backup::pg_backup,
+            backup::pg_backup_list,
+            backup::pg_backup_delete,
+            backup::pg_restore,
+            backup::pg_backup_cancel,
             export::pg_export_cancel,
             import::import_list_tables,
             import::import_preview,

@@ -301,6 +301,26 @@ export interface DumpRequest {
   path: string;
 }
 
+export type BackupContent = "all" | "structure" | "data";
+export interface BackupRequest {
+  jobId: string; sessionId: string; database: string; /** Sem schema o backup é do banco inteiro. */ schema?: string; toolsDir?: string;
+  /** Nome do backup, sem a extensão. */
+  fileName: string; comment: string;
+  /** `schema.nome` dos objetos desmarcados (tabelas, views e sequências). */
+  exclude: string[];
+  /** Pasta de destino; sem ela vale a pasta padrão do app. */
+  folder?: string;
+}
+export interface BackupEntry { name: string; path: string; metaPath: string; bytes: number; modifiedMs: number; comment: string; scope: "schema" | "database" }
+export interface RestoreRequest {
+  jobId: string; sessionId: string; database: string; toolsDir?: string; path: string;
+  content: BackupContent; clean: boolean; noOwner: boolean; noPrivileges: boolean; singleTransaction: boolean;
+  /** Em vez de restaurar, grava o SQL do backup neste arquivo. */
+  extractTo?: string;
+}
+export interface BackupResult { bytes: number; elapsedMs: number; path: string; tool: string; name: string }
+export interface ToolsInfo { dir: string | null; version: number | null; others: { dir: string; version: number }[] }
+
 export interface DumpResult { objects: number; tables: number; rows: number; bytes: number; elapsedMs: number; path: string }
 
 export interface FindOptions {
@@ -583,6 +603,13 @@ export const pg = {
   importPreview: (spec: SourceSpec, convert: ConvertOptions, limit: number) => call<ImportPreview>("import_preview", { spec, convert, limit }),
   import: (req: ImportRequest) => call<ImportSummary>("pg_import", { req }),
   dumpSql: (req: DumpRequest) => call<DumpResult>("pg_dump_sql", { req }),
+  /** Procura o pg_dump/pg_restore (na pasta informada ou nos locais usuais). */
+  toolsLocate: (customDir?: string) => call<ToolsInfo>("pg_tools_locate", { customDir: customDir || null }),
+  backup: (req: BackupRequest) => call<BackupResult>("pg_backup", { req }),
+  restore: (req: RestoreRequest) => call<BackupResult>("pg_restore", { req }),
+  backupCancel: (jobId: string) => call<void>("pg_backup_cancel", { jobId }),
+  backupList: (sessionId: string, database: string, schema: string) => call<BackupEntry[]>("pg_backup_list", { sessionId, database, schema }),
+  backupDelete: (path: string, metaPath: string) => call<void>("pg_backup_delete", { path, metaPath }),
   find: (sessionId: string, database: string, options: FindOptions) => call<FindResult>("pg_find", { sessionId, database, options }),
   schemaDiagram: (sessionId: string, database: string, schema: string) =>
     call<SchemaDiagram>("pg_schema_diagram", { sessionId, database, schema }),
@@ -669,6 +696,19 @@ export async function onExportProgress(exportId: string, cb: (rows: number) => v
 /** Janela nativa "Salvar como". `null` se o usuário cancelar. */
 export async function chooseExportPath(defaultName: string, extensions: string[]): Promise<string | null> {
   return save({ defaultPath: defaultName, filters: [{ name: extensions.map((x) => `*.${x}`).join(", "), extensions }] });
+}
+
+/** Saída (linha a linha) do pg_dump/pg_restore/psql de um backup ou restauração em andamento. */
+export async function onBackupLog(jobId: string, cb: (line: string) => void): Promise<() => void> {
+  return listen<{ jobId: string; line: string }>("backup-log", (e) => {
+    if (e.payload.jobId === jobId) cb(e.payload.line);
+  });
+}
+
+/** Janela nativa "Abrir arquivo". `null` se o usuário cancelar. */
+export async function chooseOpenFile(extensions: string[]): Promise<string | null> {
+  const f = await open({ multiple: false, filters: [{ name: extensions.map((x) => `*.${x}`).join(", "), extensions }, { name: "*", extensions: ["*"] }] });
+  return typeof f === "string" ? f : null;
 }
 
 /** Janela nativa de escolha de pasta. `null` se o usuário cancelar. */

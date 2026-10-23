@@ -56,6 +56,10 @@ export interface DbObject {
   dataLength?: number;
   modified?: string;
   comment?: string;
+  /** Backup guardado: caminho do arquivo. */
+  path?: string;
+  /** Backup guardado: arquivo de registro (comentário) na pasta do app. */
+  metaPath?: string;
   owner?: string;
   returnType?: string;
   language?: string;
@@ -82,7 +86,11 @@ export interface DbObject {
 
 /** `loaded` = false indica nível ainda não lido do servidor (carga preguiçosa). */
 export interface SchemaMock { name: string; objects: Partial<Record<Category, DbObject[]>>; loaded?: boolean; comment?: string }
-export interface DatabaseMock { name: string; schemas: SchemaMock[]; loaded?: boolean; comment?: string }
+export interface DatabaseMock {
+  name: string; schemas: SchemaMock[]; loaded?: boolean; comment?: string;
+  /** Backups do banco inteiro (categoria Backup com o banco selecionado). */
+  backups?: DbObject[];
+}
 
 export interface ConnectionMock {
   id: string;

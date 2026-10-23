@@ -19,7 +19,7 @@ interface ActionDef {
   icon: SmallIconName;
   /** context: precisa de schema/conexão aberta; selection: 1+ objetos; single: exatamente 1. */
   needs: "context" | "selection" | "single";
-  kind?: "open" | "design" | "new" | "export" | "import";
+  kind?: "open" | "design" | "new" | "export" | "import" | "backup" | "restore" | "extract" | "delete";
 }
 
 const ACTIONS: Record<Category, ActionDef[]> = {
@@ -78,10 +78,10 @@ const ACTIONS: Record<Category, ActionDef[]> = {
     { id: "delete", label: "act.deleteQuery", icon: "delete", needs: "selection" },
   ],
   backup: [
-    { id: "new", label: "act.newBackup", icon: "new", needs: "context" },
-    { id: "restore", label: "act.restoreBackup", icon: "open", needs: "single" },
-    { id: "extract", label: "act.extractSql", icon: "export", needs: "single" },
-    { id: "delete", label: "act.deleteBackup", icon: "delete", needs: "selection" },
+    { id: "new", label: "act.newBackup", icon: "new", needs: "context", kind: "backup" },
+    { id: "restore", label: "act.restoreBackup", icon: "open", needs: "context", kind: "restore" },
+    { id: "extract", label: "act.extractSql", icon: "export", needs: "context", kind: "extract" },
+    { id: "delete", label: "act.deleteBackup", icon: "delete", needs: "selection", kind: "delete" },
   ],
   automation: [
     { id: "new", label: "act.newBatchJob", icon: "new", needs: "context" },
@@ -190,6 +190,7 @@ const EMPTY_TABLE_COLUMNS: Column[] = [
 
 export function objectsFor(category: Category, ctx: NodeContext, connectionOpen: boolean): DbObject[] | null {
   if (category === "user") return ctx.connection && connectionOpen ? ctx.connection.roles : null;
+  if (category === "backup" && !ctx.schema && ctx.database) return ctx.database.backups ?? [];
   if (!ctx.schema) return null;
   return ctx.schema.objects[category] ?? [];
 }
@@ -208,7 +209,7 @@ interface Props {
   lang: string;
   selected: string[];
   onSelect: (names: string[]) => void;
-  onAction: (kind: "open" | "design" | "new" | "export" | "import", objects: string[]) => void;
+  onAction: (kind: "open" | "design" | "new" | "export" | "import" | "backup" | "restore" | "extract" | "delete", objects: string[]) => void;
   /** Botão direito: `name` do objeto, ou null na área vazia (menu da pasta). */
   onContextMenu?: (name: string | null, x: number, y: number) => void;
 }

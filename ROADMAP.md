@@ -406,9 +406,22 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [ ] Data Synchronization / Structure Synchronization
 
 ## 8. Backup / Restore
-- [ ] Backup/Restore nativos (pg_dump / pg_restore embutidos)
+- [x] **Novo backup do schema ou do banco inteiro** (menu do banco, do schema e categoria Backup) no formato da referência: abas **Geral**
+      (servidor, banco/schema e comentário), **Seleção de objetos** (tabelas, views, views materializadas e sequências por
+      nome, com os schemas de todo o banco no backup do banco; funções e tipos entram sempre), **Avançado** (nome do arquivo por padrão `%Y%m%d%H%M%S`) e **Log de mensagens**
+      (objetos, objetos e registros processados, tempo, saída do `pg_dump` e barra de progresso), com cancelamento
+- [x] Os backups ficam guardados por conexão/banco/schema na pasta de dados do app (`.dump` + comentário), ou na pasta
+      escolhida em **Avançado → Salvar o backup em** (o app registra o arquivo e ele continua na lista); aparecem na categoria
+      **Backup** (nome, data, tamanho, comentário), inclusive com só o banco selecionado (backups do banco inteiro, marcados
+      "(banco inteiro)", aparecem em todos os schemas dele); **Excluir backup** na lista (só apaga backups registrados)
+- [x] **Restaurar backup** (num banco da conexão, com excluir antes de criar, sem donos/privilégios, transação única) e
+      **Extrair SQL** de um backup; aceita também arquivo `.dump`/`.tar` de fora (`pg_restore`) e script `.sql` (`psql`)
+- Usa o `pg_dump`/`pg_restore`/`psql` do PostgreSQL instalado (procura no PATH e nos locais usuais; pasta configurável no
+  diálogo); **não vão embutidos no app**. Ainda não há: perfis (**Save Profile**), "Lock all tables", escolher funções/tipos
+  individualmente (o `pg_dump` não permite), total de registros exato (usa a estimativa das tabelas), objetos globais
+  (roles) no backup do banco e teste automatizado contra um servidor (só foi verificado que compila)
+      *(`src-tauri/src/backup.rs`, `src/components/BackupDialog.tsx`, `RestoreDialog.tsx`)*
 - [ ] Backup agendado
-- [ ] Extract SQL de um backup
 
 ## 9. Automação *(fora de prioridade neste ciclo)*
 - [ ] Batch jobs (encadear consultas, backups, transferências)

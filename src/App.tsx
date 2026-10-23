@@ -38,6 +38,8 @@ import { FindDialog } from "./components/FindDialog";
 import { EditDatabaseDialog } from "./components/EditDatabaseDialog";
 import { EditSchemaDialog } from "./components/EditSchemaDialog";
 import { databaseStatements, schemaStatements, type DatabaseEditState, type SchemaEditState } from "./sql/dbedit";
+import { BackupDialog, type BackupTarget } from "./components/BackupDialog";
+import { RestoreDialog, type RestoreTarget } from "./components/RestoreDialog";
 import { DumpDialog, type DumpTarget } from "./components/DumpDialog";
 import { OptionsDialog } from "./components/OptionsDialog";
 import { DEFAULT_OPTIONS, OptionsContext, sanitizeOptions, type AppOptions } from "./options";
@@ -252,6 +254,9 @@ type Dialog =
   | { kind: "editSchema"; connId: string; database: string; detail: SchemaDetail }
   | { kind: "find"; connId: string; database: string; schema?: string }
   | ({ kind: "dump" } & DumpTarget)
+  | ({ kind: "backup" } & BackupTarget)
+  | ({ kind: "restore" } & RestoreTarget)
+  | { kind: "deleteBackup"; connId: string; database: string; schema: string; names: string[]; files: { path: string; metaPath: string }[] }
   | { kind: "about" };
 
 export default function App() {
@@ -513,6 +518,7 @@ export default function App() {
         })),
       })),
     }));
+    void loadBackups(connId, dbName, "").catch(() => undefined);
   };
 
   const loadSchema = async (connId: string, dbName: string, schemaName: string, force = false) => {
@@ -525,6 +531,7 @@ export default function App() {
       ...c,
       databases: c.databases.map((d) => (d.name !== dbName ? d : { ...d, schemas: d.schemas.map((s) => (s.name === schemaName ? fresh : s)) })),
     }));
+    void loadBackups(connId, dbName, schemaName).catch(() => undefined);
   };
 
   const loadTableColumns = async (connId: string, dbName: string, schemaName: string, table: string) => {
@@ -963,7 +970,71 @@ export default function App() {
     setImportTarget({ connId: c.connection.id, database: c.database.name, schema: c.schema.name, tables: (c.schema.objects.table ?? []).map((o) => o.name), initial: name });
   };
 
-  const openObjects = (kind: "open" | "design" | "new" | "export" | "import", names: string[], cat: Category = category, c = ctx) => {
+  /** Relê os backups guardados do schema para a lista da categoria Backup. */
+  const loadBackups = async (connId: string, dbName: string, schemaName: string) => {
+    const list = await pg.backupList(connId, dbName, schemaName);
+    const objs = list.map((e) => ({ name: e.scope === "database" ? `${e.name} (${t("bk.scopeDatabase")})` : e.name, path: e.path, metaPath: e.metaPath, dataLength: e.bytes, modified: new Date(e.modifiedMs).toISOString(), comment: e.comment || undefined }));
+    updateConn(connId, (c) => ({
+      ...c,
+      databases: c.databases.map((d) => (d.name !== dbName ? d : {
+        ...d,
+        backups: objs.filter((_, i) => list[i].scope === "database"),
+        schemas: d.schemas.map((sc) => (sc.name !== schemaName ? sc : { ...sc, objects: { ...sc.objects, backup: objs } })),
+      })),
+    }));
+  };
+
+  /** Relê a lista de backups de todos os schemas já carregados do banco (um backup do banco aparece em todos). */
+  const refreshBackups = (connId: string, dbName: string) => {
+    const db = connectionsRef.current.find((c) => c.id === connId)?.databases.find((d) => d.name === dbName);
+    void loadBackups(connId, dbName, "").catch(() => undefined);
+    for (const sc of db?.schemas ?? []) if (sc.loaded) void loadBackups(connId, dbName, sc.name).catch(() => undefined);
+  };
+
+  /**
+   * Novo backup: do schema do contexto (ou de `schemaName`) ou, com `schemaName === null`, do banco inteiro. Carrega a lista
+   * de objetos para a seleção e abre o diálogo.
+   */
+  const openBackup = async (c = ctx, schemaName?: string | null) => {
+    const conn = c.connection;
+    const database = c.database?.name ?? conn?.databases[0]?.name;
+    const dbNode = conn?.databases.find((d) => d.name === database);
+    const schema = schemaName === null ? undefined : (schemaName ?? c.schema?.name ?? dbNode?.schemas[0]?.name);
+    if (!conn?.live || !database || (schemaName !== null && !schema)) return;
+    const wanted = schema ? [schema] : (dbNode?.schemas.map((x) => x.name) ?? []);
+    try {
+      for (const name of wanted) await loadSchema(conn.id, database, name);
+    } catch (e) {
+      return showError(t("cmd.newBackup"), e);
+    }
+    const loaded = connectionsRef.current.find((x) => x.id === conn.id)?.databases.find((d) => d.name === database)?.schemas.filter((x) => wanted.includes(x.name)) ?? [];
+    const pick = (cat: Category) => loaded.flatMap((sc) => (sc.objects[cat] ?? []).map((o) => ({ schema: sc.name, name: o.fnName ?? o.name, rows: o.rows })));
+    const major = Math.floor(conn.serverVersionNum / 10000);
+    const version = major >= 10 ? String(major) : `${major}.${Math.floor((conn.serverVersionNum % 10000) / 100)}`;
+    setDialog({
+      kind: "backup", connId: conn.id, database, schema, server: `Postgres ${version}`,
+      objects: { table: pick("table"), view: pick("view"), matview: pick("matview"), function: pick("function"), sequence: pick("sequence"), type: pick("type") },
+    });
+  };
+
+  /** Restaurar um backup (ou extrair o SQL dele): `path` é o backup escolhido na lista; sem ele o diálogo pede o arquivo. */
+  const openRestore = (mode: RestoreTarget["mode"], c = ctx, path?: string) => {
+    const conn = c.connection;
+    const database = c.database?.name ?? conn?.databases[0]?.name;
+    if (!conn?.live || !database) return;
+    setDialog({ kind: "restore", mode, connId: conn.id, database, databases: conn.databases.map((d) => d.name), path });
+  };
+
+  const openObjects = (kind: "open" | "design" | "new" | "export" | "import" | "backup" | "restore" | "extract" | "delete", names: string[], cat: Category = category, c = ctx) => {
+    if (kind === "backup") return void openBackup(c, c.schema ? undefined : null);
+    if (kind === "restore" || kind === "extract") return openRestore(kind, c, c.schema?.objects.backup?.find((o) => o.name === names[0])?.path);
+    if (kind === "delete") {
+      const items = (c.schema?.objects.backup ?? []).filter((o) => names.includes(o.name) && o.path);
+      if (cat === "backup" && c.connection && c.database && c.schema && items.length > 0) {
+        setDialog({ kind: "deleteBackup", connId: c.connection.id, database: c.database.name, schema: c.schema.name, names: items.map((o) => o.name), files: items.map((o) => ({ path: o.path!, metaPath: o.metaPath ?? "" })) });
+      }
+      return;
+    }
     if (kind === "import") {
       if (cat === "table") startImport(c, names[0]);
       return;
@@ -1253,6 +1324,9 @@ export default function App() {
         item("cmd.console"),
         item("cmd.executeSqlFile", isOpen && live ? () => pickSqlFile(conn.id, dbName) : undefined),
         dumpMenu({ kind: "database" }, dbName, conn.id, dbName),
+        item("cmd.newBackup", live ? () => void openBackup(c, null) : undefined),
+        item("cmd.restoreBackup", live ? () => openRestore("restore", c) : undefined),
+        item("cmd.extractSql", live ? () => openRestore("extract", c) : undefined),
         sep,
         item("cmd.reverseToModel"),
         item("cmd.findInDatabase", live ? () => setDialog({ kind: "find", connId: conn.id, database: dbName }) : undefined),
@@ -1300,6 +1374,7 @@ export default function App() {
         item("cmd.newQuery", () => newQuery()),
         item("cmd.executeSqlFile", live ? () => pickSqlFile(conn.id, dbName) : undefined),
         dumpMenu({ kind: "schema", schema: scName }, scName, conn.id, dbName),
+        item("cmd.newBackup", live ? () => void openBackup(c, scName) : undefined),
         sep,
         item("cmd.reverseToModel"),
         sep,
@@ -1640,7 +1715,7 @@ export default function App() {
     typeRange: { id: "typeRange", label: "cmd.typeRange" },
     newQuery: { id: "newQuery", label: "cmd.newQuery", shortcut: "Ctrl+Q", run: () => newQuery() },
     newQueryFile: { id: "newQueryFile", label: "cmd.newQueryFile", run: () => newQuery() },
-    newBackup: { id: "newBackup", label: "cmd.newBackup" },
+    newBackup: { id: "newBackup", label: "cmd.newBackup", run: () => void openBackup() },
     newAutomation: { id: "newAutomation", label: "cmd.newAutomation" },
     newModelWorkspace: { id: "newModelWorkspace", label: "cmd.newModelWorkspace" },
     newBiWorkspace: { id: "newBiWorkspace", label: "cmd.newBiWorkspace" },
@@ -2392,6 +2467,23 @@ export default function App() {
       )}
 
       {dialog?.kind === "dump" && <DumpDialog target={dialog} onClose={() => setDialog(null)} />}
+      {dialog?.kind === "backup" && <BackupDialog target={dialog} onClose={() => setDialog(null)} onDone={() => refreshBackups(dialog.connId, dialog.database)} />}
+      {dialog?.kind === "restore" && <RestoreDialog target={dialog} onClose={() => setDialog(null)} />}
+      {dialog?.kind === "deleteBackup" && (
+        <MessageDialog
+          title={t("act.deleteBackup")}
+          message={dialog.names.length === 1 ? t("msg.confirmDeleteBackup", { name: dialog.names[0] }) : t("msg.confirmDeleteBackups", { n: dialog.names.length })}
+          danger
+          onOk={() => {
+            const d = dialog;
+            setDialog(null);
+            void Promise.all(d.files.map((f) => pg.backupDelete(f.path, f.metaPath)))
+              .catch((e) => showError(t("act.deleteBackup"), e))
+              .finally(() => refreshBackups(d.connId, d.database));
+          }}
+          onCancel={() => setDialog(null)}
+        />
+      )}
 
       {dialog?.kind === "chooseColumns" && (() => {
         // Exibir → Escolher colunas: as colunas da lista de objetos da categoria atual; o nome (a primeira) não some.
