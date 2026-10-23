@@ -22,7 +22,25 @@ pub struct Exports {
     active: Mutex<HashMap<String, Active>>,
 }
 
-struct Active {
+/// Remove o registro da exportação/dump ao sair, de qualquer forma.
+pub(crate) struct Registration<'a>(&'a Exports, String);
+
+impl Drop for Registration<'_> {
+    fn drop(&mut self) {
+        self.0.active.lock().unwrap().remove(&self.1);
+    }
+}
+
+impl Exports {
+    /// Registra uma operação longa para o botão Cancelar; devolve a bandeira de cancelamento e o registro.
+    pub(crate) fn register(&self, id: &str, session: Arc<PgSession>) -> (Arc<AtomicBool>, Registration<'_>) {
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.active.lock().unwrap().insert(id.to_string(), Active { cancel: cancel.clone(), session });
+        (cancel, Registration(self, id.to_string()))
+    }
+}
+
+pub(crate) struct Active {
     cancel: Arc<AtomicBool>,
     /// Conexão exclusiva da exportação: o cancelamento vai direto ao servidor, sem esperar uma linha chegar.
     session: Arc<PgSession>,
@@ -74,14 +92,20 @@ struct Progress<'a> {
     rows: u64,
 }
 
-fn io_error(e: std::io::Error) -> DatabaseError {
+pub(crate) fn io_error(e: std::io::Error) -> DatabaseError {
     DatabaseError::new(ErrorKind::Internal, e.to_string())
 }
 
 /// Apaga o arquivo temporário ao sair, a menos que a exportação tenha terminado bem.
-struct PartFile {
-    path: PathBuf,
-    keep: bool,
+pub(crate) struct PartFile {
+    pub(crate) path: PathBuf,
+    pub(crate) keep: bool,
+}
+
+impl PartFile {
+    pub(crate) fn new(path: PathBuf) -> Self {
+        Self { path, keep: false }
+    }
 }
 
 impl Drop for PartFile {
@@ -94,7 +118,7 @@ impl Drop for PartFile {
 
 /// Garante que o destino é um caminho de arquivo utilizável: absoluto, com pasta existente e
 /// que não seja uma pasta.
-fn validate_path(path: &str) -> Result<PathBuf, DatabaseError> {
+pub(crate) fn validate_path(path: &str) -> Result<PathBuf, DatabaseError> {
     let p = PathBuf::from(path);
     let invalid = |msg: &str| DatabaseError::new(ErrorKind::InvalidInput, msg.to_string());
     if path.trim().is_empty() || !p.is_absolute() {
@@ -109,7 +133,7 @@ fn validate_path(path: &str) -> Result<PathBuf, DatabaseError> {
     }
 }
 
-fn part_path(dest: &Path) -> PathBuf {
+pub(crate) fn part_path(dest: &Path) -> PathBuf {
     let mut name = dest.file_name().map(|n| n.to_os_string()).unwrap_or_default();
     name.push(".part");
     dest.with_file_name(name)
@@ -141,16 +165,7 @@ pub async fn pg_export(
         let _ = session.client.simple_query(&format!("SET search_path TO {}", atlas_pg::search_path_for(schema))).await;
     }
 
-    let cancel = Arc::new(AtomicBool::new(false));
-    exports.active.lock().unwrap().insert(req.export_id.clone(), Active { cancel: cancel.clone(), session: session.clone() });
-    // Remove o registro ao terminar, de qualquer forma.
-    struct Registered<'a>(&'a Exports, String);
-    impl Drop for Registered<'_> {
-        fn drop(&mut self) {
-            self.0.active.lock().unwrap().remove(&self.1);
-        }
-    }
-    let _registered = Registered(&exports, req.export_id.clone());
+    let (cancel, _registered) = exports.register(&req.export_id, session.clone());
 
     let mut part = PartFile { path: part_path(&dest), keep: false };
     let file = File::create(&part.path).map_err(io_error)?;

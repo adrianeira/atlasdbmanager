@@ -179,6 +179,7 @@ name = "atlas-pg"
 version = "0.1.0"
 dependencies = [
  "atlas-core",
+ "bytes",
  "futures-util",
  "log",
  "native-tls",

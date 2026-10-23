@@ -2100,3 +2100,12 @@ select.et-input {
 .find-results { flex: 1; min-height: 0; overflow: auto; }
 .find-results .grid-table { width: 100%; }
 .find-snippet { font: 12px/1.35 var(--font-mono); color: var(--c-text-muted); max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Dump SQL. */
+.dump-dialog { width: min(640px, 92vw); }
+.dump-body { display: flex; flex-direction: column; gap: 10px; }
+.dump-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 16px; }
+.dump-path .field { flex: 1; min-width: 0; }
+.dump-note { font-size: 11px; }
+.dump-progress { display: flex; align-items: center; gap: 8px; }
+.dump-result { padding: 8px 10px; border: 1px solid var(--c-border); background: var(--c-surface-alt); }

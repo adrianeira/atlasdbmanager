@@ -165,6 +165,20 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       colunas, designer de função, sequência ou tipo), carregando o schema se preciso
       *(`src/components/FindDialog.tsx`, `crates/atlas-pg/src/find.rs`)*
 
+### Dump SQL
+- [x] **Despejar arquivo SQL** nos menus do banco, do schema e da tabela, com **Estrutura + dados** ou **Somente
+      estrutura**: extensões, schemas, tipos (enum, composto, domínio, faixa), sequências (com `OWNED BY` e valor atual),
+      funções e procedimentos, tabelas (incluindo `UNLOGGED`, herança, particionamento, identidade e colunas geradas),
+      restrições, índices, views e views materializadas (em ordem de dependência, com `REFRESH`), chaves estrangeiras,
+      gatilhos e comentários
+- [x] Dados em **`COPY ... FROM stdin`** (rápido, restaura com o `psql`) ou em **`INSERT`** (qualquer cliente); opções de
+      `DROP ... IF EXISTS` antes de criar e de incluir donos; tudo lido de **um único instantâneo** consistente
+- [x] Em streaming (2 milhões de linhas, 80 MB, em ~2 s), com progresso, cancelamento e escrita em `.part` (sem arquivo
+      parcial); validado restaurando o dump no PostgreSQL 18 com os mesmos dados (soma de verificação) e por um teste de
+      ida e volta (despejar, restaurar num banco novo e despejar de novo dá o mesmo arquivo)
+- Não incluídos: privilégios (`GRANT`), opções de armazenamento, tabelas estrangeiras e agregações
+      *(`crates/atlas-pg/src/dump.rs`, `src-tauri/src/dump.rs`, `src/components/DumpDialog.tsx`)*
+
 ### Navegação / Árvore
 - [x] **Fechar schema** no menu de contexto (colapsa + marca como não-carregado para rebuscar
       na próxima abertura) *(`src/App.tsx`)*
@@ -281,8 +295,8 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [ ] Import Wizard *(`act.importWizard` sem handler)* — CSV, Excel, JSON, XML, DBF, Access…
 - [x] Export Wizard de tabelas/views em etapas, com várias tabelas e perfis (ver "Exportação de dados")
 - [ ] Formatos que faltam: Access (`.accdb`; não há biblioteca livre que o grave, depende do driver do Windows), Markdown
-- [ ] Exportação agendada; exportar também a estrutura (DDL) junto com os dados
-- [ ] Dump SQL completo *(hoje só item de menu)*
+- [ ] Exportação agendada (a estrutura junto com os dados já sai pelo Dump SQL)
+- [x] Dump SQL completo (ver "Dump SQL" em Entregues)
 - [ ] Data Transfer entre conexões / bancos
 - [ ] Data Synchronization / Structure Synchronization
 

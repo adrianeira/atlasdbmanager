@@ -584,6 +584,138 @@ async fn find_searches_names_columns_definitions_and_comments() {
     atlas_pg::execute(&s, &format!("DROP SCHEMA {ns} CASCADE; DROP SCHEMA {other} CASCADE"), 1).await.unwrap();
 }
 
+/// Despeja o schema, restaura num banco novo e despeja de novo: os dois dumps (estrutura e dados) precisam ser iguais.
+#[tokio::test]
+async fn sql_dump_round_trips_through_a_fresh_database() {
+    use atlas_pg::{DumpOptions, DumpScope};
+    use futures_util::SinkExt;
+    let p = require_server!();
+    let src = atlas_pg::connect(&p, None).await.expect("connect");
+    let v = src.server.version_num;
+    let ns = format!("atlas_dp_{}", std::process::id());
+    let target_db = format!("atlas_dprt_{}", std::process::id());
+    let mut ddl = format!(
+        "DROP SCHEMA IF EXISTS {ns} CASCADE; CREATE SCHEMA {ns}; \
+         CREATE TYPE {ns}.cor AS ENUM ('vermelho', 'azul'); \
+         CREATE TYPE {ns}.ponto AS (x integer, y numeric(10,2)); \
+         CREATE DOMAIN {ns}.positivo AS integer NOT NULL DEFAULT 1 CHECK (VALUE > 0); \
+         CREATE FUNCTION {ns}.dobro(a integer) RETURNS integer LANGUAGE sql IMMUTABLE AS $$ SELECT a * 2 $$; \
+         CREATE FUNCTION {ns}.audita() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.nota := coalesce(NEW.nota, '') || '!'; RETURN NEW; END $$; \
+         CREATE TABLE {ns}.clientes(id serial PRIMARY KEY, nome text NOT NULL, cor {ns}.cor DEFAULT 'azul', total numeric(12,2), qtd {ns}.positivo, \
+                                    nota text, criado timestamptz DEFAULT '2026-01-02 03:04:05+00', CONSTRAINT nome_ok CHECK (length(nome) > 1), UNIQUE (nome)); \
+         CREATE UNLOGGED TABLE {ns}.pedidos(id integer PRIMARY KEY, cliente_id integer NOT NULL REFERENCES {ns}.clientes(id) ON DELETE CASCADE, valor numeric); \
+         CREATE INDEX pedidos_valor_idx ON {ns}.pedidos (valor) WHERE valor > 0; \
+         CREATE TRIGGER clientes_audita BEFORE INSERT ON {ns}.clientes FOR EACH ROW EXECUTE PROCEDURE {ns}.audita(); \
+         CREATE VIEW {ns}.v_base AS SELECT id, nome FROM {ns}.clientes; \
+         CREATE VIEW {ns}.v_derivada AS SELECT id FROM {ns}.v_base WHERE id > 0; \
+         CREATE MATERIALIZED VIEW {ns}.m_totais AS SELECT cliente_id, sum(valor) AS soma FROM {ns}.pedidos GROUP BY 1; \
+         CREATE INDEX m_totais_idx ON {ns}.m_totais (cliente_id); \
+         COMMENT ON TABLE {ns}.clientes IS 'cadastro \\ de ''clientes'''; \
+         COMMENT ON COLUMN {ns}.clientes.nome IS 'nome completo'; \
+         COMMENT ON FUNCTION {ns}.dobro(integer) IS 'dobra'; \
+         COMMENT ON VIEW {ns}.v_base IS 'base'; \
+         CREATE SEQUENCE {ns}.avulsa INCREMENT BY 3 START WITH 10; SELECT nextval('{ns}.avulsa'); \
+         CREATE TABLE {ns}.pai(id integer, grupo text); CREATE TABLE {ns}.filha(extra integer) INHERITS ({ns}.pai)"
+    );
+    if v >= 100000 {
+        ddl.push_str(&format!(
+            "; CREATE TABLE {ns}.medidas(dia date NOT NULL, valor integer) PARTITION BY RANGE (dia); \
+             CREATE TABLE {ns}.medidas_2026 PARTITION OF {ns}.medidas FOR VALUES FROM ('2026-01-01') TO ('2027-01-01'); \
+             CREATE TABLE {ns}.itens(id integer GENERATED ALWAYS AS IDENTITY, nome text)"
+        ));
+    }
+    if v >= 120000 {
+        ddl.push_str(&format!("; CREATE TABLE {ns}.calc(a integer, b integer GENERATED ALWAYS AS (a * 2) STORED)"));
+    }
+    atlas_pg::execute(&src, &ddl, 1).await.expect("create source");
+    atlas_pg::execute(
+        &src,
+        &format!(
+            "INSERT INTO {ns}.clientes(nome, total, qtd, nota) VALUES ('Ana', 10.5, 3, E'linha1\\nlinha2\\ttab'), ('João \\ barra', NULL, 7, NULL), ('Zé', 0, 1, 'x'); \
+             INSERT INTO {ns}.pedidos VALUES (1, 1, 5), (2, 1, 7.5), (3, 2, NULL); \
+             REFRESH MATERIALIZED VIEW {ns}.m_totais; \
+             INSERT INTO {ns}.pai VALUES (1, 'a'); INSERT INTO {ns}.filha VALUES (2, 'b', 9)"
+        ),
+        1,
+    )
+    .await
+    .unwrap();
+    if v >= 100000 {
+        atlas_pg::execute(&src, &format!("INSERT INTO {ns}.medidas VALUES ('2026-05-05', 3); INSERT INTO {ns}.itens(nome) VALUES ('um'), ('dois')"), 1).await.unwrap();
+    }
+    if v >= 120000 {
+        atlas_pg::execute(&src, &format!("INSERT INTO {ns}.calc(a) VALUES (4)"), 1).await.unwrap();
+    }
+
+    let opts = DumpOptions { scope: DumpScope::Schema { schema: ns.clone() }, structure: true, data: true, clean: false, include_owner: false };
+    // Despeja uma conexão: estrutura, dados (COPY) e depois dos dados, na ordem em que o arquivo é gravado.
+    async fn dump_text(s: &atlas_pg::PgSession, opts: &DumpOptions) -> (String, atlas_pg::DumpPlan, Vec<(String, Vec<u8>)>) {
+        atlas_pg::begin_snapshot(s).await.unwrap();
+        let plan = atlas_pg::dump_plan(s, opts).await.expect("plan");
+        let mut data = Vec::new();
+        for t in &plan.data_tables {
+            let mut bytes = Vec::new();
+            atlas_pg::copy_table(s, t, |chunk, _| {
+                bytes.extend_from_slice(chunk);
+                Ok(true)
+            })
+            .await
+            .unwrap();
+            data.push((t.quoted.clone(), bytes));
+        }
+        atlas_pg::end_snapshot(s).await;
+        let mut text = plan.pre_data.join("\n\n");
+        for (q, d) in &data {
+            text.push_str(&format!("\n\n-- {q}\n{}", String::from_utf8_lossy(d)));
+        }
+        text.push_str(&plan.post_data.join("\n\n"));
+        (text, plan, data)
+    }
+    let (text1, plan1, data1) = dump_text(&src, &opts).await;
+    assert!(plan1.objects >= 12, "objetos: {}", plan1.objects);
+    assert!(plan1.pre_data.iter().any(|x| x.starts_with("CREATE TABLE")), "{text1}");
+    assert!(text1.contains("REFRESH MATERIALIZED VIEW"), "{text1}");
+    // v_base vem antes de v_derivada (dependência).
+    let base_pos = text1.find(&format!("CREATE VIEW {ns}.v_base")).unwrap();
+    let derived_pos = text1.find(&format!("CREATE VIEW {ns}.v_derivada")).unwrap();
+    assert!(base_pos < derived_pos, "views fora de ordem");
+    assert!(text1.contains("cadastro \\ de ''clientes''"), "comentário com aspas e barra: {text1}");
+
+    // Restaura num banco novo: SET, estrutura, dados (COPY), depois dos dados.
+    atlas_pg::execute(&src, &format!("DROP DATABASE IF EXISTS {target_db}"), 1).await.unwrap();
+    atlas_pg::execute(&src, &format!("CREATE DATABASE {target_db}"), 1).await.expect("create target db");
+    let dst = atlas_pg::connect(&p, Some(&target_db)).await.expect("connect target");
+    atlas_pg::execute(&dst, "SET check_function_bodies = false; SET standard_conforming_strings = on; SELECT pg_catalog.set_config('search_path', '', false)", 1).await.unwrap();
+    for stmt in &plan1.pre_data {
+        atlas_pg::execute(&dst, stmt, 1).await.unwrap_or_else(|e| panic!("pre-data falhou: {e:?}\n{stmt}"));
+    }
+    for (t, (_, bytes)) in plan1.data_tables.iter().zip(&data1) {
+        let sql = atlas_pg::copy_header(t);
+        let sink = dst.client.copy_in(sql.trim_end().trim_end_matches(';')).await.expect("copy_in");
+        futures_util::pin_mut!(sink);
+        sink.send(bytes::Bytes::from(bytes.clone())).await.unwrap();
+        sink.close().await.unwrap_or_else(|e| panic!("COPY de {} falhou: {e:?}", t.quoted));
+    }
+    for stmt in &plan1.post_data {
+        if stmt.starts_with("--") {
+            continue;
+        }
+        atlas_pg::execute(&dst, stmt, 1).await.unwrap_or_else(|e| panic!("post-data falhou: {e:?}\n{stmt}"));
+    }
+    let (text2, _, data2) = dump_text(&dst, &opts).await;
+    drop(dst);
+    atlas_pg::execute(&src, &format!("DROP DATABASE {target_db}"), 1).await.unwrap();
+    atlas_pg::execute(&src, &format!("DROP SCHEMA {ns} CASCADE"), 1).await.unwrap();
+    // O segundo dump é idêntico ao primeiro: nada se perdeu na ida e na volta (dados incluídos).
+    let a: Vec<&str> = text1.lines().collect();
+    let b: Vec<&str> = text2.lines().collect();
+    for (i, (x, y)) in a.iter().zip(&b).enumerate() {
+        assert_eq!(x, y, "diferença na linha {i}");
+    }
+    assert_eq!(a.len(), b.len());
+    assert_eq!(data1, data2);
+}
+
 #[tokio::test]
 async fn syntax_error_reports_position() {
     let p = require_server!();

@@ -124,6 +124,23 @@ export interface ViewDetail {
   populated: boolean;
 }
 
+/** O que o dump SQL cobre. */
+export type DumpScope = { kind: "database" } | { kind: "schema"; schema: string } | { kind: "tables"; schema: string; tables: string[] };
+
+export interface DumpRequest {
+  /** Identifica o dump para o progresso e o cancelamento (`exportCancel`). */
+  dumpId: string;
+  sessionId: string;
+  database: string;
+  options: { scope: DumpScope; structure: boolean; data: boolean; clean: boolean; includeOwner: boolean };
+  /** `copy` = COPY ... FROM stdin (rápido, precisa do psql); `insert` = comandos INSERT. */
+  dataFormat: "copy" | "insert";
+  rowsPerInsert: number;
+  path: string;
+}
+
+export interface DumpResult { objects: number; tables: number; rows: number; bytes: number; elapsedMs: number; path: string }
+
 export interface FindOptions {
   text: string;
   /** Só este schema; null = todos os schemas do usuário. */
@@ -368,6 +385,7 @@ export const pg = {
     call<TableDetail>("pg_table_detail", { sessionId, database, schema, table }),
   viewDetail: (sessionId: string, database: string, schema: string, view: string) =>
     call<ViewDetail>("pg_view_detail", { sessionId, database, schema, view }),
+  dumpSql: (req: DumpRequest) => call<DumpResult>("pg_dump_sql", { req }),
   find: (sessionId: string, database: string, options: FindOptions) => call<FindResult>("pg_find", { sessionId, database, options }),
   roleDetail: (sessionId: string, name: string) => call<RoleDetail>("pg_role_detail", { sessionId, name }),
   typeDetail: (sessionId: string, database: string, schema: string, name: string) =>

@@ -1,4 +1,5 @@
 mod commands;
+mod dump;
 mod export;
 mod local;
 mod sessions;
@@ -153,6 +154,7 @@ pub fn run() {
             tx::pg_tx_end,
             app_ready,
             export::pg_export,
+            dump::pg_dump_sql,
             export::pg_export_cancel,
             local::local_status,
             local::profiles_list,

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { appReady, errorText, isDesktop, local, pg, toAtlasError, type ConnectionParams, type FindHit, type ProfileRecord } from "./backend";
+import { appReady, errorText, isDesktop, local, pg, toAtlasError, type ConnectionParams, type DumpScope, type FindHit, type ProfileRecord } from "./backend";
 import { entries, matchesShortcut, sub, type CommandMap, type MenuDef, type MenuEntry } from "./commands";
 import { ConnectionDialog, type ConnectionForm } from "./components/ConnectionDialog";
 import { ExportWizard, type ExportTarget } from "./components/export/ExportWizard";
@@ -28,6 +28,7 @@ import { dropTypeSql } from "./sql/typedef";
 import { dropRoleSql } from "./sql/role";
 import { RoleDesignerDoc, type RoleBackend } from "./documents/RoleDesignerDoc";
 import { FindDialog } from "./components/FindDialog";
+import { DumpDialog, type DumpTarget } from "./components/DumpDialog";
 import { TypeDesignerDoc, type TypeBackend } from "./documents/TypeDesignerDoc";
 import { SequenceDesignerDoc, type SequenceBackend } from "./documents/SequenceDesignerDoc";
 import { FunctionDesignerDoc, type FunctionBackend } from "./documents/FunctionDesignerDoc";
@@ -217,6 +218,7 @@ type Dialog =
   | { kind: "name"; title: string; label: string; initial: string; onSubmit: (value: string) => void }
   | { kind: "execFile"; connId: string; database: string; fileName: string; size: number; sql: string; busy?: boolean; error?: string }
   | { kind: "find"; connId: string; database: string; schema?: string }
+  | ({ kind: "dump" } & DumpTarget)
   | { kind: "about" };
 
 export default function App() {
@@ -1045,7 +1047,14 @@ export default function App() {
     // para conferir (DECISÃO_ATLAS) — ordem e nomes serão ajustados quando houver as imagens.
     const live = !!c.connection?.live;
     const prod = c.connection?.environment === "production";
-    const dumpSub: MenuEntry = { kind: "sub", label: "sub.dumpSql", items: [{ kind: "item", text: t("cmd.dumpStructData") }, { kind: "item", text: t("cmd.dumpStructOnly") }] };
+    // Despejar arquivo SQL: banco, schema ou tabela (estrutura e dados, ou só a estrutura).
+    const dumpMenu = (scope: DumpScope, label: string, connId: string, database: string): MenuEntry => ({
+      kind: "sub", label: "sub.dumpSql",
+      items: [
+        { kind: "item", text: t("cmd.dumpStructData"), run: live ? () => setDialog({ kind: "dump", connId, database, scope, label, structureOnly: false }) : undefined },
+        { kind: "item", text: t("cmd.dumpStructOnly"), run: live ? () => setDialog({ kind: "dump", connId, database, scope, label, structureOnly: true }) : undefined },
+      ],
+    });
 
     if (node.kind === "database" && c.connection && c.database) {
       const conn = c.connection;
@@ -1074,7 +1083,7 @@ export default function App() {
         item("cmd.newQuery", () => newQuery()),
         item("cmd.console"),
         item("cmd.executeSqlFile", isOpen && live ? () => pickSqlFile(conn.id, dbName) : undefined),
-        dumpSub,
+        dumpMenu({ kind: "database" }, dbName, conn.id, dbName),
         sep,
         item("cmd.reverseToModel"),
         item("cmd.findInDatabase", live ? () => setDialog({ kind: "find", connId: conn.id, database: dbName }) : undefined),
@@ -1121,7 +1130,7 @@ export default function App() {
         item("act.newTable", newTable),
         item("cmd.newQuery", () => newQuery()),
         item("cmd.executeSqlFile", live ? () => pickSqlFile(conn.id, dbName) : undefined),
-        dumpSub,
+        dumpMenu({ kind: "schema", schema: scName }, scName, conn.id, dbName),
         sep,
         item("cmd.reverseToModel"),
         sep,
@@ -1176,7 +1185,7 @@ export default function App() {
         sep,
         item("act.importWizard"),
         item("act.exportWizard", live ? () => startExport(c, name) : undefined),
-        dumpSub,
+        dumpMenu({ kind: "tables", schema: c.schema?.name ?? "public", tables: [name] }, name, c.connection?.id ?? "", c.database?.name ?? ""),
         sep,
         item("cmd.copyName", () => { void navigator.clipboard?.writeText(name).catch(() => undefined); }),
         item("cmd.renameTable", live ? () => askName(t("cmd.renameTable"), t("msg.newName"), name, (newName) => askDdl({
@@ -2109,6 +2118,8 @@ export default function App() {
       )}
 
       {exportTarget && <ExportWizard target={exportTarget} onClose={() => setExportTarget(null)} />}
+
+      {dialog?.kind === "dump" && <DumpDialog target={dialog} onClose={() => setDialog(null)} />}
 
       {dialog?.kind === "find" && (
         <FindDialog
