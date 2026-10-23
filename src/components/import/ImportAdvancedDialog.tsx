@@ -1,5 +1,6 @@
 import { useT } from "../../i18n";
 import type { Advanced } from "./importModel";
+import { SmallIcon } from "../../icons";
 
 interface Props {
   value: Advanced;
@@ -14,7 +15,7 @@ export function ImportAdvancedDialog({ value, onChange, onClose }: Props) {
   return (
     <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal exp-options-dialog" role="dialog" aria-label={t("imp.adv.title")}>
-        <div className="modal-header">{t("imp.adv.title")}</div>
+        <div className="modal-header"><span className="modal-title">{t("imp.adv.title")}</span><button type="button" className="modal-close" aria-label={t("tab.close")} title={t("tab.close")} onClick={onClose}><SmallIcon name="close" /></button></div>
         <div className="modal-body exp-options">
           <label className="check-row"><input type="checkbox" checked={value.extendedInsert} onChange={(e) => patch({ extendedInsert: e.target.checked })} /><span>{t("imp.adv.extended")}</span></label>
           <label className="check-row imp-indent">

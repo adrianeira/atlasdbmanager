@@ -72,7 +72,7 @@ export function FindDialog({ connectionName, database, schema, search, onOpen, o
   return (
     <div className="modal-overlay" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal find-dialog" role="dialog" aria-label={t("find.title")}>
-        <div className="modal-header">{t(schema ? "find.titleSchema" : "find.title", { name: schema ?? "" })} — {connectionName} / {database}</div>
+        <div className="modal-header"><span className="modal-title">{t(schema ? "find.titleSchema" : "find.title", { name: schema ?? "" })} — {connectionName} / {database}</span><button type="button" className="modal-close" aria-label={t("tab.close")} title={t("tab.close")} onClick={onClose}><SmallIcon name="close" /></button></div>
         <div className="find-form">
           <div className="find-row">
             <input

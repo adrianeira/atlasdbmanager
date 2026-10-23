@@ -91,7 +91,7 @@ export function HistoryDialog({ connections, currentConnectionId, lang, onUse, o
   return (
     <div className="modal-overlay" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal hist-dialog" role="dialog" aria-label={t("hist.title")}>
-        <div className="modal-header">{t("hist.title")}</div>
+        <div className="modal-header"><span className="modal-title">{t("hist.title")}</span><button type="button" className="modal-close" aria-label={t("tab.close")} title={t("tab.close")} onClick={onClose}><SmallIcon name="close" /></button></div>
         <div className="hist-filters">
           <input className="field hist-search" value={search} placeholder={t("hist.search")} onChange={(e) => setSearch(e.target.value)} spellCheck={false} autoFocus />
           <select className="field" value={connectionId} onChange={(e) => setConnectionId(e.target.value)} aria-label={t("hist.connection")}>

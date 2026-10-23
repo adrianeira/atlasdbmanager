@@ -4,6 +4,7 @@ import { useT } from "../i18n";
 import type { ColumnDef } from "../model";
 import { quoteIdent } from "../model";
 import { Dropdown } from "./Dropdown";
+import { SmallIcon } from "../icons";
 
 type Op = "=" | "<>" | "<" | "<=" | ">" | ">=" | "LIKE" | "NOT LIKE" | "IS NULL" | "IS NOT NULL" | "IN" | "BETWEEN";
 
@@ -117,12 +118,12 @@ export function FilterSortDialog({ columns, initialFilter, initialSort, initialC
   return (
     <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal fs-dialog" role="dialog" aria-label={t("fs.title")}>
-        <div className="modal-header">{t("fs.title")}</div>
+        <div className="modal-header"><span className="modal-title">{t("fs.title")}</span><button type="button" className="modal-close" aria-label={t("tab.close")} title={t("tab.close")} onClick={onClose}><SmallIcon name="close" /></button></div>
         <div className="modal-body">
           <section className="fs-section">
             <div className="fs-section-head">
               <h4>{t("fs.filter")}</h4>
-              <button type="button" className="find-button" onClick={addRule}>+ {t("fs.addRule")}</button>
+              <button type="button" className="btn" onClick={addRule}>+ {t("fs.addRule")}</button>
             </div>
             {rules.length === 0 && <p className="muted">{t("fs.noRules")}</p>}
             {rules.map((r, i) => {
@@ -149,7 +150,7 @@ export function FilterSortDialog({ columns, initialFilter, initialSort, initialC
           <section className="fs-section">
             <div className="fs-section-head">
               <h4>{t("fs.sort")}</h4>
-              <button type="button" className="find-button" onClick={addSort}>+ {t("fs.addSort")}</button>
+              <button type="button" className="btn" onClick={addSort}>+ {t("fs.addSort")}</button>
             </div>
             {sort.length === 0 && <p className="muted">{t("fs.noSort")}</p>}
             {sort.map((o, i) => (
@@ -175,10 +176,10 @@ export function FilterSortDialog({ columns, initialFilter, initialSort, initialC
           </section>
         </div>
         <div className="modal-footer">
-          <button type="button" className="find-button" onClick={clearAll}>{t("fs.clear")}</button>
+          <button type="button" className="btn" onClick={clearAll}>{t("fs.clear")}</button>
           <span className="spacer" />
-          <button type="button" className="find-button" onClick={onClose}>{t("common.cancel")}</button>
-          <button type="button" className="find-button" onClick={apply}>{t("common.apply")}</button>
+          <button type="button" className="btn" onClick={onClose}>{t("common.cancel")}</button>
+          <button type="button" className="btn btn-primary" onClick={apply}>{t("common.apply")}</button>
         </div>
       </div>
     </div>

@@ -60,11 +60,11 @@ export function CellEditorPanel({ row, col, columnName, columnType, kind, value,
           <span>{t("cellEd.wrap")}</span>
         </label>
         {kind === "json" && (
-          <button type="button" className="find-button" disabled={readOnly} onClick={formatJson}>{t("cellEd.formatJson")}</button>
+          <button type="button" className="btn" disabled={readOnly} onClick={formatJson}>{t("cellEd.formatJson")}</button>
         )}
         <button
           type="button"
-          className="find-button"
+          className="btn"
           disabled={readOnly || required}
           onClick={() => { setText(""); onChange(null); }}
         >

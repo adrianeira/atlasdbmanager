@@ -665,7 +665,7 @@ export function ImportWizard({ target, onClose, onDone }: Props) {
   return (
     <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget && !running && step !== LAST) onClose(); }}>
       <div className="modal exp-wizard" role="dialog" aria-label={t("imp.title")}>
-        <div className="modal-header">{running ? `${Math.round(fraction * 100)}% - ` : ""}{t("imp.title")}</div>
+        <div className="modal-header"><span className="modal-title">{running ? `${Math.round(fraction * 100)}% - ` : ""}{t("imp.title")}</span><button type="button" className="modal-close" aria-label={t("tab.close")} title={t("tab.close")} onClick={onClose} disabled={running}><SmallIcon name="close" /></button></div>
         <div className="exp-heading">{t(HEADINGS[step])}</div>
         <div className="exp-body">
           {step === 0 && formatStep}

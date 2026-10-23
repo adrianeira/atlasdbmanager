@@ -3,6 +3,7 @@ import { errorText, local, toAtlasError } from "../backend";
 import { useT, type Lang, type MessageKey } from "../i18n";
 import { DEFAULT_OPTIONS, OPTION_LIMITS, sanitizeOptions, type AppOptions } from "../options";
 import { MessageDialog } from "./MessageDialog";
+import { SmallIcon } from "../icons";
 
 type Theme = "system" | "light" | "dark";
 
@@ -164,7 +165,7 @@ export function OptionsDialog({ options, appearance, onApply, onClose }: Props) 
   return (
     <div className="modal-overlay" role="presentation">
       <div className="modal opt-dialog" role="dialog" aria-label={t("opt.title")}>
-        <div className="modal-header">{t("opt.title")}</div>
+        <div className="modal-header"><span className="modal-title">{t("opt.title")}</span><button type="button" className="modal-close" aria-label={t("tab.close")} title={t("tab.close")} onClick={onClose}><SmallIcon name="close" /></button></div>
         <div className="dlg-tabs" role="tablist">
           {TABS.map((x) => (
             <button key={x.id} type="button" role="tab" aria-selected={tab === x.id} className={`dlg-tab${tab === x.id ? " is-active" : ""}`} onClick={() => setTab(x.id)}>{t(x.label)}</button>

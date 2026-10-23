@@ -151,7 +151,7 @@ export function DateTimePopup({ kind, value, anchor, onPick, onClose }: Props) {
           else onPick(`${iso} ${hms}`);
         }}>{t("dtp.today")}</button>
         <span className="spacer" />
-        {kind !== "date" && <button type="button" className="find-button" onClick={commit}>OK</button>}
+        {kind !== "date" && <button type="button" className="btn" onClick={commit}>OK</button>}
       </div>
     </div>,
     document.body,

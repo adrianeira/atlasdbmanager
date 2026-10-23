@@ -58,7 +58,11 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [x] Cabeçalho único nos diálogos (assistentes, Opções, Histórico, Snippets, Localizar, Dump, Colunas, Filtro e
       ordenação): fundo branco, sem borda inferior, ícone do aplicativo e título sem negrito
       *(`.modal-header` em `src/styles/components.css`)*
-- [ ] Botão de fechar (X) no cabeçalho de todos os diálogos (hoje só Conexão e Mensagem têm)
+- [x] **Botão X no cabeçalho** de todos os diálogos (assistentes de exportação e importação, Opções, Histórico, Snippets,
+      Localizar, Dump, Colunas, Filtro e ordenação e as opções avançadas); fica desabilitado enquanto uma exportação,
+      importação ou dump está rodando
+- [x] **Botões no padrão** (`btn`, cinza, com o principal em destaque) em Filtro e ordenação, Colunas, editor de célula e
+      seletor de data/hora, que usavam uma classe sem estilo fora da barra de busca da grade
 
 ### Query Builder *(prioridade máxima)*
 - [x] **Janela do sistema à parte** (não um diálogo dentro da janela principal): maximiza pela tela inteira, independe do

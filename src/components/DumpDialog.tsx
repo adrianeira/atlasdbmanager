@@ -5,6 +5,7 @@ import {
 } from "../backend";
 import { useT } from "../i18n";
 import { formatBytes } from "../model";
+import { SmallIcon } from "../icons";
 
 export interface DumpTarget {
   connId: string;
@@ -102,7 +103,7 @@ export function DumpDialog({ target, onClose }: Props) {
   return (
     <div className="modal-overlay" role="presentation">
       <div className="modal dump-dialog" role="dialog" aria-label={t("dump.title")}>
-        <div className="modal-header">{t("dump.title")} — {scopeText}</div>
+        <div className="modal-header"><span className="modal-title">{t("dump.title")} — {scopeText}</span><button type="button" className="modal-close" aria-label={t("tab.close")} title={t("tab.close")} onClick={onClose} disabled={running}><SmallIcon name="close" /></button></div>
         <div className="modal-body dump-body">
           <div className="dump-row">
             <label className="check-row"><input type="checkbox" checked={structure} disabled={running} onChange={(e) => setStructure(e.target.checked)} /><span>{t("dump.structure")}</span></label>

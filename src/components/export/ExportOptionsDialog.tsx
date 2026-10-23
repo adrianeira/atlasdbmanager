@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { ExportEncoding } from "../../backend";
 import { useT } from "../../i18n";
 import type { DelimitedOptions, Kind, Options } from "./exportModel";
+import { SmallIcon } from "../../icons";
 
 interface Props {
   /** Exportando o resultado de uma consulta: o SQL pede o nome da tabela de destino. */
@@ -111,7 +112,7 @@ export function ExportOptionsDialog({ isQuery, kind, options, onChange, onClose 
   return (
     <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal exp-options-dialog" role="dialog" aria-label={t("exp.advancedTitle")}>
-        <div className="modal-header">{t("exp.advancedTitle")} — {t(`exp.kind.${kind}`)}</div>
+        <div className="modal-header"><span className="modal-title">{t("exp.advancedTitle")} — {t(`exp.kind.${kind}`)}</span><button type="button" className="modal-close" aria-label={t("tab.close")} title={t("tab.close")} onClick={onClose}><SmallIcon name="close" /></button></div>
         <div className="modal-body exp-options">{body()}</div>
         <div className="modal-footer">
           <span className="spacer" />

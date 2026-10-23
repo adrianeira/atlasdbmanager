@@ -1064,7 +1064,8 @@ textarea.field.remarks {
 }
 .data-find .find-count.is-none { color: #c62828; }
 .data-find .find-spacer { flex: 0 0 6px; }
-.data-find .find-close {
+.data-find .find-close,
+.cell-editor-head .find-close {
   width: 20px; height: 20px;
   display: inline-flex;
   align-items: center; justify-content: center;
@@ -1072,7 +1073,8 @@ textarea.field.remarks {
   color: var(--c-muted);
   font-size: 14px; line-height: 1;
 }
-.data-find .find-close:hover { color: var(--c-text); }
+.data-find .find-close:hover,
+.cell-editor-head .find-close:hover { color: var(--c-text); }
 
 /* Booleano exibido como checkbox. */
 .dg-check {
@@ -2222,3 +2224,10 @@ select.et-input {
 .qb-venn-fill { fill: #3aa0e0; opacity: 0.55; stroke: none; }
 .qb-venn-ring { fill: none; stroke: #3aa0e0; stroke-width: 2; }
 .qb-table-line.is-selected .qb-venn-ring { stroke: #0078d7; stroke-width: 2.5; }
+
+/* Botão de fechar no cabeçalho dos diálogos. */
+.modal-header { padding-right: 0; }
+.modal-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.modal-close { flex: none; width: 46px; height: 30px; border: 0; background: none; color: var(--c-text); display: flex; align-items: center; justify-content: center; cursor: default; }
+.modal-close:hover:not(:disabled) { background: #e81123; color: #fff; }
+.modal-close:disabled { color: var(--c-text-disabled); }

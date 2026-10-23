@@ -1,4 +1,5 @@
 import { useT } from "../i18n";
+import { SmallIcon } from "../icons";
 
 export interface ColumnsDialogItem {
   name: string;
@@ -22,7 +23,7 @@ export function ColumnsDialog({ columns, hidden, onToggle, onShowAll, onHideAll,
   return (
     <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal cols-dialog" role="dialog" aria-label={t("data.columns")}>
-        <div className="modal-header">{t("data.columns")}</div>
+        <div className="modal-header"><span className="modal-title">{t("data.columns")}</span><button type="button" className="modal-close" aria-label={t("tab.close")} title={t("tab.close")} onClick={onClose}><SmallIcon name="close" /></button></div>
         <div className="modal-body">
           <div className="cols-list">
             {columns.map((c) => (
@@ -36,10 +37,10 @@ export function ColumnsDialog({ columns, hidden, onToggle, onShowAll, onHideAll,
           <div className="cols-count muted">{t("cols.visible", { n: visibleCount, total: columns.length })}</div>
         </div>
         <div className="modal-footer">
-          <button type="button" className="find-button" onClick={onShowAll}>{t("cols.showAll")}</button>
-          <button type="button" className="find-button" onClick={onHideAll}>{t("cols.hideAll")}</button>
+          <button type="button" className="btn" onClick={onShowAll}>{t("cols.showAll")}</button>
+          <button type="button" className="btn" onClick={onHideAll}>{t("cols.hideAll")}</button>
           <span className="spacer" />
-          <button type="button" className="find-button" onClick={onClose}>{t("common.close")}</button>
+          <button type="button" className="btn btn-primary" onClick={onClose}>{t("common.close")}</button>
         </div>
       </div>
     </div>

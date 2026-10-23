@@ -94,7 +94,7 @@ export function SnippetDialog({ initialBody, onInsert, onClose }: Props) {
   return (
     <div className="modal-overlay" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal snip-dialog" role="dialog" aria-label={t("snip.title")}>
-        <div className="modal-header">{t("snip.title")}</div>
+        <div className="modal-header"><span className="modal-title">{t("snip.title")}</span><button type="button" className="modal-close" aria-label={t("tab.close")} title={t("tab.close")} onClick={onClose}><SmallIcon name="close" /></button></div>
         <div className="snip-body">
           <div className="snip-side">
             <div className="snip-side-bar">
