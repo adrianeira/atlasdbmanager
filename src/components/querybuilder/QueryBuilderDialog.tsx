@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { errorText, pg, toAtlasError, type ObjectInfo } from "../../backend";
 import { useT } from "../../i18n";
+import { parseSelect, type PRef } from "../../sql/querybuilderParse";
 import { SmallIcon } from "../../icons";
 import {
   AGGREGATES, JOIN_TYPES, NO_VALUE, OPERATORS, buildSql, emptyState, foreignKeyJoins, uid,
@@ -12,7 +13,10 @@ interface Props {
   database: string;
   /** Schema da aba de consulta: as tabelas dele saem sem prefixo no SQL. */
   defaultSchema: string;
-  onBuild: (sql: string, run: boolean) => void;
+  /** SELECT do editor: o desenho é montado a partir dele (se for um SELECT simples). */
+  initialSql?: string;
+  /** `replaced`: o desenho veio de `initialSql`, então o SQL novo substitui aquele texto. */
+  onBuild: (sql: string, run: boolean, replaced: boolean) => void;
   onClose: () => void;
 }
 
@@ -66,7 +70,7 @@ function RefSelect({ tables, value, onChange, star = true, placeholder }: {
 }
 
 /** Janela do Query Builder: monta um SELECT arrastando tabelas, marcando campos e ligando-os; o SQL aparece ao vivo. */
-export function QueryBuilderDialog({ connId, database, defaultSchema, onBuild, onClose }: Props) {
+export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql, onBuild, onClose }: Props) {
   const t = useT();
   const [st, setSt] = useState<QbState>(emptyState);
   const [schemas, setSchemas] = useState<string[]>([]);
@@ -86,6 +90,7 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, onBuild, o
   const [link, setLink] = useState<{ from: QbRef; x: number; y: number } | null>(null);
   const [treeDrag, setTreeDrag] = useState<{ schema: string; name: string; view: boolean; x: number; y: number; sx: number; sy: number; moved: boolean } | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const [fromSql, setFromSql] = useState(false);
 
   const sql = useMemo(() => buildSql(st, defaultSchema), [st, defaultSchema]);
 
@@ -115,6 +120,67 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, onBuild, o
         }
       })
       .catch((e) => alive && setError(errorText(toAtlasError(e))));
+    return () => {
+      alive = false;
+    };
+    // Só na abertura da janela.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /* ---------- Desenho a partir de um SELECT existente ---------- */
+  useEffect(() => {
+    const text = initialSql?.trim();
+    if (!text) return;
+    const parsed = parseSelect(text);
+    if (!parsed) {
+      setError(t("qb.parseFailed"));
+      return;
+    }
+    let alive = true;
+    void (async () => {
+      try {
+        const tables: QbTable[] = [];
+        for (const [n, pt] of parsed.tables.entries()) {
+          const schema = pt.schema ?? defaultSchema;
+          const d = await pg.tableDetail(connId, database, schema, pt.name);
+          const fks = d.constraints
+            .filter((c) => c.kind === "f" && c.refTable)
+            .map((c) => ({ fields: c.fields.split(", "), refSchema: c.refSchema ?? schema, refTable: c.refTable ?? "", refFields: (c.refFields ?? "").split(", ") }));
+          tables.push({
+            id: uid("t"), schema, name: pt.name, alias: pt.alias, view: false, columns: d.columns.map((c) => c.name), fks,
+            x: 24 + (n % 4) * 200, y: 24 + Math.floor(n / 4) * 220,
+          });
+        }
+        const resolve = (r: PRef): QbRef => {
+          const hit = r.q
+            ? tables.find((x) => (x.alias || x.name).toLowerCase() === r.q?.toLowerCase()) ?? tables.find((x) => x.name.toLowerCase() === r.q?.toLowerCase())
+            : tables.find((x) => r.col === "*" || x.columns.includes(r.col)) ?? tables[0];
+          if (!hit || (r.col !== "*" && !hit.columns.includes(r.col))) throw new Error("ref");
+          return { table: hit.id, column: r.col };
+        };
+        const cond = (c: (typeof parsed.where)[number], i: number): QbCond => ({
+          id: uid("c"), connector: i === 0 ? "AND" : c.connector, ref: c.ref ? resolve(c.ref) : null, aggregate: c.aggregate, op: c.op, value: c.value, value2: c.value2,
+        });
+        const next: QbState = {
+          tables,
+          fields: parsed.fields.map((f) => ({ id: uid("f"), ref: resolve(f.ref), aggregate: f.aggregate, alias: f.alias })),
+          joins: parsed.joins.map((j) => ({ id: uid("j"), type: j.type, left: resolve(j.left), right: resolve(j.right) })),
+          where: parsed.where.map(cond),
+          groupBy: parsed.groupBy.map(resolve),
+          having: parsed.having.map(cond),
+          orderBy: parsed.orderBy.map((o) => ({ id: uid("o"), ref: resolve(o.ref), desc: o.desc })),
+          distinct: parsed.distinct,
+          limit: parsed.limit,
+          offset: parsed.offset,
+        };
+        if (alive) {
+          setSt(next);
+          setFromSql(true);
+        }
+      } catch (e) {
+        if (alive) setError(e instanceof Error && e.message === "ref" ? t("qb.parseFailed") : errorText(toAtlasError(e)));
+      }
+    })();
     return () => {
       alive = false;
     };
@@ -570,8 +636,8 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, onBuild, o
           <button type="button" className={`icon-button${panes.left ? " is-active" : ""}`} title={t("qb.toggleTree")} aria-pressed={panes.left} onClick={() => setPanes((p) => ({ ...p, left: !p.left }))}><SmallIcon name="sidebar" /></button>
           <button type="button" className={`icon-button qb-flip${panes.right ? " is-active" : ""}`} title={t("qb.toggleSql")} aria-pressed={panes.right} onClick={() => setPanes((p) => ({ ...p, right: !p.right }))}><SmallIcon name="sidebar" /></button>
           <span className="spacer" />
-          <button type="button" className="btn" disabled={st.tables.length === 0} onClick={() => onBuild(sql, false)}>{t("qb.build")}</button>
-          <button type="button" className="btn btn-primary" disabled={st.tables.length === 0} onClick={() => onBuild(sql, true)}>{t("qb.buildRun")}</button>
+          <button type="button" className="btn" disabled={st.tables.length === 0} onClick={() => onBuild(sql, false, fromSql)}>{t("qb.build")}</button>
+          <button type="button" className="btn btn-primary" disabled={st.tables.length === 0} onClick={() => onBuild(sql, true, fromSql)}>{t("qb.buildRun")}</button>
           <button type="button" className="btn" onClick={onClose}>{t("common.cancel")}</button>
         </div>
       </div>

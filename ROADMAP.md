@@ -70,7 +70,10 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       arrastando; "Field Relation" / "Table Relation"; tipo INNER/LEFT/RIGHT/FULL e remoção na aba FROM
 - [x] Abas **SELECT** (apelido, agregações COUNT/SUM/AVG/MIN/MAX, DISTINCT, ordem), **FROM**, **WHERE** (AND/OR,
       `=`, `<>`, `<`, `>`, LIKE, ILIKE, IN, BETWEEN, IS NULL...), **GROUP BY**, **HAVING**, **ORDER BY** e **LIMIT/OFFSET**
-- [ ] Reabrir o builder a partir de um SELECT já escrito no editor (hoje ele monta sempre do zero)
+- [x] **Reabrir a partir do SQL do editor**: lê a seleção (ou o texto todo) se for um SELECT simples (tabelas com
+      apelido, JOINs, WHERE/HAVING, GROUP BY, ORDER BY, LIMIT/OFFSET, agregações), monta o desenho e, no Build,
+      substitui aquele trecho; fora desse formato avisa e começa do zero
+      *(`src/sql/querybuilderParse.ts`)*
 - [ ] Expressões livres no SELECT/WHERE, subconsultas, UNION e tabelas derivadas
 - [ ] Salvar/abrir o desenho (posição dos cartões) junto com a consulta
 
