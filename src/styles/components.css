@@ -2505,7 +2505,13 @@ select.et-input {
 .dd-font-row { display: flex; gap: 6px; }
 .dd-dd { min-width: 180px; }
 .dd-size { min-width: 64px; width: 64px; }
-.dd-left-footer { display: grid; grid-template-columns: 220px 1fr; gap: 10px; align-items: center; margin-top: 10px; }
+.dd-left-footer { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.dd-left-footer .check-row { flex: none; width: 220px; margin: 0; }
+.dd-left-footer .field { width: 200px; flex: none; }
+.dd-form .check-row { margin: 0; align-items: center; }
+.dd-form-pane { overflow-x: hidden; }
+.dd-dd { min-width: 0; width: 195px; }
+.dd-size { width: 54px; }
 .dd-restore { display: flex; flex-direction: column; gap: 6px; margin-top: 18px; align-items: flex-start; }
 .dd-link { border: 0; background: none; color: var(--c-accent); padding: 0; font: inherit; cursor: default; }
 .dd-link:hover { text-decoration: underline; }
