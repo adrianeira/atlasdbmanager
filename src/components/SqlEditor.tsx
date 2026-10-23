@@ -27,7 +27,10 @@ const atlasTheme = EditorView.theme({
   ".cm-content": { fontFamily: "var(--font-mono)", caretColor: "var(--c-text)" },
   ".cm-scroller": { fontFamily: "var(--font-mono)", lineHeight: "1.45" },
   ".cm-gutters": { backgroundColor: "var(--c-surface-alt)", color: "var(--c-text-disabled)", border: "none", borderRight: "1px solid var(--c-border)" },
-  ".cm-lineNumbers .cm-gutterElement": { textAlign: "center", padding: "0 6px", minWidth: "30px" },
+  // Número centralizado na calha inteira: a coluna de dobrar (14 px, fora do zoom) fica à direita, então o número ganha 14 px a mais à esquerda.
+  ".cm-lineNumbers .cm-gutterElement": { textAlign: "center", padding: "0 3px 0 17px", minWidth: "20px" },
+  ".cm-foldGutter": { width: "14px", fontSize: "var(--editor-font-size, 13px)" },
+  ".cm-foldGutter .cm-gutterElement": { padding: "0", textAlign: "center" },
   ".cm-activeLineGutter": { backgroundColor: "transparent", color: "var(--c-text)" },
   "&.cm-focused": { outline: "none" },
   ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": { backgroundColor: "var(--editor-selection) !important" },
