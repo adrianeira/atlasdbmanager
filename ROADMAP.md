@@ -89,12 +89,10 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       clique na alça volta ao tamanho automático); o tamanho é guardado junto com a posição
 - [x] Verificado: FK composta (uma linha por coluna e `ON ... AND ...`), 400 tabelas na árvore (~0,3 s), 30 cartões
       no canvas, views, outro schema, tema escuro e PostgreSQL 9.6 e 18
+- [x] Views reabertas de um SELECT aparecem como views (cor e ícone); redimensionar também pelas bordas direita e
+      inferior; o Build não apaga o que foi escrito no editor enquanto a janela estava aberta (acrescenta ao fim);
+      fechar a aba de consulta fecha a janela do builder dela; janela separada verificada no PostgreSQL 9.6 e 18
 - [ ] "Table Relation" foi montado sem referência visual (linha entre os títulos dos cartões); conferir com o original
-- [ ] Ao reabrir de um SELECT, views aparecem como tabelas (cor/ícone do cartão); falta consultar o tipo do objeto
-- [ ] Redimensionar o cartão também pelas bordas (hoje só pela alça do canto inferior direito)
-- [ ] Build com o editor alterado depois de abrir a janela: o SELECT novo substitui o texto (ou a seleção) sem avisar
-- [ ] Fechar a aba de consulta com a janela do builder aberta: a janela fica órfã (o Build não tem para onde ir)
-- [ ] Testar a janela separada do builder também no PostgreSQL 18 (só foi exercitada no 9.6)
 
 ### Importação de dados
 - [x] **Assistente de importação em 7 etapas** (formato → arquivos → opções da origem → tabela de destino →
