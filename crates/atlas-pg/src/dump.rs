@@ -107,7 +107,7 @@ pub fn header(server_version: &str, database: &str) -> String {
 }
 
 /// Está ligado a uma extensão (`pg_depend` com `deptype = 'e'`)? `class` é o catálogo e `oid` a expressão do objeto.
-fn in_extension(class: &str, oid: &str) -> String {
+pub(crate) fn in_extension(class: &str, oid: &str) -> String {
     format!(
         "NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend ext WHERE ext.classid = 'pg_catalog.{class}'::regclass AND ext.objid = {oid} AND ext.deptype = 'e')"
     )

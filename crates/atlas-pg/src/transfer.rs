@@ -192,7 +192,7 @@ fn rewrite_core(sql: &str, from: &str, to: &str, skip_strings: bool) -> String {
 
 /// Ajusta um comando gerado a partir de um servidor novo para um destino mais antigo (o que dá para adaptar sem perder
 /// nada): `CREATE SEQUENCE ... AS tipo` só existe a partir do PostgreSQL 10.
-fn adapt_for_target(stmt: &str, target_version: i32) -> String {
+pub(crate) fn adapt_for_target(stmt: &str, target_version: i32) -> String {
     if target_version < 100000 && stmt.starts_with("CREATE SEQUENCE ") {
         return stmt
             .lines()

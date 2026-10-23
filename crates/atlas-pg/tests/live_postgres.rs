@@ -25,6 +25,21 @@ fn params() -> Option<ConnectionParams> {
     })
 }
 
+/// Servidor de destino das transferências e sincronizações: outra porta (e, se preciso, outro usuário e senha) cruza 9.6 e 18.
+fn target_params(p: &ConnectionParams) -> ConnectionParams {
+    let mut t = p.clone();
+    if let Some(port) = std::env::var("ATLAS_TEST_PG_TARGET_PORT").ok().and_then(|x| x.parse().ok()) {
+        t.port = port;
+    }
+    if let Ok(user) = std::env::var("ATLAS_TEST_PG_TARGET_USER") {
+        t.user = user;
+    }
+    if let Ok(password) = std::env::var("ATLAS_TEST_PG_TARGET_PASSWORD") {
+        t.password = Secret::new(password);
+    }
+    t
+}
+
 macro_rules! require_server {
     () => {
         match params() {
@@ -1159,10 +1174,7 @@ async fn transfer_copies_objects_between_schemas_and_servers() {
     let p = require_server!();
     let src = atlas_pg::connect(&p, None).await.expect("connect source");
     // Destino: outra porta se `ATLAS_TEST_PG_TARGET_PORT` existir (cruza 9.6 e 18); senão o mesmo servidor.
-    let mut tp = p.clone();
-    if let Some(port) = std::env::var("ATLAS_TEST_PG_TARGET_PORT").ok().and_then(|x| x.parse().ok()) {
-        tp.port = port;
-    }
+    let tp = target_params(&p);
     let dst = atlas_pg::connect(&tp, None).await.expect("connect target");
     let pid = std::process::id();
     let (a, b) = (format!("atlas_tr_a_{pid}"), format!("atlas_tr_b_{pid}"));
@@ -1261,10 +1273,7 @@ async fn data_sync_compares_scripts_and_deploys() {
     use atlas_pg::{CompareHooks, DeployHooks, DiffKind, SyncSpec, SyncTable, TableSelection};
     let p = require_server!();
     let src = atlas_pg::connect(&p, None).await.expect("connect source");
-    let mut tp = p.clone();
-    if let Some(port) = std::env::var("ATLAS_TEST_PG_TARGET_PORT").ok().and_then(|x| x.parse().ok()) {
-        tp.port = port;
-    }
+    let tp = target_params(&p);
     let dst = atlas_pg::connect(&tp, None).await.expect("connect target");
     let pid = std::process::id();
     let (a, b) = (format!("atlas_ds_a_{pid}"), format!("atlas_ds_b_{pid}"));
@@ -1347,7 +1356,7 @@ async fn data_sync_compares_scripts_and_deploys() {
     let stats = {
         let mut on_log = |l: String| log.push(l);
         let mut on_progress = |_: u64, _: u64| {};
-        atlas_pg::deploy_data(&dst, &statements, true, false, DeployHooks { log: &mut on_log, progress: &mut on_progress, cancelled: &|| false }).await.expect("deploy")
+        atlas_pg::deploy_data(&dst, &statements, true, false, DeployHooks { log: &mut on_log, progress: &mut on_progress, cancelled: &|| false, echo: false }).await.expect("deploy")
     };
     assert_eq!((stats.done, stats.errors), (5, 0), "{log:#?}");
     assert!(log.iter().any(|l| l == "--Transaction - Commit--") && log.iter().any(|l| l == "Executed Query: 5"), "{log:#?}");
@@ -1368,7 +1377,7 @@ async fn data_sync_compares_scripts_and_deploys() {
     let stats = {
         let mut on_log = |_: String| {};
         let mut on_progress = |_: u64, _: u64| {};
-        atlas_pg::deploy_data(&dst, &bad, true, false, DeployHooks { log: &mut on_log, progress: &mut on_progress, cancelled: &|| false }).await.expect("deploy")
+        atlas_pg::deploy_data(&dst, &bad, true, false, DeployHooks { log: &mut on_log, progress: &mut on_progress, cancelled: &|| false, echo: false }).await.expect("deploy")
     };
     assert!(stats.rolled_back && stats.errors == 1);
     assert_eq!(text(&dst, format!("SELECT count(*) FROM {b}.t WHERE id = 900")).await, "0");
@@ -1618,4 +1627,129 @@ async fn stream_rows_exports_a_query_with_column_subset() {
     let mut began = false;
     let n = atlas_pg::stream_rows(&s, "SET search_path TO public", |_| { began = true; Ok(()) }, |_| Ok(true)).await.expect("no rows");
     assert!(n == 0 && !began);
+}
+
+#[tokio::test]
+async fn structure_sync_compares_scripts_and_deploys() {
+    use atlas_pg::{CompareHooks, DeployHooks, StructComparison, StructOp, StructSelection, StructSpec};
+    let p = require_server!();
+    let src = atlas_pg::connect(&p, None).await.expect("connect source");
+    let tp = target_params(&p);
+    let dst = atlas_pg::connect(&tp, None).await.expect("connect target");
+    let pid = std::process::id();
+    let (a, b) = (format!("atlas_ss_a_{pid}"), format!("atlas_ss_b_{pid}"));
+    atlas_pg::execute(
+        &src,
+        &format!(
+            "DROP SCHEMA IF EXISTS {a} CASCADE; CREATE SCHEMA {a}; \
+             CREATE TYPE {a}.mood AS ENUM ('sad', 'ok', 'happy'); \
+             CREATE SEQUENCE {a}.seq1 INCREMENT BY 2; \
+             CREATE SEQUENCE {a}.only_seq; \
+             CREATE TABLE {a}.clients(id integer PRIMARY KEY, name varchar(50) NOT NULL DEFAULT 'x', status boolean, humor {a}.mood); \
+             CREATE INDEX idx_name ON {a}.clients(name); \
+             COMMENT ON TABLE {a}.clients IS 'clientes'; \
+             CREATE TABLE {a}.orders(id serial PRIMARY KEY, client_id integer REFERENCES {a}.clients(id), amount numeric CONSTRAINT amount_ok CHECK (amount >= 0)); \
+             CREATE TABLE {a}.only_src(id integer PRIMARY KEY); \
+             CREATE VIEW {a}.v1 AS SELECT id, name FROM {a}.clients; \
+             CREATE FUNCTION {a}.f1(x integer) RETURNS integer LANGUAGE sql AS 'SELECT x + 1';"
+        ),
+        1,
+    )
+    .await
+    .expect("source ddl");
+    atlas_pg::execute(
+        &dst,
+        &format!(
+            "DROP SCHEMA IF EXISTS {b} CASCADE; CREATE SCHEMA {b}; \
+             CREATE TYPE {b}.mood AS ENUM ('sad', 'ok'); \
+             CREATE SEQUENCE {b}.seq1; \
+             CREATE TABLE {b}.clients(id integer PRIMARY KEY, name varchar(20), old integer); \
+             CREATE TABLE {b}.orders(id integer PRIMARY KEY, client_id integer, amount numeric CONSTRAINT amount_ok CHECK (amount > 0)); \
+             CREATE TABLE {b}.only_dst(x integer); \
+             CREATE VIEW {b}.v_gone AS SELECT x FROM {b}.only_dst; \
+             CREATE FUNCTION {b}.f_gone() RETURNS integer LANGUAGE sql AS 'SELECT 1';"
+        ),
+        1,
+    )
+    .await
+    .expect("target ddl");
+    let spec = StructSpec { source_schema: a.clone(), target_schema: b.clone() };
+
+    async fn run(src: &atlas_pg::PgSession, dst: &atlas_pg::PgSession, spec: &StructSpec) -> StructComparison {
+        let mut steps = 0usize;
+        let c = {
+            let mut on_progress = |_: &str, f: f64| {
+                assert!((0.0..=1.0).contains(&f));
+                steps += 1;
+            };
+            atlas_pg::compare_structure(src, dst, spec, CompareHooks { progress: &mut on_progress, cancelled: &|| false }).await.expect("compare")
+        };
+        assert!(steps > 0);
+        c
+    }
+    let c = run(&src, &dst, &spec).await;
+    let op = |kind: &str, name: &str| c.objects.iter().find(|o| o.kind == kind && o.name == name).unwrap_or_else(|| panic!("{kind} {name} missing")).op;
+    assert_eq!(op("type", "mood"), StructOp::Modify);
+    assert_eq!(op("sequence", "seq1"), StructOp::Modify);
+    assert_eq!(op("sequence", "only_seq"), StructOp::Add);
+    assert_eq!(op("table", "clients"), StructOp::Modify);
+    assert_eq!(op("table", "orders"), StructOp::Modify);
+    assert_eq!(op("table", "only_src"), StructOp::Add);
+    assert_eq!(op("table", "only_dst"), StructOp::Delete);
+    assert_eq!(op("view", "v1"), StructOp::Add);
+    assert_eq!(op("view", "v_gone"), StructOp::Delete);
+    assert_eq!(op("function", "f1(x integer)"), StructOp::Add);
+    assert_eq!(op("function", "f_gone()"), StructOp::Delete);
+    let clients = c.objects.iter().find(|o| o.kind == "table" && o.name == "clients").unwrap();
+    assert!(clients.source_ddl.contains("CREATE TABLE") && clients.source_ddl.contains(&format!("\"{b}\".\"clients\"")), "{}", clients.source_ddl);
+    let part = |n: &str| clients.parts.iter().find(|p| p.name == n).map(|p| p.op);
+    assert_eq!(part("status"), Some(StructOp::Add));
+    assert_eq!(part("old"), Some(StructOp::Delete));
+    assert_eq!(part("name"), Some(StructOp::Modify));
+    assert_eq!(part("id"), Some(StructOp::Same));
+    assert_eq!(part("idx_name"), Some(StructOp::Add));
+
+    let pick = |kind: &str, name: &str, parts: Option<Vec<usize>>| StructSelection { kind: kind.into(), name: name.into(), parts };
+    // Só uma coluna marcada: um ALTER.
+    let status_idx = clients.parts.iter().position(|p| p.name == "status").unwrap();
+    let one = atlas_pg::structure_script(&c, &[pick("table", "clients", Some(vec![status_idx]))]);
+    assert_eq!(one.len(), 1, "{one:?}");
+    assert!(one[0].contains("ADD COLUMN \"status\""));
+
+    // Tudo marcado.
+    let selection: Vec<StructSelection> = c.objects.iter().filter(|o| o.op != StructOp::Same).map(|o| pick(o.kind, &o.name, None)).collect();
+    let statements = atlas_pg::structure_script(&c, &selection);
+    let at = |needle: &str| statements.iter().position(|s| s.contains(needle)).unwrap_or_else(|| panic!("{needle} not in {statements:#?}"));
+    assert!(at("DROP VIEW") < at("DROP TABLE"), "a view sai antes da tabela");
+    assert!(at("CREATE SEQUENCE") < at("ADD COLUMN"), "sequência antes das colunas que a usam");
+    assert!(at("ADD CONSTRAINT \"orders_client_id_fkey\"") > at("ADD COLUMN"), "chave estrangeira depois das colunas");
+    assert!(at("CREATE VIEW") > at("ADD COLUMN"), "view depois das tabelas");
+    assert!(statements.iter().all(|s| !s.contains(&a)), "nada aponta para o schema da origem: {statements:#?}");
+
+    let mut log = Vec::new();
+    let stats = {
+        let mut on_log = |l: String| log.push(l);
+        let mut on_progress = |_: u64, _: u64| {};
+        atlas_pg::deploy_data(&dst, &statements, false, false, DeployHooks { log: &mut on_log, progress: &mut on_progress, cancelled: &|| false, echo: true }).await.expect("deploy")
+    };
+    assert_eq!(stats.errors, 0, "{log:#?}");
+    assert!(log.iter().any(|l| l.starts_with("CREATE SEQUENCE")), "o comando entra no registro: {log:#?}");
+
+    // De novo: não sobra diferença.
+    let again = run(&src, &dst, &spec).await;
+    let left: Vec<String> = again
+        .objects
+        .iter()
+        .filter(|o| o.op != StructOp::Same)
+        .map(|o| format!("{} {} {:?}
+--- source
+{}
+--- target
+{}
+--- parts {:?}", o.kind, o.name, o.op, o.source_ddl, o.target_ddl, o.parts.iter().filter(|p| p.op != StructOp::Same).map(|p| (&p.name, p.op)).collect::<Vec<_>>()))
+        .collect();
+    assert!(left.is_empty(), "{left:?}");
+
+    atlas_pg::execute(&src, &format!("DROP SCHEMA {a} CASCADE"), 1).await.unwrap();
+    atlas_pg::execute(&dst, &format!("DROP SCHEMA {b} CASCADE"), 1).await.unwrap();
 }

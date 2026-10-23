@@ -248,7 +248,7 @@ pub async fn datasync_deploy(
         let _ = progress_app.emit("datasync-deploy-progress", DeployProgress { id: &progress_id, done, total });
     };
     let cancelled = || cancel.load(Ordering::Relaxed);
-    let stats = atlas_pg::deploy_data(&dst, &statements, req.transaction, req.continue_on_error, DeployHooks { log: &mut on_log, progress: &mut on_progress, cancelled: &cancelled }).await?;
+    let stats = atlas_pg::deploy_data(&dst, &statements, req.transaction, req.continue_on_error, DeployHooks { log: &mut on_log, progress: &mut on_progress, cancelled: &cancelled, echo: false }).await?;
     Ok(DeployCounts { total: stats.total, done: stats.done, errors: stats.errors, rolled_back: stats.rolled_back, elapsed_ms: started.elapsed().as_millis() as u64 })
 }
 

@@ -464,6 +464,8 @@ pub struct DeployHooks<'a> {
     /// Comandos executados e total.
     pub progress: &'a mut (dyn FnMut(u64, u64) + Send),
     pub cancelled: &'a (dyn Fn() -> bool + Sync),
+    /// Registra cada comando antes de executá-lo.
+    pub echo: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -477,11 +479,11 @@ pub struct DeployStats {
 /// Executa o script no destino. Em transação (padrão) um erro desfaz tudo, a menos que se continue em erro (cada comando
 /// roda sob um `SAVEPOINT` e o que falha é só registrado).
 pub async fn deploy(dst: &PgSession, statements: &[String], transaction: bool, continue_on_error: bool, hooks: DeployHooks<'_>) -> Result<DeployStats, DatabaseError> {
-    let DeployHooks { log, progress, cancelled } = hooks;
+    let DeployHooks { log, progress, cancelled, echo } = hooks;
     let started = Instant::now();
     let mut stats = DeployStats { total: statements.len() as u64, ..Default::default() };
     log("--Start--".into());
-    dst.client.batch_execute("SET TimeZone = 'UTC'").await.map_err(sql_err)?;
+    dst.client.batch_execute("SET TimeZone = 'UTC'; SET check_function_bodies = false").await.map_err(sql_err)?;
     if transaction {
         dst.client.batch_execute("BEGIN").await.map_err(sql_err)?;
         log("--Transaction - Begin--".into());
@@ -497,6 +499,9 @@ pub async fn deploy(dst: &PgSession, statements: &[String], transaction: bool, c
             }
             if continue_on_error && transaction {
                 dst.client.batch_execute("SAVEPOINT atlas_ds").await.map_err(sql_err)?;
+            }
+            if echo {
+                log(stmt.clone());
             }
             match dst.client.batch_execute(stmt).await {
                 Ok(()) => {
@@ -526,6 +531,9 @@ pub async fn deploy(dst: &PgSession, statements: &[String], transaction: bool, c
             if cancelled() {
                 let _ = dst.client.batch_execute("ROLLBACK").await;
                 return Err(canceled());
+            }
+            if echo {
+                chunk.iter().for_each(|stmt| log(stmt.clone()));
             }
             if let Err(e) = dst.client.batch_execute(&chunk.join("\n")).await {
                 log(format!("[ERR] {}", map_error(&e).message));
