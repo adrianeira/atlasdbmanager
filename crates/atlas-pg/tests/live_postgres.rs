@@ -716,6 +716,208 @@ async fn sql_dump_round_trips_through_a_fresh_database() {
     assert_eq!(data1, data2);
 }
 
+/// Roda uma importação com linhas fixas; devolve as contagens e o registro.
+async fn run_import_rows(
+    s: &atlas_pg::PgSession,
+    spec: &atlas_pg::ImportSpec,
+    rows: Vec<atlas_pg::Feed>,
+    cancel_after: Option<usize>,
+) -> (Result<atlas_pg::ImportStats, atlas_core::DatabaseError>, Vec<String>) {
+    let mut log = Vec::new();
+    let mut iter = rows.into_iter();
+    let mut feed = || iter.next().unwrap_or(atlas_pg::Feed::End);
+    let result = {
+        let mut on_log = |l: String| log.push(l);
+        let mut on_progress = |_: &atlas_pg::ImportStats| {};
+        let count = std::sync::atomic::AtomicUsize::new(0);
+        let cancelled = || cancel_after.is_some_and(|n| count.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1 > n);
+        atlas_pg::run_import(s, spec, &mut feed, atlas_pg::ImportHooks { log: &mut on_log, progress: &mut on_progress, cancelled: &cancelled }).await
+    };
+    (result, log)
+}
+
+/// Conteúdo da tabela `t` do teste, numa linha só (ordenado por id).
+async fn dump_t(s: &atlas_pg::PgSession, ns: &str) -> String {
+    let sql = format!("SELECT string_agg(id || ':' || coalesce(nome, '~') || ':' || coalesce(valor::text, '~') || ':' || coalesce(ativo::text, '~'), ' | ' ORDER BY id) FROM {ns}.t");
+    atlas_pg::execute(s, &sql, 10).await.unwrap().statements[0].result.as_ref().unwrap().rows[0][0].clone().unwrap_or_default()
+}
+
+fn import_row(values: &[Option<&str>]) -> atlas_pg::Feed {
+    atlas_pg::Feed::Row(values.iter().map(|v| v.map(str::to_string)).collect())
+}
+
+#[tokio::test]
+async fn import_engine_modes_errors_and_rollback() {
+    use atlas_pg::{Feed, ImportMode, ImportSpec, TargetColumn};
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    let ns = format!("atlas_im_{}", std::process::id());
+    atlas_pg::execute(
+        &s,
+        &format!(
+            "DROP SCHEMA IF EXISTS {ns} CASCADE; CREATE SCHEMA {ns}; \
+             CREATE TABLE {ns}.t(id integer PRIMARY KEY, nome text, valor numeric(10,2), ativo boolean, quando timestamptz)"
+        ),
+        1,
+    )
+    .await
+    .unwrap();
+    if s.server.version_num >= 100000 {
+        atlas_pg::execute(&s, &format!("CREATE TABLE {ns}.ident(id integer GENERATED ALWAYS AS IDENTITY, nome text)"), 1).await.unwrap();
+    }
+    let col = |n: &str, t: &str| TargetColumn { name: n.into(), cast_type: t.into(), identity_always: false };
+    let cols = || vec![col("id", "integer"), col("nome", "text"), col("valor", "numeric(10,2)"), col("ativo", "boolean"), col("quando", "timestamp with time zone")];
+    let spec = |mode: ImportMode| ImportSpec {
+        schema: ns.clone(),
+        table: "t".into(),
+        create: None,
+        columns: cols(),
+        key_columns: vec![0],
+        mode,
+        extended_insert: false,
+        max_statement_bytes: 1024 * 1024,
+        continue_on_error: false,
+    };
+    // Acrescentar (um INSERT por linha), com conversão de tipos pelo servidor.
+    let rows = vec![
+        import_row(&[Some("1"), Some("Ana"), Some("10.5"), Some("true"), Some("2026-01-15 07:30:00-03")]),
+        import_row(&[Some("2"), Some("Zé"), None, Some("false"), None]),
+        import_row(&[Some("3"), None, Some("3"), None, None]),
+    ];
+    let (r, _) = run_import_rows(&s, &spec(ImportMode::Append), rows, None).await;
+    let st = r.unwrap();
+    assert_eq!((st.processed, st.added, st.errors, st.rolled_back), (3, 3, 0, false));
+    assert_eq!(dump_t(&s, &ns).await, "1:Ana:10.50:true | 2:Zé:~:false | 3:~:3.00:~");
+
+    // Erro sem "continuar": a primeira linha duplicada desfaz tudo.
+    let rows = vec![
+        import_row(&[Some("10"), Some("novo"), None, None, None]),
+        import_row(&[Some("1"), Some("duplicada"), None, None, None]),
+    ];
+    let (r, log) = run_import_rows(&s, &spec(ImportMode::Append), rows, None).await;
+    let st = r.unwrap();
+    assert!(st.rolled_back && st.added == 0 && st.errors == 1, "{st:?}");
+    assert!(log.iter().any(|l| l.contains("row 2")), "{log:?}");
+    assert_eq!(dump_t(&s, &ns).await, "1:Ana:10.50:true | 2:Zé:~:false | 3:~:3.00:~", "nada mudou");
+
+    // Continuar em erro, linha a linha e em INSERT estendido: a duplicada e a de valor inválido são puladas.
+    for extended in [false, true] {
+        atlas_pg::execute(&s, &format!("DELETE FROM {ns}.t WHERE id >= 10"), 1).await.unwrap();
+        let mut sp = spec(ImportMode::Append);
+        sp.continue_on_error = true;
+        sp.extended_insert = extended;
+        let rows = vec![
+            import_row(&[Some("10"), Some("a"), Some("1"), None, None]),
+            import_row(&[Some("1"), Some("duplicada"), None, None, None]),
+            import_row(&[Some("11"), Some("b"), Some("abc"), None, None]),
+            import_row(&[Some("12"), Some("c"), Some("2"), None, None]),
+            Feed::Bad("data inválida: \"ontem\"".into()),
+        ];
+        let (r, log) = run_import_rows(&s, &sp, rows, None).await;
+        let st = r.unwrap();
+        assert_eq!((st.processed, st.added, st.errors, st.rolled_back), (5, 2, 3, false), "extended={extended}: {st:?} {log:?}");
+        assert!(log.iter().filter(|l| l.starts_with("[ERR]")).count() == 3, "{log:?}");
+        assert_eq!(dump_t(&s, &ns).await, "1:Ana:10.50:true | 2:Zé:~:false | 3:~:3.00:~ | 10:a:1.00:~ | 12:c:2.00:~", "extended={extended}");
+    }
+    atlas_pg::execute(&s, &format!("DELETE FROM {ns}.t WHERE id >= 10"), 1).await.unwrap();
+
+    // Muitas linhas em INSERT estendido: o lote respeita o limite de tamanho.
+    let mut sp = spec(ImportMode::Append);
+    sp.extended_insert = true;
+    sp.max_statement_bytes = 2000;
+    let rows: Vec<Feed> = (100..1100).map(|i| import_row(&[Some(&i.to_string()), Some("x"), Some("1"), None, None])).collect();
+    let st = run_import_rows(&s, &sp, rows, None).await.0.unwrap();
+    assert_eq!((st.processed, st.added, st.errors), (1000, 1000, 0));
+    atlas_pg::execute(&s, &format!("DELETE FROM {ns}.t WHERE id >= 10"), 1).await.unwrap();
+
+    // Atualizar: casa pela chave; a que não existe não conta.
+    let rows = vec![
+        import_row(&[Some("1"), Some("Ana B"), Some("11"), Some("false"), None]),
+        import_row(&[Some("3"), Some("Três"), None, None, None]),
+        import_row(&[Some("99"), Some("sumida"), None, None, None]),
+    ];
+    let st = run_import_rows(&s, &spec(ImportMode::Update), rows, None).await.0.unwrap();
+    assert_eq!((st.processed, st.updated, st.added), (3, 2, 0));
+    assert_eq!(dump_t(&s, &ns).await, "1:Ana B:11.00:false | 2:Zé:~:false | 3:Três:~:~");
+
+    // Acrescentar/atualizar e acrescentar sem atualizar.
+    let rows = || vec![import_row(&[Some("2"), Some("Zé 2"), Some("7"), None, None]), import_row(&[Some("4"), Some("quatro"), None, None, None])];
+    let st = run_import_rows(&s, &spec(ImportMode::AppendUpdate), rows(), None).await.0.unwrap();
+    assert_eq!((st.updated, st.added), (1, 1));
+    assert_eq!(dump_t(&s, &ns).await, "1:Ana B:11.00:false | 2:Zé 2:7.00:~ | 3:Três:~:~ | 4:quatro:~:~");
+    let rows = vec![import_row(&[Some("4"), Some("ignorada"), None, None, None]), import_row(&[Some("5"), Some("cinco"), None, None, None])];
+    let st = run_import_rows(&s, &spec(ImportMode::AppendNoUpdate), rows, None).await.0.unwrap();
+    assert_eq!((st.updated, st.added), (0, 1));
+    assert!(dump_t(&s, &ns).await.ends_with("4:quatro:~:~ | 5:cinco:~:~"));
+
+    // Excluir pelas chaves.
+    let rows = vec![import_row(&[Some("4"), None, None, None, None]), import_row(&[Some("5"), None, None, None, None]), import_row(&[Some("77"), None, None, None, None])];
+    let st = run_import_rows(&s, &spec(ImportMode::Delete), rows, None).await.0.unwrap();
+    assert_eq!((st.processed, st.deleted), (3, 2));
+
+    // Copiar: apaga tudo e repovoa.
+    let rows = vec![import_row(&[Some("50"), Some("só esta"), None, None, None])];
+    let (r, log) = run_import_rows(&s, &spec(ImportMode::Copy), rows, None).await;
+    let st = r.unwrap();
+    assert_eq!((st.deleted, st.added), (3, 1), "{log:?}");
+    assert_eq!(dump_t(&s, &ns).await, "50:só esta:~:~");
+
+    // Modos que precisam de chave, sem chave: erro claro e nada gravado.
+    let mut nokey = spec(ImportMode::Update);
+    nokey.key_columns.clear();
+    let (r, log) = run_import_rows(&s, &nokey, vec![import_row(&[Some("1"), None, None, None, None])], None).await;
+    assert!(r.unwrap().rolled_back && log.iter().any(|l| l.contains("key field")), "{log:?}");
+
+    // Cancelar no meio desfaz e devolve Canceled.
+    let rows: Vec<Feed> = (200..260).map(|i| import_row(&[Some(&i.to_string()), None, None, None, None])).collect();
+    let (r, _) = run_import_rows(&s, &spec(ImportMode::Append), rows, Some(10)).await;
+    assert_eq!(r.unwrap_err().kind, atlas_core::ErrorKind::Canceled);
+    assert_eq!(dump_t(&s, &ns).await, "50:só esta:~:~");
+
+    // Tabela nova criada na mesma transação.
+    let created = ImportSpec {
+        schema: ns.clone(),
+        table: "nova".into(),
+        create: Some(vec![("codigo".into(), "integer".into()), ("texto".into(), "text".into())]),
+        columns: vec![col("codigo", "integer"), col("texto", "text")],
+        key_columns: vec![],
+        mode: ImportMode::Append,
+        extended_insert: true,
+        max_statement_bytes: 1024,
+        continue_on_error: false,
+    };
+    let rows = vec![import_row(&[Some("1"), Some("a")]), import_row(&[Some("2"), Some("b")])];
+    let st = run_import_rows(&s, &created, rows, None).await.0.unwrap();
+    assert_eq!(st.added, 2);
+    let n = atlas_pg::execute(&s, &format!("SELECT count(*) FROM {ns}.nova"), 1).await.unwrap().statements[0].result.as_ref().unwrap().rows[0][0].clone();
+    assert_eq!(n.as_deref(), Some("2"));
+    // Se a importação falha, a tabela nova também não fica.
+    let mut failing = created.clone();
+    failing.table = "nova2".into();
+    let (r, _) = run_import_rows(&s, &failing, vec![import_row(&[Some("x"), Some("a")])], None).await;
+    assert!(r.unwrap().rolled_back);
+    let exists = atlas_pg::execute(&s, &format!("SELECT to_regclass('{ns}.nova2') IS NOT NULL"), 1).await.unwrap().statements[0].result.as_ref().unwrap().rows[0][0].clone();
+    assert_eq!(exists.as_deref(), Some("f"));
+
+    // Identidade GENERATED ALWAYS: aceita o valor do arquivo.
+    if s.server.version_num >= 100000 {
+        let ident = ImportSpec {
+            schema: ns.clone(),
+            table: "ident".into(),
+            create: None,
+            columns: vec![TargetColumn { name: "id".into(), cast_type: "integer".into(), identity_always: true }, col("nome", "text")],
+            key_columns: vec![],
+            mode: ImportMode::Append,
+            extended_insert: false,
+            max_statement_bytes: 1024,
+            continue_on_error: false,
+        };
+        let st = run_import_rows(&s, &ident, vec![import_row(&[Some("7"), Some("sete")])], None).await.0.unwrap();
+        assert_eq!(st.added, 1);
+    }
+    atlas_pg::execute(&s, &format!("DROP SCHEMA {ns} CASCADE"), 1).await.unwrap();
+}
+
 #[tokio::test]
 async fn syntax_error_reports_position() {
     let p = require_server!();

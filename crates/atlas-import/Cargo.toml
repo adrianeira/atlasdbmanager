@@ -1,0 +1,19 @@
+[package]
+name = "atlas-import"
+description = "Atlas DB Manager — leitura de arquivos para importação (TXT/CSV, JSON, XML, Excel e dBase)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+calamine = { version = "0.37", features = ["dates"] }
+encoding_rs = "0.8.42"
+quick-xml = "0.36"
+serde.workspace = true
+serde_json = { workspace = true, features = ["preserve_order"] }
+
+[dev-dependencies]
+atlas-export.workspace = true
+tempfile = "3.27"

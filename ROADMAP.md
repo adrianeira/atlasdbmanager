@@ -54,6 +54,22 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       dica no cabeçalho
 - [x] Edição de célula salva ao sair do campo quando passa na validação
 
+### Importação de dados
+- [x] **Assistente de importação em 7 etapas** (formato → arquivos → opções da origem → tabela de destino →
+      campos → modo → resumo com log e barra de progresso), vários arquivos/planilhas de uma vez (cada um
+      vira uma tabela), navegação `<<` `< Voltar` `Avançar >` `>>`, **Avançado** e perfis salvos
+      *(`src/components/import/`, `src-tauri/src/import.rs`, `crates/atlas-import`, `crates/atlas-pg/src/import.rs`)*
+- [x] Formatos: **TXT, CSV (delimitador, qualificador, codificação), JSON, XML, Excel (`.xls`/`.xlsx`) e dBase
+      (`.dbf`)**; Access, ODBC e Paradox aparecem desabilitados ("ainda não disponível")
+- [x] Origem: linha dos nomes, primeira/última linha de dados, ordem/delimitadores de data e hora, símbolo
+      decimal, pré-visualização ao vivo; tipos sugeridos pelo conteúdo para tabela nova
+- [x] Destino: tabela existente ou **nova** (criada na mesma transação), mapeamento automático por nome,
+      campos-chave, colunas identity/geradas tratadas
+- [x] **Seis modos**: Acrescentar, Atualizar, Acrescentar/Atualizar, Acrescentar sem atualizar, Excluir e Copiar;
+      INSERT estendido com limite de tamanho, vazio como NULL, continuar em erro (SAVEPOINT por registro) ou
+      desfazer a tabela inteira; cancelamento desfaz a tabela em andamento
+- [ ] Importar de Access/ODBC/Paradox e "Adicionar URL"
+
 ### Exportação de dados
 - [x] **Assistente de exportação em etapas** (formato → tabelas e arquivos → campos → resumo com log e
       barra de progresso), com **várias tabelas de uma vez** (um arquivo por tabela), seleção em lote
@@ -300,7 +316,7 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [ ] Tablespace
 
 ## 7. Importar / Exportar
-- [ ] Import Wizard *(`act.importWizard` sem handler)* — CSV, Excel, JSON, XML, DBF, Access…
+- [x] Import Wizard em etapas: TXT, CSV, JSON, XML, Excel e DBF (ver "Importação de dados"); Access/ODBC/Paradox pendentes
 - [x] Export Wizard de tabelas/views em etapas, com várias tabelas e perfis (ver "Exportação de dados")
 - [ ] Formatos que faltam: Access (`.accdb`; não há biblioteca livre que o grave, depende do driver do Windows), Markdown
 - [ ] Exportação agendada (a estrutura junto com os dados já sai pelo Dump SQL)

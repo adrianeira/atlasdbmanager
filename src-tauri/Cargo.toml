@@ -19,6 +19,7 @@ atlas-core.workspace = true
 atlas-pg.workspace = true
 atlas-local.workspace = true
 atlas-export.workspace = true
+atlas-import.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

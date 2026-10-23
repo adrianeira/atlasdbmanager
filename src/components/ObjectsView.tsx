@@ -13,7 +13,7 @@ interface ActionDef {
   icon: SmallIconName;
   /** context: precisa de schema/conexão aberta; selection: 1+ objetos; single: exatamente 1. */
   needs: "context" | "selection" | "single";
-  kind?: "open" | "design" | "new" | "export";
+  kind?: "open" | "design" | "new" | "export" | "import";
 }
 
 const ACTIONS: Record<Category, ActionDef[]> = {
@@ -22,7 +22,7 @@ const ACTIONS: Record<Category, ActionDef[]> = {
     { id: "design", label: "act.designTable", icon: "design", needs: "single", kind: "design" },
     { id: "new", label: "act.newTable", icon: "new", needs: "context", kind: "new" },
     { id: "delete", label: "act.deleteTable", icon: "delete", needs: "selection" },
-    { id: "import", label: "act.importWizard", icon: "import", needs: "context" },
+    { id: "import", label: "act.importWizard", icon: "import", needs: "context", kind: "import" },
     { id: "export", label: "act.exportWizard", icon: "export", needs: "single", kind: "export" },
   ],
   view: [
@@ -178,7 +178,7 @@ interface Props {
   lang: string;
   selected: string[];
   onSelect: (names: string[]) => void;
-  onAction: (kind: "open" | "design" | "new" | "export", objects: string[]) => void;
+  onAction: (kind: "open" | "design" | "new" | "export" | "import", objects: string[]) => void;
   /** Botão direito: `name` do objeto, ou null na área vazia (menu da pasta). */
   onContextMenu?: (name: string | null, x: number, y: number) => void;
 }

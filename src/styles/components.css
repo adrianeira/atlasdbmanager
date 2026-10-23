@@ -2114,3 +2114,24 @@ select.et-input {
 .opt-dialog { width: min(600px, 92vw); }
 .opt-body { display: flex; flex-direction: column; gap: 10px; min-height: 230px; }
 .opt-path { width: 100%; }
+
+/* ---------- Assistente de importação ---------- */
+.imp-options { display: flex; flex-direction: column; gap: 6px; min-height: 0; flex: 1; }
+.imp-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; flex: none; }
+.imp-col { display: flex; flex-direction: column; gap: 6px; }
+.imp-row { display: grid; grid-template-columns: 150px 1fr; align-items: center; gap: 8px; }
+.imp-row .field { width: 100%; }
+.imp-inline { display: inline-flex; align-items: center; gap: 8px; }
+.imp-num { width: 72px !important; }
+.imp-short { width: 40px !important; text-align: center; }
+.imp-examples { padding: 4px 8px; border: 1px solid var(--c-border); background: var(--c-surface-alt); font-variant-numeric: tabular-nums; }
+.imp-preview-title { flex: none; margin-top: 2px; }
+.imp-preview { min-height: 90px; }
+.imp-grid { table-layout: auto; width: auto; min-width: 100%; }
+.imp-grid th, .imp-grid td { max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.imp-grid td.is-null { color: var(--c-text-muted); font-style: italic; }
+.imp-target-cell { display: flex; gap: 6px; padding: 1px 4px !important; }
+.imp-target-cell .field { flex: 1; min-width: 0; }
+.imp-cell { width: 100%; height: 20px; }
+.imp-indent { padding-left: 22px; }
+.exp-files-table tr { cursor: default; }

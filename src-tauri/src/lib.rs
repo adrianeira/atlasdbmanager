@@ -1,6 +1,7 @@
 mod commands;
 mod dump;
 mod export;
+mod import;
 mod local;
 mod sessions;
 mod tx;
@@ -156,6 +157,9 @@ pub fn run() {
             export::pg_export,
             dump::pg_dump_sql,
             export::pg_export_cancel,
+            import::import_list_tables,
+            import::import_preview,
+            import::pg_import,
             local::local_status,
             local::profiles_list,
             local::profile_save,

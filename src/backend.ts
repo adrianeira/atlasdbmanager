@@ -124,6 +124,86 @@ export interface ViewDetail {
   populated: boolean;
 }
 
+/* ----- Importação ----- */
+
+export type ImportFormat =
+  | { kind: "delimited"; delimiter: string; qualifier: string; encoding: "utf8" | "windows1252" }
+  | { kind: "json" }
+  | { kind: "xml" }
+  | { kind: "excel" }
+  | { kind: "dbf" };
+
+export type ImportMode = "append" | "update" | "appendUpdate" | "appendNoUpdate" | "delete" | "copy";
+
+export interface SourceSpec {
+  path: string;
+  format: ImportFormat;
+  /** Tabela do arquivo (planilha do Excel; nos demais formatos só há uma). */
+  table: string;
+  options: { fieldNameRow: number; firstDataRow: number; lastDataRow: number };
+}
+
+export interface ConvertOptions {
+  dateOrder: "DMY" | "MDY" | "YMD";
+  dateTimeOrder: "DateTime" | "TimeDate";
+  dateDelimiter: string;
+  timeDelimiter: string;
+  decimalSymbol: string;
+  emptyAsNull?: boolean;
+}
+
+export interface ImportPreview {
+  columns: string[];
+  rows: (string | null)[][];
+  /** Tipo PostgreSQL sugerido para cada campo (para criar uma tabela nova). */
+  types: string[];
+}
+
+export interface ImportJobRequest {
+  source: SourceSpec;
+  target: string;
+  create?: { name: string; type: string }[];
+  mappings: { source: string; target: string }[];
+  keys: string[];
+  mode: ImportMode;
+}
+
+export interface ImportRequest {
+  importId: string;
+  sessionId: string;
+  database: string;
+  schema: string;
+  jobs: ImportJobRequest[];
+  advanced: { extendedInsert: boolean; maxStatementKb: number; emptyAsNull: boolean; continueOnError: boolean };
+  convert: ConvertOptions;
+}
+
+export interface ImportCounts { table: string; processed: number; added: number; updated: number; deleted: number; errors: number; rolledBack: boolean }
+export interface ImportSummary { jobs: ImportCounts[]; elapsedMs: number }
+
+/** Progresso da importação (a cada ~200 ms): contagens da tabela `job` em andamento. */
+export async function onImportProgress(importId: string, cb: (job: number, counts: ImportCounts) => void): Promise<() => void> {
+  return listen<ImportCounts & { importId: string; job: number }>("import-progress", (e) => {
+    if (e.payload.importId === importId) cb(e.payload.job, e.payload);
+  });
+}
+
+/** Linhas do registro da importação (`[IMP] ...`, `[ERR] ...`). */
+export async function onImportLog(importId: string, cb: (line: string) => void): Promise<() => void> {
+  return listen<{ importId: string; line: string }>("import-log", (e) => {
+    if (e.payload.importId === importId) cb(e.payload.line);
+  });
+}
+
+/** Janela nativa "Abrir" para escolher arquivos de origem. */
+export async function chooseImportFiles(extensions: string[]): Promise<string[]> {
+  // Só em desenvolvimento: testes automatizados informam os arquivos sem abrir a janela nativa.
+  const injected = import.meta.env.DEV ? (window as { __atlasImportFiles?: string[] }).__atlasImportFiles : undefined;
+  if (injected) return injected;
+  const picked = await open({ multiple: true, directory: false, filters: [{ name: extensions.map((x) => `*.${x}`).join(", "), extensions }, { name: "*.*", extensions: ["*"] }] });
+  return Array.isArray(picked) ? picked : typeof picked === "string" ? [picked] : [];
+}
+
 /** O que o dump SQL cobre. */
 export type DumpScope = { kind: "database" } | { kind: "schema"; schema: string } | { kind: "tables"; schema: string; tables: string[] };
 
@@ -385,6 +465,9 @@ export const pg = {
     call<TableDetail>("pg_table_detail", { sessionId, database, schema, table }),
   viewDetail: (sessionId: string, database: string, schema: string, view: string) =>
     call<ViewDetail>("pg_view_detail", { sessionId, database, schema, view }),
+  importListTables: (path: string, format: ImportFormat) => call<string[]>("import_list_tables", { path, format }),
+  importPreview: (spec: SourceSpec, convert: ConvertOptions, limit: number) => call<ImportPreview>("import_preview", { spec, convert, limit }),
+  import: (req: ImportRequest) => call<ImportSummary>("pg_import", { req }),
   dumpSql: (req: DumpRequest) => call<DumpResult>("pg_dump_sql", { req }),
   find: (sessionId: string, database: string, options: FindOptions) => call<FindResult>("pg_find", { sessionId, database, options }),
   roleDetail: (sessionId: string, name: string) => call<RoleDetail>("pg_role_detail", { sessionId, name }),

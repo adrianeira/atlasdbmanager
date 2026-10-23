@@ -4,6 +4,7 @@ import { appReady, errorText, isDesktop, local, pg, toAtlasError, type Connectio
 import { entries, matchesShortcut, sub, type CommandMap, type MenuDef, type MenuEntry } from "./commands";
 import { ConnectionDialog, type ConnectionForm } from "./components/ConnectionDialog";
 import { ExportWizard, type ExportTarget } from "./components/export/ExportWizard";
+import { ImportWizard, type ImportTarget } from "./components/import/ImportWizard";
 import { schemaFromServer, sessionPasswords, tableFromServer } from "./live";
 import type { TableDataBackend } from "./documents/TableDataDoc";
 import type { FkLookupSource } from "./components/FkLookup";
@@ -344,6 +345,7 @@ export default function App() {
   const [selectedObjects, setSelectedObjects] = useState<string[]>([]);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [exportTarget, setExportTarget] = useState<ExportTarget | null>(null);
+  const [importTarget, setImportTarget] = useState<ImportTarget | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; items: MenuEntry[] } | null>(null);
   const [recents, setRecents] = useState<RecentItem[]>([]);
   const [recentProviders, setRecentProviders] = useState<ProviderId[]>(["postgresql"]);
@@ -814,7 +816,17 @@ export default function App() {
     setExportTarget({ connId: c.connection.id, database: c.database.name, schema: c.schema.name, tables: exportTablesOf(c.schema, name), initial: name });
   };
 
-  const openObjects = (kind: "open" | "design" | "new" | "export", names: string[], cat: Category = category, c = ctx) => {
+  /** Assistente de importação: `name` é a tabela sugerida como destino. Só com conexão real. */
+  const startImport = (c: NodeContext, name?: string) => {
+    if (!c.connection?.live || !c.database || !c.schema) return;
+    setImportTarget({ connId: c.connection.id, database: c.database.name, schema: c.schema.name, tables: (c.schema.objects.table ?? []).map((o) => o.name), initial: name });
+  };
+
+  const openObjects = (kind: "open" | "design" | "new" | "export" | "import", names: string[], cat: Category = category, c = ctx) => {
+    if (kind === "import") {
+      if (cat === "table") startImport(c, names[0]);
+      return;
+    }
     if (kind === "export") {
       if ((cat === "table" || cat === "view" || cat === "matview") && names[0]) startExport(c, names[0]);
       return;
@@ -1195,7 +1207,7 @@ export default function App() {
           ],
         },
         sep,
-        item("act.importWizard"),
+        item("act.importWizard", live ? () => startImport(c, name) : undefined),
         item("act.exportWizard", live ? () => startExport(c, name) : undefined),
         dumpMenu({ kind: "tables", schema: c.schema?.name ?? "public", tables: [name] }, name, c.connection?.id ?? "", c.database?.name ?? ""),
         sep,
@@ -2131,6 +2143,13 @@ export default function App() {
       )}
 
       {exportTarget && <ExportWizard target={exportTarget} onClose={() => setExportTarget(null)} />}
+      {importTarget && (
+        <ImportWizard
+          target={importTarget}
+          onClose={() => setImportTarget(null)}
+          onDone={() => void loadSchema(importTarget.connId, importTarget.database, importTarget.schema, true).catch(() => undefined)}
+        />
+      )}
 
       {dialog?.kind === "options" && (
         <OptionsDialog
