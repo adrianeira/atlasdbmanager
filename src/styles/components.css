@@ -2147,11 +2147,8 @@ select.et-input {
 .exp-files-table tr { cursor: default; }
 
 /* ---------- Query Builder ---------- */
-.qb-window { width: min(1266px, calc(100vw - 24px)); height: min(793px, calc(100vh - 24px)); }
-.qb-window.is-max { width: calc(100vw - 2px); height: calc(100vh - 2px); max-width: none; max-height: none; }
-.qb-overlay-min { align-items: flex-end; justify-content: flex-start; background: transparent; pointer-events: none; }
-.qb-window.is-min { width: 320px; height: auto; pointer-events: auto; margin: 0 0 32px 8px; }
-.qb-window.is-min .qb-body, .qb-window.is-min .qb-footer { display: none; }
+/* O Query Builder é uma janela do sistema à parte: ocupa toda a área dela. */
+.qb-standalone { display: flex; flex-direction: column; height: 100vh; background: var(--c-window); color: var(--c-text); }
 .qb-join-label { font-size: 10px; fill: var(--c-text-muted); paint-order: stroke; stroke: var(--c-surface); stroke-width: 3px; }
 .qb-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 250px 1fr 260px; border-top: 1px solid var(--c-border); }
 .qb-body.no-left { grid-template-columns: 1fr 260px; }
@@ -2216,5 +2213,3 @@ select.et-input {
 .qb-footer .btn { min-width: 74px; }
 .qb-flip svg { transform: scaleX(-1); }
 .qb-ghost { position: fixed; z-index: 300; display: flex; align-items: center; gap: 6px; padding: 2px 8px; background: var(--c-surface); border: 1px solid var(--c-border-strong); pointer-events: none; opacity: 0.9; }
-.qb-window .window-title .window-close:not(:last-child):hover { background: var(--c-hover); color: inherit; }
-.qb-window .window-title .window-close { color: var(--c-text); }

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as R
 import { DataGrid, typeKind, type GridColumn } from "../components/DataGrid";
 import { Dropdown } from "../components/Dropdown";
 import { HistoryDialog } from "../components/HistoryDialog";
-import { QueryBuilderDialog } from "../components/querybuilder/QueryBuilderDialog";
 import { SnippetDialog } from "../components/SnippetDialog";
 import { PopupMenu } from "../components/PopupMenu";
 import { SqlEditor, type SqlEditorHandle } from "../components/SqlEditor";
@@ -12,7 +11,7 @@ import { ProviderIcon, SmallIcon, type SmallIconName } from "../icons";
 import { mockRows, type CellValue, type ConnectionMock } from "../model";
 import { columnType } from "../sql/ddl";
 import { beautifySql } from "../sql/format";
-import { errorText, toAtlasError } from "../backend";
+import { errorText, onQueryBuilderBuild, openQueryBuilder, toAtlasError, type QueryBuilderResult } from "../backend";
 import { useOptions } from "../options";
 
 export interface QueryContext {
@@ -147,8 +146,9 @@ export function QueryDoc({
   const [cursor, setCursor] = useState({ line: 1, col: 1 });
   const [running, setRunning] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  // `source`: o texto do editor com que o builder foi aberto (a seleção, se houver; senão o documento todo).
-  const [builder, setBuilder] = useState<{ source: string; selection: boolean } | null>(null);
+  // O Query Builder é uma janela do sistema; `builder` guarda o texto do editor com que ela foi aberta (a seleção, se houver).
+  const builderDoc = useRef(crypto.randomUUID());
+  const builder = useRef<{ selection: boolean } | null>(null);
   // Gerenciador de snippets; guarda a seleção do editor para oferecê-la como snippet novo.
   const [snippets, setSnippets] = useState<{ selection: string } | null>(null);
   const [outcome, setOutcome] = useState<RunOutcome | null>(null);
@@ -367,6 +367,37 @@ export function QueryDoc({
     </button>
   );
 
+  // SELECT devolvido pela janela do Query Builder (Build / Build and Run).
+  const applyBuild = (r: QueryBuilderResult) => {
+    const ed = editor.current;
+    if (!ed) return;
+    const wasSelection = builder.current?.selection ?? false;
+    const current = ed.getText();
+    const text = `${r.sql};`;
+    if (r.replaced && wasSelection) ed.replaceSelection(text);
+    else if (r.replaced || !current.trim()) ed.replaceAll(text);
+    else ed.replaceAll(`${current.replace(/\s+$/, "")}\n\n${text}`);
+    ed.focus();
+    // Com texto antigo no editor, `run` usaria o documento inteiro: seleciona só o SELECT montado.
+    if (r.run) {
+      window.setTimeout(() => {
+        if (!r.replaced && current.trim()) ed.selectLast(text);
+        run(false);
+      }, 60);
+    }
+  };
+  const applyBuildRef = useRef(applyBuild);
+  applyBuildRef.current = applyBuild;
+  useEffect(() => {
+    let stop: (() => void) | undefined;
+    let alive = true;
+    void onQueryBuilderBuild(builderDoc.current, (r) => applyBuildRef.current(r)).then((un) => (alive ? (stop = un) : un()));
+    return () => {
+      alive = false;
+      stop?.();
+    };
+  }, []);
+
   const connOpen = !!conn && openConnections.has(conn.id);
 
   return (
@@ -374,9 +405,14 @@ export function QueryDoc({
       <div className="object-toolbar" role="toolbar">
         {tool("save", "query.save")}
         {tool("queryBuilder", "query.builder", backend && conn && ctx.database ? () => {
-      const sel = editor.current?.getSelection() ?? "";
-      setBuilder({ source: sel.trim() ? sel : editor.current?.getText() ?? "", selection: !!sel.trim() });
-    } : undefined)}
+          const ed = editor.current;
+          const sel = ed?.getSelection() ?? "";
+          builder.current = { selection: !!sel.trim() };
+          void openQueryBuilder({
+            id: builderDoc.current, connId: conn.id, database: ctx.database ?? "", defaultSchema: ctx.schema ?? "public",
+            initialSql: sel.trim() ? sel : ed?.getText() ?? "", title: t("query.builder"),
+          }).catch((e) => setOutcome({ sql: "", ms: 0, results: [], message: "", error: errorText(toAtlasError(e)) }));
+        } : undefined)}
         {tool("beautify", "query.beautify", beautify)}
         {tool("history", "query.history", () => setHistoryOpen(true))}
         {tool("snippet", "query.snippet", () => setSnippets({ selection: editor.current?.getSelection() ?? "" }))}
@@ -482,34 +518,6 @@ export function QueryDoc({
           </>
         )}
       </div>
-      {builder && conn && ctx.database && (
-        <QueryBuilderDialog
-          connId={conn.id}
-          database={ctx.database}
-          defaultSchema={ctx.schema ?? "public"}
-          initialSql={builder.source}
-          onClose={() => setBuilder(null)}
-          onBuild={(sql, andRun, replaced) => {
-            const ed = editor.current;
-            const wasSelection = builder.selection;
-            setBuilder(null);
-            if (!ed) return;
-            const current = ed.getText();
-            const text = `${sql};`;
-            if (replaced && wasSelection) ed.replaceSelection(text);
-            else if (replaced || !current.trim()) ed.replaceAll(text);
-            else ed.replaceAll(`${current.replace(/\s+$/, "")}\n\n${text}`);
-            ed.focus();
-            // Com texto antigo no editor, `run` usaria o documento inteiro: seleciona só o SELECT montado.
-            if (andRun) {
-              window.setTimeout(() => {
-                if (!replaced && current.trim()) ed.selectLast(text);
-                run(false);
-              }, 60);
-            }
-          }}
-        />
-      )}
       {snippets && (
         <SnippetDialog
           initialBody={snippets.selection}

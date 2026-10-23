@@ -108,7 +108,6 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
   const [fromSql, setFromSql] = useState(false);
   const [scrolls, setScrolls] = useState<Record<string, number>>({});
   const [aliasEdit, setAliasEdit] = useState<string | null>(null);
-  const [win, setWin] = useState<"normal" | "max" | "min">("normal");
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuEntry[] } | null>(null);
 
   const sql = useMemo(() => buildSql(st, defaultSchema), [st, defaultSchema]);
@@ -582,20 +581,7 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
   });
 
   return (
-    <div className={`modal-overlay${win === "min" ? " qb-overlay-min" : ""}`} role="presentation">
-      <div className={`window qb-window${win === "max" ? " is-max" : ""}${win === "min" ? " is-min" : ""}`} role="dialog" aria-modal="true" aria-label={t("qb.title")}>
-        <div className="window-title">
-          <SmallIcon name="queryBuilder" />
-          <span>{t("qb.title")}</span>
-          <button type="button" className="window-close" aria-label={t("qb.minimize")} title={t("qb.minimize")} onClick={() => setWin(win === "min" ? "normal" : "min")}>
-            <svg width="10" height="10" viewBox="0 0 10 10"><path d="M0 5.5h10" stroke="currentColor" /></svg>
-          </button>
-          <button type="button" className="window-close" aria-label={t("qb.maximize")} title={t("qb.maximize")} onClick={() => setWin(win === "max" ? "normal" : "max")}>
-            <svg width="10" height="10" viewBox="0 0 10 10">{win === "max" ? <path d="M2.5 0.5h7v7h-2M0.5 2.5h7v7h-7z" fill="none" stroke="currentColor" /> : <rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" />}</svg>
-          </button>
-          <button type="button" className="window-close" aria-label={t("tab.close")} onClick={onClose}><SmallIcon name="close" /></button>
-        </div>
-
+    <div className="qb-standalone">
         <div className={`qb-body${panes.left ? "" : " no-left"}${panes.right ? "" : " no-right"}`}>
           {panes.left && (
             <div className="qb-tree" role="tree">
@@ -735,7 +721,6 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
           <button type="button" className="btn btn-primary" disabled={st.tables.length === 0} onClick={() => { build(true); }}>{t("qb.buildRun")}</button>
           <button type="button" className="btn" onClick={onClose}>{t("common.cancel")}</button>
         </div>
-      </div>
       {menu && (
         <PopupMenu items={menu.items} commands={{}} onClose={() => setMenu(null)} className="ctx-menu qb-ctx"
           style={{ position: "fixed", zIndex: 400, left: Math.min(menu.x, window.innerWidth - 240), top: Math.min(menu.y, window.innerHeight - 220) }} />

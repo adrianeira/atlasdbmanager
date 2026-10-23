@@ -61,6 +61,9 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [ ] Botão de fechar (X) no cabeçalho de todos os diálogos (hoje só Conexão e Mensagem têm)
 
 ### Query Builder *(prioridade máxima)*
+- [x] **Janela do sistema à parte** (não um diálogo dentro da janela principal): maximiza pela tela inteira, independe do
+      tamanho da janela principal e mantém a principal utilizável; uma aba abre no máximo uma janela (o botão traz a
+      aberta para a frente) e o SELECT volta pelo evento `qb-build` *(`src-tauri/src/builder.rs`, `QueryBuilderWindow.tsx`)*
 - [x] **Janela do Query Builder** aberta pelo botão da aba de consulta: árvore de schemas/tabelas/views, canvas
       com cartões de tabela (arrastar da árvore ou duplo clique, mover pelo título, `Delete` remove), campos
       marcáveis (inclusive `*`), SQL ao vivo com palavras-chave coloridas, **Build** e **Build and Run**
@@ -76,7 +79,7 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       *(`src/sql/querybuilderParse.ts`)*
 - [x] **Apelido da tabela** (duplo clique no título abre "Edit Alias"; o título mostra `tabela ( apelido )`),
       **menu de clique direito** no cartão (apelido, marcar/desmarcar campos, remover) e na relação (tipo de JOIN,
-      remover), rótulo do tipo na linha (LEFT/RIGHT/FULL), minimizar/maximizar a janela
+      remover), rótulo do tipo na linha (LEFT/RIGHT/FULL)
 - [x] **Posição dos cartões lembrada**: ao dar Build, o desenho é guardado pelo texto do SELECT e volta igual ao
       reabrir o builder a partir dele (últimas 100 consultas, no armazenamento local)
 - [x] Cartão com muitas colunas: mostra até 12 linhas e rola por dentro (a linha da relação acompanha o campo e

@@ -1,3 +1,4 @@
+mod builder;
 mod commands;
 mod dump;
 mod export;
@@ -15,6 +16,9 @@ const SPLASH_MIN: Duration = Duration::from_millis(3000);
 const SPLASH_MAX: Duration = Duration::from_secs(20);
 /// Tempo que a barra completa fica visível antes de a splash fechar.
 const SPLASH_FINISH: Duration = Duration::from_millis(350);
+
+/// Argumentos do WebView2 comuns a todas as janelas (todas compartilham o mesmo ambiente).
+pub struct WebviewArgs(pub String);
 
 /// Quando o app começou a abrir (para respeitar `SPLASH_MIN`).
 struct StartedAt(Instant);
@@ -86,6 +90,8 @@ pub fn run() {
                 args.push_str(&format!(" --lang={lang}"));
             }
 
+            app.manage(WebviewArgs(args.clone()));
+
             // Tela de abertura: pequena, sem bordas, mostrada enquanto o app carrega. Usa os mesmos argumentos do
             // WebView2 da janela principal (as duas compartilham o mesmo ambiente).
             WebviewWindowBuilder::new(app, "splash", WebviewUrl::App("splash.html".into()))
@@ -154,6 +160,7 @@ pub fn run() {
             tx::pg_tx_table_count,
             tx::pg_tx_end,
             app_ready,
+            builder::open_query_builder,
             export::pg_export,
             dump::pg_dump_sql,
             export::pg_export_cancel,

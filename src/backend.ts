@@ -204,6 +204,31 @@ export async function chooseImportFiles(extensions: string[]): Promise<string[]>
   return Array.isArray(picked) ? picked : typeof picked === "string" ? [picked] : [];
 }
 
+/* ----- Query Builder (janela separada) ----- */
+
+export interface QueryBuilderOpen {
+  /** Identifica a aba de consulta; uma aba abre no máximo uma janela. */
+  id: string;
+  connId: string;
+  database: string;
+  defaultSchema: string;
+  /** SELECT do editor, para o desenho começar dele. */
+  initialSql: string;
+  title: string;
+}
+
+export interface QueryBuilderResult { id: string; sql: string; run: boolean; replaced: boolean }
+
+/** Abre (ou traz para a frente) a janela do Query Builder. */
+export const openQueryBuilder = (req: QueryBuilderOpen) => call<void>("open_query_builder", { req });
+
+/** A janela do Query Builder devolveu um SELECT (Build / Build and Run). */
+export async function onQueryBuilderBuild(id: string, cb: (r: QueryBuilderResult) => void): Promise<() => void> {
+  return listen<QueryBuilderResult>("qb-build", (e) => {
+    if (e.payload.id === id) cb(e.payload);
+  });
+}
+
 /** O que o dump SQL cobre. */
 export type DumpScope = { kind: "database" } | { kind: "schema"; schema: string } | { kind: "tables"; schema: string; tables: string[] };
 
