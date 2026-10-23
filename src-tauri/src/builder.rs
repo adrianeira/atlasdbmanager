@@ -55,3 +55,33 @@ pub async fn close_query_builder(app: AppHandle, id: String) -> Result<(), Strin
     }
     Ok(())
 }
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DataTransferOpen {
+    pub title: String,
+    /// Conexões (nome, servidor, versão, se estão abertas) e a origem sugerida; a janela só lê.
+    pub params: serde_json::Value,
+}
+
+/// Abre (ou traz para a frente) a janela do Data Transfer, também uma janela do sistema à parte.
+#[tauri::command]
+pub async fn open_data_transfer(app: AppHandle, args: State<'_, WebviewArgs>, req: DataTransferOpen) -> Result<(), String> {
+    let label = "dt-main";
+    if let Some(existing) = app.get_webview_window(label) {
+        let _ = existing.unminimize();
+        let _ = existing.set_focus();
+        return Ok(());
+    }
+    let init = format!("window.__ATLAS_DT__ = {};", serde_json::to_string(&req.params).map_err(|e| e.to_string())?);
+    WebviewWindowBuilder::new(&app, label, WebviewUrl::default())
+        .title(&req.title)
+        .inner_size(1186.0, 793.0)
+        .min_inner_size(900.0, 560.0)
+        .center()
+        .initialization_script(&init)
+        .additional_browser_args(&args.0)
+        .build()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}

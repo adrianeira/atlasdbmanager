@@ -6,6 +6,7 @@ mod export;
 mod import;
 mod local;
 mod sessions;
+mod transfer;
 mod tx;
 
 use std::time::{Duration, Instant};
@@ -169,6 +170,8 @@ pub fn run() {
             app_ready,
             builder::open_query_builder,
             builder::close_query_builder,
+            builder::open_data_transfer,
+            transfer::pg_transfer,
             export::pg_export,
             dump::pg_dump_sql,
             backup::pg_tools_locate,
