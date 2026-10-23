@@ -533,18 +533,18 @@ async fn extensions_are_listed_available_and_described() {
 
     // Instala e remove uma extensão leve, se o servidor a oferece e ela ainda não está no banco
     // (sem permissão para criar extensões, esta parte é pulada).
-    if let Some(a) = avail.iter().find(|a| a.name == "pg_trgm") {
-        if atlas_pg::execute(&s, "CREATE EXTENSION pg_trgm", 1).await.is_ok() {
-            atlas_pg::execute(&s, "COMMENT ON EXTENSION pg_trgm IS 'busca por similaridade'", 1).await.unwrap();
-            let d = atlas_pg::extension_detail(&s, "pg_trgm").await.expect("pg_trgm");
-            assert_eq!(d.version, a.default_version);
-            assert_eq!(d.comment.as_deref(), Some("busca por similaridade"));
-            assert!(d.relocatable);
-            let nova = atlas_pg::list_objects(&s, "public").await.expect("objects");
-            assert!(nova.extensions.iter().any(|e| e.name == "pg_trgm"));
-            atlas_pg::execute(&s, "DROP EXTENSION pg_trgm", 1).await.unwrap();
-            assert!(atlas_pg::extension_detail(&s, "pg_trgm").await.is_err());
-        }
+    if let Some(a) = avail.iter().find(|a| a.name == "pg_trgm")
+        && atlas_pg::execute(&s, "CREATE EXTENSION pg_trgm", 1).await.is_ok()
+    {
+        atlas_pg::execute(&s, "COMMENT ON EXTENSION pg_trgm IS 'busca por similaridade'", 1).await.unwrap();
+        let d = atlas_pg::extension_detail(&s, "pg_trgm").await.expect("pg_trgm");
+        assert_eq!(d.version, a.default_version);
+        assert_eq!(d.comment.as_deref(), Some("busca por similaridade"));
+        assert!(d.relocatable);
+        let nova = atlas_pg::list_objects(&s, "public").await.expect("objects");
+        assert!(nova.extensions.iter().any(|e| e.name == "pg_trgm"));
+        atlas_pg::execute(&s, "DROP EXTENSION pg_trgm", 1).await.unwrap();
+        assert!(atlas_pg::extension_detail(&s, "pg_trgm").await.is_err());
     }
 }
 

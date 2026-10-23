@@ -235,7 +235,7 @@ async fn find_tools(custom: Option<&str>) -> Vec<ToolDir> {
             found.push(ToolDir { dir: d.to_string_lossy().into_owned(), version });
         }
     }
-    found.sort_by(|a, b| b.version.cmp(&a.version));
+    found.sort_by_key(|a| std::cmp::Reverse(a.version));
     found
 }
 
@@ -443,7 +443,7 @@ pub async fn pg_backup_list(app: AppHandle, session_id: String, database: String
             });
         }
     }
-    out.sort_by(|a, b| b.modified_ms.cmp(&a.modified_ms));
+    out.sort_by_key(|a| std::cmp::Reverse(a.modified_ms));
     Ok(out)
 }
 
