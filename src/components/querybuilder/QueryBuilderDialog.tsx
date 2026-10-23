@@ -101,7 +101,7 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
   const [draftJoin, setDraftJoin] = useState<{ left: QbRef | null; right: QbRef | null }>({ left: null, right: null });
   const [error, setError] = useState<string | null>(null);
   const [drag, setDrag] = useState<{ id: string; dx: number; dy: number } | null>(null);
-  const [resize, setResize] = useState<{ id: string; x0: number; y0: number; w0: number; h0: number } | null>(null);
+  const [resize, setResize] = useState<{ id: string; x0: number; y0: number; w0: number; h0: number; axis: "both" | "x" | "y" } | null>(null);
   const [link, setLink] = useState<{ from: QbRef; x: number; y: number } | null>(null);
   const [treeDrag, setTreeDrag] = useState<{ schema: string; name: string; view: boolean; x: number; y: number; sx: number; sy: number; moved: boolean } | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -308,7 +308,7 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
     const move = (e: MouseEvent) => {
       if (resize) {
         const p = canvasPoint(e);
-        setSt((s) => ({ ...s, tables: s.tables.map((x) => (x.id === resize.id ? { ...x, w: Math.max(MIN_W, Math.round(resize.w0 + p.x - resize.x0)), h: Math.max(MIN_H, Math.round(resize.h0 + p.y - resize.y0)) } : x)) }));
+        setSt((s) => ({ ...s, tables: s.tables.map((x) => (x.id === resize.id ? { ...x, w: resize.axis === "y" ? x.w : Math.max(MIN_W, Math.round(resize.w0 + p.x - resize.x0)), h: resize.axis === "x" ? x.h : Math.max(MIN_H, Math.round(resize.h0 + p.y - resize.y0)) } : x)) }));
       }
       if (drag) {
         const p = canvasPoint(e);
@@ -671,10 +671,24 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
                           e.stopPropagation();
                           const p = canvasPoint(e);
                           setSelTable(tb.id);
-                          setResize({ id: tb.id, x0: p.x, y0: p.y, w0: cardW(tb), h0: HEAD_H + bodyH(tb) });
+                          setResize({ id: tb.id, x0: p.x, y0: p.y, w0: cardW(tb), h0: HEAD_H + bodyH(tb), axis: "both" });
                         }}
                         onDoubleClick={() => setSt((s) => ({ ...s, tables: s.tables.map((x) => (x.id === tb.id ? { ...x, w: undefined, h: undefined } : x)) }))}
                       />
+                      {(["x", "y"] as const).map((axis) => (
+                        <div
+                          key={axis}
+                          className={`qb-edge qb-edge-${axis}`}
+                          onMouseDown={(e) => {
+                            if (e.button !== 0) return;
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const p = canvasPoint(e);
+                            setSelTable(tb.id);
+                            setResize({ id: tb.id, x0: p.x, y0: p.y, w0: cardW(tb), h0: HEAD_H + bodyH(tb), axis });
+                          }}
+                        />
+                      ))}
                       <div className="qb-card-body" style={tb.h ? { padding: PAD, height: bodyH(tb) } : { padding: PAD, maxHeight: MAX_ROWS * ROW_H + PAD * 2 }} onScroll={(e) => { const top = e.currentTarget.scrollTop; setScrolls((m) => (m[tb.id] === top ? m : { ...m, [tb.id]: top })); }}>
                         {tb.columns.length === 0 ? <div className="qb-row-col muted">{t("qb.loading")}</div> : ["*", ...tb.columns].map((c) => (
                           <label key={c} className="qb-row-col" data-qb-table={tb.id} data-qb-column={c}>

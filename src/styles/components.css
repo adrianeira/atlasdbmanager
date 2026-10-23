@@ -2213,3 +2213,6 @@ select.et-input {
 .qb-footer .btn { min-width: 74px; }
 .qb-flip svg { transform: scaleX(-1); }
 .qb-ghost { position: fixed; z-index: 300; display: flex; align-items: center; gap: 6px; padding: 2px 8px; background: var(--c-surface); border: 1px solid var(--c-border-strong); pointer-events: none; opacity: 0.9; }
+.qb-edge { position: absolute; z-index: 2; }
+.qb-edge-x { top: 0; right: -3px; width: 6px; height: calc(100% - 14px); cursor: ew-resize; }
+.qb-edge-y { left: 0; bottom: -3px; height: 6px; width: calc(100% - 14px); cursor: ns-resize; }
