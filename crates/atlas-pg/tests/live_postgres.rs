@@ -1099,6 +1099,58 @@ async fn import_engine_modes_errors_and_rollback() {
 }
 
 #[tokio::test]
+async fn dump_selection_only_includes_chosen_objects() {
+    use atlas_pg::{DumpOptions, DumpScope};
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    let ns = format!("atlas_sel_{}", std::process::id());
+    atlas_pg::execute(
+        &s,
+        &format!(
+            "DROP SCHEMA IF EXISTS {ns} CASCADE; CREATE SCHEMA {ns}; \
+             CREATE TYPE {ns}.cor AS ENUM ('a', 'b'); CREATE TYPE {ns}.ponto AS (x integer); \
+             CREATE FUNCTION {ns}.dobro(a integer) RETURNS integer LANGUAGE sql AS $$ SELECT a * 2 $$; \
+             CREATE FUNCTION {ns}.triplo(a integer) RETURNS integer LANGUAGE sql AS $$ SELECT a * 3 $$; \
+             CREATE TABLE {ns}.clientes(id serial PRIMARY KEY, nome text); CREATE TABLE {ns}.outra(id integer); \
+             INSERT INTO {ns}.clientes(nome) VALUES ('Ana'); INSERT INTO {ns}.outra VALUES (1); \
+             CREATE VIEW {ns}.v_ok AS SELECT id FROM {ns}.clientes; CREATE VIEW {ns}.v_fora AS SELECT id FROM {ns}.outra; \
+             CREATE SEQUENCE {ns}.avulsa; CREATE SEQUENCE {ns}.fora_seq"
+        ),
+        1,
+    )
+    .await
+    .expect("create source");
+    let opts = DumpOptions {
+        scope: DumpScope::Selection {
+            schema: ns.clone(),
+            tables: vec!["clientes".into()],
+            views: vec!["v_ok".into()],
+            functions: vec!["dobro(a integer)".into()],
+            sequences: vec!["avulsa".into()],
+            types: vec!["cor".into()],
+        },
+        structure: true,
+        data: true,
+        clean: false,
+        include_owner: false,
+    };
+    atlas_pg::begin_snapshot(&s).await.unwrap();
+    let plan = atlas_pg::dump_plan(&s, &opts).await.expect("plan");
+    atlas_pg::end_snapshot(&s).await;
+    let text = format!("{}\n{}", plan.pre_data.join("\n"), plan.post_data.join("\n"));
+    assert!(text.contains(&format!("CREATE TYPE {ns}.cor")), "{text}");
+    assert!(!text.contains("ponto"), "tipo não escolhido entrou: {text}");
+    assert!(text.contains("dobro") && !text.contains("triplo"), "{text}");
+    assert!(text.contains(&format!("CREATE TABLE {ns}.clientes")) && !text.contains("outra"), "{text}");
+    assert!(text.contains("v_ok") && !text.contains("v_fora"), "{text}");
+    assert!(text.contains(&format!("CREATE SEQUENCE {ns}.avulsa")) && !text.contains("fora_seq"), "{text}");
+    assert!(text.contains("clientes_id_seq"), "a sequência da tabela escolhida deve entrar: {text}");
+    assert!(!text.contains("CREATE SCHEMA"), "a seleção não cria o schema: {text}");
+    assert_eq!(plan.data_tables.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(), vec!["clientes"]);
+    atlas_pg::execute(&s, &format!("DROP SCHEMA {ns} CASCADE"), 1).await.unwrap();
+}
+
+#[tokio::test]
 async fn syntax_error_reports_position() {
     let p = require_server!();
     let s = atlas_pg::connect(&p, None).await.expect("connect");

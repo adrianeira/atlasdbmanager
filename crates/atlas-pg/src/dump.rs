@@ -24,6 +24,24 @@ pub enum DumpScope {
     Schema { schema: String },
     /// Só estas tabelas (com seus índices, restrições, gatilhos, comentários e as sequências que são delas).
     Tables { schema: String, tables: Vec<String> },
+    /// Objetos escolhidos de um schema (Data Transfer): cada lista tem os nomes marcados. Funções casam por `nome` ou
+    /// `nome(argumentos)`. Não cria o schema (o destino já deve ter).
+    Selection {
+        schema: String,
+        tables: Vec<String>,
+        views: Vec<String>,
+        functions: Vec<String>,
+        sequences: Vec<String>,
+        types: Vec<String>,
+    },
+}
+
+/// Nomes marcados de cada categoria quando o escopo é `Selection`.
+struct Chosen {
+    views: HashSet<String>,
+    functions: HashSet<String>,
+    sequences: HashSet<String>,
+    types: HashSet<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -139,8 +157,18 @@ pub async fn plan(s: &PgSession, o: &DumpOptions) -> Result<DumpPlan, DatabaseEr
         }
         DumpScope::Schema { schema } => (vec![schema.clone()], None),
         DumpScope::Tables { schema, tables } => (vec![schema.clone()], Some(tables.iter().cloned().collect())),
+        DumpScope::Selection { schema, tables, .. } => (vec![schema.clone()], Some(tables.iter().cloned().collect())),
     };
-    let table_scope = only_tables.is_some();
+    let table_scope = matches!(o.scope, DumpScope::Tables { .. });
+    let chosen: Option<Chosen> = match &o.scope {
+        DumpScope::Selection { views, functions, sequences, types, .. } => Some(Chosen {
+            views: views.iter().cloned().collect(),
+            functions: functions.iter().cloned().collect(),
+            sequences: sequences.iter().cloned().collect(),
+            types: types.iter().cloned().collect(),
+        }),
+        _ => None,
+    };
 
     // ---- Tabelas e colunas (precisa vir antes: o resto depende delas).
     let part_key = if v >= 100000 { "CASE WHEN c.relkind = 'p' THEN pg_get_partkeydef(c.oid) END" } else { "NULL::text" };
@@ -229,7 +257,7 @@ pub async fn plan(s: &PgSession, o: &DumpOptions) -> Result<DumpPlan, DatabaseEr
             pre.push(format!("CREATE EXTENSION IF NOT EXISTS {} WITH SCHEMA {};", r.get::<_, String>(0), r.get::<_, String>(1)));
         }
     }
-    if !table_scope && o.structure {
+    if !table_scope && chosen.is_none() && o.structure {
         let rows = s
             .client
             .query(
@@ -276,6 +304,9 @@ pub async fn plan(s: &PgSession, o: &DumpOptions) -> Result<DumpPlan, DatabaseEr
             let base: Option<String> = r.get(5);
             let (default, not_null): (Option<String>, bool) = (r.get(6), r.get(7));
             let (owner, comment): (String, Option<String>) = (r.get(8), r.get(9));
+            if chosen.as_ref().is_some_and(|c| !c.types.contains(&name)) {
+                continue;
+            }
             let kw = if kind == "d" { "DOMAIN" } else { "TYPE" };
             drops.push(format!("DROP {kw} IF EXISTS {q} CASCADE;"));
             let detail = type_detail(s, &schema, &name).await?;
@@ -349,7 +380,8 @@ pub async fn plan(s: &PgSession, o: &DumpOptions) -> Result<DumpPlan, DatabaseEr
             let (comment, owned_by, owner_table): (Option<String>, Option<String>, Option<String>) = (r.get(4), r.get(5), r.get(6));
             // Escopo de tabelas: só as sequências que pertencem às tabelas escolhidas.
             let owner_dumped = owner_table.as_deref().is_some_and(|t| included_quoted.contains(t));
-            if table_scope && !owner_dumped {
+            let picked = chosen.as_ref().is_some_and(|c| c.sequences.contains(&name));
+            if (table_scope || chosen.is_some()) && !owner_dumped && !picked {
                 continue;
             }
             let d = sequence_detail(s, &schema, &name).await?;
@@ -382,7 +414,8 @@ pub async fn plan(s: &PgSession, o: &DumpOptions) -> Result<DumpPlan, DatabaseEr
             .query(
                 &format!(
                     "SELECT quote_ident(n.nspname) || '.' || quote_ident(p.proname) || '(' || pg_get_function_identity_arguments(p.oid) || ')', \
-                            pg_get_functiondef(p.oid), {kind}, pg_get_userbyid(p.proowner)::text, obj_description(p.oid, 'pg_proc') \
+                            pg_get_functiondef(p.oid), {kind}, pg_get_userbyid(p.proowner)::text, obj_description(p.oid, 'pg_proc'), \
+                            p.proname::text, pg_get_function_identity_arguments(p.oid) \
                        FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace \
                       WHERE n.nspname = ANY($1) AND {fn_filter} \
                         AND p.prolang NOT IN (SELECT oid FROM pg_catalog.pg_language WHERE lanname IN ('internal', 'c')) AND {} ORDER BY p.oid",
@@ -394,6 +427,12 @@ pub async fn plan(s: &PgSession, o: &DumpOptions) -> Result<DumpPlan, DatabaseEr
             .map_err(sql_err)?;
         for r in rows {
             let (sig, def, kw, owner, comment): (String, String, String, String, Option<String>) = (r.get(0), r.get(1), r.get(2), r.get(3), r.get(4));
+            if let Some(c) = &chosen {
+                let (proname, args): (String, String) = (r.get(5), r.get(6));
+                if !c.functions.contains(&proname) && !c.functions.contains(&format!("{proname}({args})")) {
+                    continue;
+                }
+            }
             drops.push(format!("DROP {kw} IF EXISTS {sig};"));
             pre.push(format!("{};", def.trim_end().trim_end_matches(';')));
             if o.include_owner {
@@ -466,7 +505,7 @@ pub async fn plan(s: &PgSession, o: &DumpOptions) -> Result<DumpPlan, DatabaseEr
             .query(
                 &format!(
                     "SELECT c.oid, quote_ident(n.nspname) || '.' || quote_ident(c.relname), c.relkind::text, pg_get_viewdef(c.oid, true), \
-                            pg_get_userbyid(c.relowner)::text, obj_description(c.oid, 'pg_class') \
+                            pg_get_userbyid(c.relowner)::text, obj_description(c.oid, 'pg_class'), c.relname::text \
                        FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
                       WHERE c.relkind IN ('v','m') AND n.nspname = ANY($1) AND {} ORDER BY c.oid",
                     in_extension("pg_class", "c.oid")
@@ -492,7 +531,10 @@ pub async fn plan(s: &PgSession, o: &DumpOptions) -> Result<DumpPlan, DatabaseEr
             needs.entry(e.get(0)).or_default().push(e.get(1));
         }
         let all: Vec<(u32, String, String, String, String, Option<String>)> =
-            rows.iter().map(|r| (r.get(0), r.get(1), r.get(2), r.get(3), r.get(4), r.get(5))).collect();
+            rows.iter()
+                .filter(|r| chosen.as_ref().is_none_or(|c| c.views.contains(&r.get::<_, String>(6))))
+                .map(|r| (r.get(0), r.get(1), r.get(2), r.get(3), r.get(4), r.get(5)))
+                .collect();
         let mut placed: HashSet<u32> = HashSet::new();
         let known: HashSet<u32> = all.iter().map(|v| v.0).collect();
         // Cada rodada coloca as views cujas dependências já foram colocadas (ou não estão no escopo).
