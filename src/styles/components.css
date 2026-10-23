@@ -2260,3 +2260,70 @@ select.et-input {
 .modal-close { flex: none; width: 46px; height: 30px; border: 0; background: none; color: var(--c-text); display: flex; align-items: center; justify-content: center; cursor: default; }
 .modal-close:hover:not(:disabled) { background: #e81123; color: #fff; }
 .modal-close:disabled { color: var(--c-text-disabled); }
+
+/* ---------- Data Transfer (janela do sistema à parte) ---------- */
+.dt-window { display: flex; flex-direction: column; height: 100vh; background: var(--c-window); color: var(--c-text); }
+.dt-head { flex: none; display: flex; align-items: center; justify-content: center; gap: 14px; height: 80px; background: var(--c-surface); border-bottom: 1px solid var(--c-border); }
+.dt-end { display: flex; flex-direction: column; min-width: 130px; line-height: 1.45; }
+.dt-end.is-left { align-items: flex-end; text-align: right; }
+.dt-arrow { display: flex; color: #8a8a8a; }
+.dt-target-icon svg { filter: hue-rotate(75deg) saturate(1.2); }
+.dt-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: auto; padding: 18px 28px; background: var(--c-surface); }
+.dt-message { margin: 10px 0 0; flex: none; }
+.dt-h { margin: 0 0 4px; font-size: 15px; font-weight: 400; color: var(--c-accent); }
+.dt-h-gap { margin-top: 38px; }
+.dt-columns { display: grid; grid-template-columns: 1fr 44px 1fr; gap: 0 24px; padding-top: 18px; }
+.dt-side { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.dt-dd { width: 100%; }
+.dt-swap { align-self: start; margin-top: 74px; border: 0; background: none; color: #8a8a8a; cursor: default; padding: 0; }
+.dt-swap:hover:not(:disabled) { color: #0078d7; }
+.dt-swap:disabled { opacity: 0.4; }
+.dt-radios { display: flex; gap: 70px; }
+.dt-radios label, .dt-radio, .dt-modes label { display: flex; align-items: center; gap: 6px; }
+.dt-radios input, .dt-radio input, .dt-modes input { margin: 0; }
+.dt-file-row { display: flex; gap: 6px; }
+.dt-file-row .field { flex: 1; min-width: 0; }
+.dt-info { display: grid; grid-template-columns: 130px 1fr; gap: 4px 8px; margin: 6px 0 0; }
+.dt-info dd { margin: 0; font-variant-numeric: tabular-nums; }
+.dt-footer { flex: none; display: flex; align-items: center; gap: 6px; padding: 10px; border-top: 1px solid var(--c-border); background: var(--c-surface-alt); }
+.dt-wide { min-width: 148px; }
+.dt-menu-wrap { position: relative; display: inline-flex; gap: 0; }
+.dt-arrow-btn { min-width: 0 !important; padding: 0 6px; }
+.dt-objects { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.dt-split { flex: 1; min-height: 0; display: grid; grid-template-columns: 380px 1fr; margin-top: 6px; }
+.dt-tree { overflow: auto; border-right: 1px solid var(--c-border); padding: 2px 0; user-select: none; }
+.dt-loading { display: flex; align-items: center; gap: 8px; padding: 8px; }
+.dt-tree-row { display: flex; align-items: center; gap: 6px; height: 21px; padding: 0 6px; white-space: nowrap; }
+.dt-tree-row input { margin: 0; }
+.dt-item { padding-left: 38px; cursor: default; }
+.dt-item.is-focus { background: var(--c-selected); }
+.dt-twisty { width: 16px; height: 16px; border: 0; background: none; padding: 0; display: inline-flex; align-items: center; justify-content: center; color: var(--c-text); }
+.dt-right { overflow: auto; padding: 0 22px 8px; min-width: 0; }
+.dt-hint { margin: 6px 0 0; line-height: 1.5; }
+.dt-adv { display: flex; flex-direction: column; gap: 8px; }
+.dt-modes { display: flex; align-items: center; gap: 70px; padding-top: 4px; }
+.dt-advanced { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.dt-row { display: grid; grid-template-columns: 110px 240px; align-items: center; gap: 12px; margin-top: 18px; }
+.dt-grid { border: 1px solid var(--c-border-strong); background: var(--c-surface); min-height: 90px; max-height: 150px; overflow: auto; }
+.dt-grid.is-disabled { opacity: 0.55; }
+.dt-grid-head { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--c-surface-alt); border-bottom: 1px solid var(--c-border); position: sticky; top: 0; }
+.dt-grid-head span { padding: 2px 8px; color: var(--c-text-muted); border-right: 1px solid var(--c-grid-line); }
+.dt-grid-row { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border-bottom: 1px solid var(--c-grid-line); }
+.dt-grid-row.is-sel { background: var(--c-selected); }
+.dt-grid-row .field { border-radius: 0; height: 22px; min-width: 0; }
+.dt-grid-tools { display: flex; align-items: center; gap: 6px; }
+.dt-batch { display: flex; align-items: center; gap: 12px; padding-left: 4px; }
+.dt-num { width: 90px !important; }
+.dt-preview-btn { align-self: flex-start; min-width: 148px; }
+.dt-pre { margin: 0; white-space: pre-wrap; word-break: break-all; font: 12px / 1.5 var(--font-mono); }
+.dt-summary { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.dt-sum-grid { flex: 1; min-height: 120px; overflow: auto; border: 1px solid var(--c-border-strong); background: var(--c-surface); }
+.dt-sum-head, .dt-sum-row { display: grid; grid-template-columns: 200px 200px 1fr; }
+.dt-sum-head { position: sticky; top: 0; background: var(--c-surface-alt); border-bottom: 1px solid var(--c-border); }
+.dt-sum-head span { padding: 2px 8px; border-right: 1px solid var(--c-grid-line); }
+.dt-sum-row span { padding: 1px 8px; display: flex; align-items: center; gap: 6px; }
+.dt-progress { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+.dt-stats { display: grid; grid-template-columns: 150px 1fr; gap: 2px 8px; margin: 0; }
+.dt-stats dd { margin: 0; font-variant-numeric: tabular-nums; }
+.dt-log { flex: 1; min-height: 0; }
+.dd-button.dt-dd { height: 24px; border-color: var(--c-text-muted); }

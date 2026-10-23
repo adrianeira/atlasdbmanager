@@ -1173,6 +1173,7 @@ async fn transfer_copies_objects_between_schemas_and_servers() {
              CREATE TYPE {a}.cor AS ENUM ('azul', 'verde'); \
              CREATE FUNCTION {a}.dobro(x integer) RETURNS integer LANGUAGE sql AS $$ SELECT x * 2 $$; \
              CREATE TABLE {a}.clientes(id serial PRIMARY KEY, nome text NOT NULL, cor {a}.cor DEFAULT 'azul', nota text, total numeric(12,2)); \
+             CREATE FUNCTION {a}.quantos() RETURNS bigint LANGUAGE sql AS $$ SELECT count(*) FROM {a}.clientes $$; \
              CREATE TABLE {a}.pedidos(id integer PRIMARY KEY, cliente_id integer NOT NULL REFERENCES {a}.clientes(id), valor numeric); \
              CREATE INDEX pedidos_valor_idx ON {a}.pedidos (valor); \
              CREATE VIEW {a}.v_base AS SELECT id, nome FROM {a}.clientes; \
@@ -1191,7 +1192,7 @@ async fn transfer_copies_objects_between_schemas_and_servers() {
         target_schema: b.clone(),
         tables: vec!["clientes".into(), "pedidos".into()],
         views: vec!["v_base".into()],
-        functions: vec!["dobro".into()],
+        functions: vec!["dobro".into(), "quantos".into()],
         sequences: vec!["avulsa".into()],
         types: vec!["cor".into()],
         overrides: vec![],
@@ -1222,6 +1223,8 @@ async fn transfer_copies_objects_between_schemas_and_servers() {
     assert_eq!(text(&dst, format!("SELECT count(*) FROM {b}.pedidos")).await, "3");
     assert_eq!(text(&dst, format!("SELECT count(*) FROM {b}.v_base")).await, "3");
     assert_eq!(text(&dst, format!("SELECT {b}.dobro(4)")).await, "8");
+    // A função que lê uma tabela foi criada antes dela e funciona (o corpo aponta para o schema de destino).
+    assert_eq!(text(&dst, format!("SELECT {b}.quantos()")).await, "3");
     assert_eq!(text(&dst, format!("SELECT count(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace WHERE n.nspname = '{b}' AND c.contype = 'f'")).await, "1");
     assert_eq!(text(&dst, format!("SELECT count(*) FROM pg_indexes WHERE schemaname = '{b}' AND indexname = 'pedidos_valor_idx'")).await, "1");
     // A sequência avulsa continua de onde a origem parou.

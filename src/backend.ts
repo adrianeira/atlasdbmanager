@@ -286,8 +286,82 @@ export async function onQueryBuilderBuild(id: string, cb: (r: QueryBuilderResult
   });
 }
 
+/* ----- Data Transfer (janela separada) ----- */
+
+export interface TransferFieldMap { source: string; target: string }
+export interface TransferTableOverride {
+  table: string;
+  targetName?: string;
+  /** Vazio/ausente = todos os campos com o mesmo nome. */
+  fields?: TransferFieldMap[];
+  /** Linhas por lote, cada lote numa transação; ausente = a tabela inteira numa transação só. */
+  rowsPerBatch?: number;
+  /** Filtros (`WHERE`): cada um é transferido à parte. */
+  recordsets?: string[];
+}
+export interface TransferSpec {
+  sourceSchema: string;
+  targetSchema: string;
+  tables: string[];
+  views: string[];
+  /** `nome(argumentos)`. */
+  functions: string[];
+  sequences: string[];
+  types: string[];
+  overrides: TransferTableOverride[];
+  dropBeforeCreate: boolean;
+  continueOnError: boolean;
+  structure: boolean;
+  data: boolean;
+}
+export interface TransferRequest {
+  transferId: string;
+  sourceConn: string;
+  sourceDatabase: string;
+  targetConn: string;
+  targetDatabase: string;
+  spec: TransferSpec;
+}
+export interface TransferCounts { objects: number; processed: number; transferred: number; errors: number; elapsedMs: number }
+
+/** Conexão como a janela do Data Transfer a enxerga (a lista vem da janela principal). */
+export interface DataTransferConn {
+  id: string;
+  name: string;
+  provider: string;
+  host: string;
+  port: number;
+  user: string;
+  version: string;
+  versionNum: number;
+  open: boolean;
+}
+export interface DataTransferParams {
+  connections: DataTransferConn[];
+  source?: { connId: string; database: string; schema: string };
+}
+
+/** Abre (ou traz para a frente) a janela do Data Transfer. */
+export const openDataTransfer = (title: string, params: DataTransferParams) => call<void>("open_data_transfer", { req: { title, params: { ...params, title } } });
+
+export async function onTransferProgress(id: string, cb: (c: TransferCounts) => void): Promise<() => void> {
+  return listen<TransferCounts & { transferId: string }>("transfer-progress", (e) => {
+    if (e.payload.transferId === id) cb(e.payload);
+  });
+}
+
+export async function onTransferLog(id: string, cb: (line: string) => void): Promise<() => void> {
+  return listen<{ transferId: string; line: string }>("transfer-log", (e) => {
+    if (e.payload.transferId === id) cb(e.payload.line);
+  });
+}
+
 /** O que o dump SQL cobre. */
-export type DumpScope = { kind: "database" } | { kind: "schema"; schema: string } | { kind: "tables"; schema: string; tables: string[] };
+export type DumpScope =
+  | { kind: "database" }
+  | { kind: "schema"; schema: string }
+  | { kind: "tables"; schema: string; tables: string[] }
+  | { kind: "selection"; schema: string; tables: string[]; views: string[]; functions: string[]; sequences: string[]; types: string[] };
 
 export interface DumpRequest {
   /** Identifica o dump para o progresso e o cancelamento (`exportCancel`). */
@@ -599,6 +673,7 @@ export const pg = {
     call<TableDetail>("pg_table_detail", { sessionId, database, schema, table }),
   viewDetail: (sessionId: string, database: string, schema: string, view: string) =>
     call<ViewDetail>("pg_view_detail", { sessionId, database, schema, view }),
+  transfer: (req: TransferRequest) => call<TransferCounts>("pg_transfer", { req }),
   importListTables: (path: string, format: ImportFormat) => call<string[]>("import_list_tables", { path, format }),
   importPreview: (spec: SourceSpec, convert: ConvertOptions, limit: number) => call<ImportPreview>("import_preview", { spec, convert, limit }),
   import: (req: ImportRequest) => call<ImportSummary>("pg_import", { req }),

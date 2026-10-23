@@ -424,6 +424,8 @@ pub async fn run(src: &PgSession, dst: &PgSession, spec: &TransferSpec, mut hook
         let planned = plan(src, &opts).await?;
         stats.objects = planned.objects as u64;
         (hooks.progress)(&stats);
+        // Como o `pg_dump`: as funções SQL são criadas antes das tabelas que elas leem, então o corpo não pode ser validado ainda.
+        dst.client.batch_execute("SET check_function_bodies = false").await.map_err(sql_err)?;
         if spec.target_schema != "public" {
             dst.client.batch_execute(&format!("CREATE SCHEMA IF NOT EXISTS {}", quote_ident(&spec.target_schema))).await.map_err(sql_err)?;
         }

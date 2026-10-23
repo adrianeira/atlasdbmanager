@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  appReady, errorText, isDesktop, local, pg, toAtlasError,
+  appReady, errorText, isDesktop, local, openDataTransfer, pg, toAtlasError,
   type ConnectionParams, type DatabaseDetail, type DumpScope, type FindHit, type ProfileRecord, type SchemaDetail,
 } from "./backend";
 import { entries, matchesShortcut, sub, type CommandMap, type MenuDef, type MenuEntry } from "./commands";
@@ -1774,7 +1774,20 @@ export default function App() {
     resetLayout: { id: "resetLayout", label: "cmd.resetLayout", run: () => setLayout({ ...DEFAULT_LAYOUT, lang: layout.lang, theme: layout.theme }) },
     addFavorite: { id: "addFavorite", label: "cmd.addFavorite" },
     manageFavorites: { id: "manageFavorites", label: "cmd.manageFavorites" },
-    dataTransfer: { id: "dataTransfer", label: "cmd.dataTransfer" },
+    dataTransfer: {
+      id: "dataTransfer", label: "cmd.dataTransfer",
+      run: () => {
+        const live = connections.filter((c) => c.live);
+        if (live.length === 0) return;
+        void openDataTransfer(t("dt.title"), {
+          connections: live.map((c) => ({
+            id: c.id, name: c.name, provider: c.provider, host: c.host, port: c.port, user: c.user,
+            version: c.serverVersion, versionNum: c.serverVersionNum, open: openConnections.has(c.id),
+          })),
+          source: ctx.connection?.live && ctx.database && ctx.schema ? { connId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name } : undefined,
+        }).catch((e) => showError(t("dt.title"), e));
+      },
+    },
     dataSync: { id: "dataSync", label: "cmd.dataSync" },
     structureSync: { id: "structureSync", label: "cmd.structureSync" },
     serverMonitor: { id: "serverMonitor", label: "cmd.serverMonitor" },
