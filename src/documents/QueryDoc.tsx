@@ -12,6 +12,7 @@ import { mockRows, type CellValue, type ConnectionMock } from "../model";
 import { columnType } from "../sql/ddl";
 import { beautifySql } from "../sql/format";
 import { errorText, toAtlasError } from "../backend";
+import { useOptions } from "../options";
 
 export interface QueryContext {
   connectionId?: string;
@@ -55,9 +56,8 @@ export interface QueryBackend {
 type QueryOutcomeLive = import("../backend").QueryOutcome;
 
 /** Linhas máximas por result set no editor (o excedente é sinalizado como truncado). */
-const EDITOR_MAX_ROWS = 1000;
 
-function fromLive(sqlText: string, out: QueryOutcomeLive, t: ReturnType<typeof useT>): RunOutcome {
+function fromLive(sqlText: string, out: QueryOutcomeLive, t: ReturnType<typeof useT>, maxRows: number): RunOutcome {
   const results: ResultSet[] = [];
   const lines: string[] = [sqlText.trim()];
   out.statements.forEach((st, i) => {
@@ -66,7 +66,7 @@ function fromLive(sqlText: string, out: QueryOutcomeLive, t: ReturnType<typeof u
         columns: st.result.columns.map((c) => ({ name: c.name, type: c.typeName ?? "", kind: typeKind(c.typeName ?? "") })),
         rows: st.result.rows,
       });
-      lines.push(`> [${i + 1}] OK — ${t("query.rowsReturned", { n: st.result.rows.length })}${st.result.truncated ? ` (${t("query.truncated", { n: EDITOR_MAX_ROWS })})` : ""}`);
+      lines.push(`> [${i + 1}] OK — ${t("query.rowsReturned", { n: st.result.rows.length })}${st.result.truncated ? ` (${t("query.truncated", { n: maxRows })})` : ""}`);
     } else {
       lines.push(`> [${i + 1}] OK — ${t("query.rowsAffected", { n: st.rowsAffected ?? 0 })}`);
     }
@@ -140,6 +140,7 @@ export function QueryDoc({
   connections, openConnections, initial, initialSql, active, onStatus, onDirty, registerActions, backend: backendProp, connecting, onOpenConnection, onLoadSchemas, onRefreshSchemas, onExport, onExecuted,
 }: Props) {
   const t = useT();
+  const { queryMaxRows } = useOptions();
   const editor = useRef<SqlEditorHandle | null>(null);
   const [ctx, setCtx] = useState<QueryContext>(initial);
   const [cursor, setCursor] = useState({ line: 1, col: 1 });
@@ -227,8 +228,8 @@ export function QueryDoc({
           onExecuted?.({ connectionId: conn.id, connectionName: conn.name, database, schema: ctx.schema, sql: text.trim(), durationMs: ms, rows, error });
         try {
           await backend.ensureOpen(conn.id);
-          const out = await backend.execute(conn.id, database, text, EDITOR_MAX_ROWS, ctx.schema);
-          const res = fromLive(text, out, t);
+          const out = await backend.execute(conn.id, database, text, queryMaxRows, ctx.schema);
+          const res = fromLive(text, out, t, queryMaxRows);
           setOutcome(res);
           setResultTab(res.results.length ? 1 : 0);
           // Linhas: as devolvidas pelo primeiro resultado ou, sem resultado, as afetadas (soma).
@@ -254,7 +255,7 @@ export function QueryDoc({
       setActiveRow(0);
       setRunning(false);
     }, 280);
-  }, [running, conn, ctx.database, ctx.schema, backend, t, onExecuted]);
+  }, [running, conn, ctx.database, ctx.schema, backend, t, onExecuted, queryMaxRows]);
 
   const stop = useCallback(() => {
     if (backend && conn && running) {
@@ -286,7 +287,7 @@ export function QueryDoc({
       void (async () => {
         try {
           await backend.ensureOpen(conn.id);
-          const res = fromLive(sqlText, await backend.execute(conn.id, ctx.database ?? conn.initialDatabase, sqlText, EDITOR_MAX_ROWS, ctx.schema), t);
+          const res = fromLive(sqlText, await backend.execute(conn.id, ctx.database ?? conn.initialDatabase, sqlText, queryMaxRows, ctx.schema), t, queryMaxRows);
           setOutcome(res);
           setResultTab(res.results.length ? 1 : 0);
         } catch (e) {

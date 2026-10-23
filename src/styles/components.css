@@ -2109,3 +2109,8 @@ select.et-input {
 .dump-note { font-size: 11px; }
 .dump-progress { display: flex; align-items: center; gap: 8px; }
 .dump-result { padding: 8px 10px; border: 1px solid var(--c-border); background: var(--c-surface-alt); }
+
+/* Opções. */
+.opt-dialog { width: min(600px, 92vw); }
+.opt-body { display: flex; flex-direction: column; gap: 10px; min-height: 230px; }
+.opt-path { width: 100%; }

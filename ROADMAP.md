@@ -179,6 +179,14 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - Não incluídos: privilégios (`GRANT`), opções de armazenamento, tabelas estrangeiras e agregações
       *(`crates/atlas-pg/src/dump.rs`, `src-tauri/src/dump.rs`, `src/components/DumpDialog.tsx`)*
 
+### Opções
+- [x] **Ferramentas → Opções...** com cinco abas: **Geral** (idioma, tema claro/escuro/sistema, legendas da barra), **Editor
+      SQL** (tamanho da fonte, linhas mostradas por resultado), **Dados da tabela** (registros por página), **Histórico**
+      (gravar, quantas consultas guardar, limpar) e **Dados locais** (caminho e versão do banco local, copiar caminho)
+- [x] Valores fora do limite são corrigidos ao sair do campo; **Restaurar padrões**; as opções ficam no banco local
+      (`ui.options`) e valem na hora
+      *(`src/components/OptionsDialog.tsx`, `src/options.ts`)*
+
 ### Navegação / Árvore
 - [x] **Fechar schema** no menu de contexto (colapsa + marca como não-carregado para rebuscar
       na próxima abertura) *(`src/App.tsx`)*
@@ -327,8 +335,8 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [ ] Query Builder visual
 - [ ] Pivot Table
 - [ ] Charts a partir de consulta
-- [ ] Dark mode manual *(hoje só segue o sistema)*
-- [ ] Tela de Preferências / Options
+- [x] Tema claro/escuro manual (menu Exibir e tela Opções; padrão: seguir o sistema)
+- [x] Tela de Preferências / Options (ver "Opções" em Entregues)
 - [ ] Atalhos de teclado configuráveis
 - [ ] Fullscreen por painel *(vários botões `fullscreen` desabilitados)*
 

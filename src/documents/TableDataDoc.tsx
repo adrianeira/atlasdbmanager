@@ -12,6 +12,7 @@ import { SmallIcon, type SmallIconName } from "../icons";
 import { plannedStatements } from "../live";
 import { mockRows, quoteIdent, type CellValue, type DbObject, type ForeignKeyDef } from "../model";
 import { columnType, selectSql } from "../sql/ddl";
+import { useOptions } from "../options";
 
 /** Acesso ao banco real; ausente = modo de demonstração com dados fictícios. */
 export interface TableDataBackend {
@@ -45,7 +46,6 @@ interface Props {
   onExport?: (scope: { orderBy: OrderBy[]; filter: TableFilter | null; allColumns: string[]; visibleColumns: string[] }) => void;
 }
 
-const DEFAULT_PAGE_SIZE = 1000;
 const MAX_PAGE_SIZE = 1_000_000;
 
 function literal(v: CellValue): string {
@@ -54,6 +54,7 @@ function literal(v: CellValue): string {
 
 export function TableDataDoc({ schema, table: tableProp, active, production, onStatus, backend, lookup, isView, onDirty, onExport }: Props) {
   const t = useT();
+  const DEFAULT_PAGE_SIZE = useOptions().pageSize;
   const [table, setTable] = useState<DbObject>(tableProp);
   const cols = useMemo(() => table.columns ?? [], [table]);
   const keyCols = cols.map((c, i) => ({ c, i })).filter((x) => x.c.key).sort((a, b) => (a.c.key ?? 0) - (b.c.key ?? 0));

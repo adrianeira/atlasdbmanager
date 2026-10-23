@@ -21,7 +21,7 @@ const atlasHighlight = HighlightStyle.define([
 ]);
 
 const atlasTheme = EditorView.theme({
-  "&": { height: "100%", fontSize: "13px", backgroundColor: "var(--c-surface)", color: "var(--c-text)" },
+  "&": { height: "100%", fontSize: "var(--editor-font-size, 13px)", backgroundColor: "var(--c-surface)", color: "var(--c-text)" },
   ".cm-content": { fontFamily: "var(--font-mono)", caretColor: "var(--c-text)" },
   ".cm-scroller": { fontFamily: "var(--font-mono)", lineHeight: "1.45" },
   ".cm-gutters": { backgroundColor: "var(--c-surface-alt)", color: "var(--c-text-disabled)", border: "none", borderRight: "1px solid var(--c-border)" },

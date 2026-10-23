@@ -29,6 +29,8 @@ import { dropRoleSql } from "./sql/role";
 import { RoleDesignerDoc, type RoleBackend } from "./documents/RoleDesignerDoc";
 import { FindDialog } from "./components/FindDialog";
 import { DumpDialog, type DumpTarget } from "./components/DumpDialog";
+import { OptionsDialog } from "./components/OptionsDialog";
+import { DEFAULT_OPTIONS, OptionsContext, sanitizeOptions, type AppOptions } from "./options";
 import { TypeDesignerDoc, type TypeBackend } from "./documents/TypeDesignerDoc";
 import { SequenceDesignerDoc, type SequenceBackend } from "./documents/SequenceDesignerDoc";
 import { FunctionDesignerDoc, type FunctionBackend } from "./documents/FunctionDesignerDoc";
@@ -217,6 +219,7 @@ type Dialog =
   | ({ kind: "ddl"; busy?: boolean; error?: string } & DdlRequest)
   | { kind: "name"; title: string; label: string; initial: string; onSubmit: (value: string) => void }
   | { kind: "execFile"; connId: string; database: string; fileName: string; size: number; sql: string; busy?: boolean; error?: string }
+  | { kind: "options" }
   | { kind: "find"; connId: string; database: string; schema?: string }
   | ({ kind: "dump" } & DumpTarget)
   | { kind: "about" };
@@ -224,6 +227,15 @@ type Dialog =
 export default function App() {
   const [layout, setLayout] = useState<Layout>(() => readJson(LAYOUT_KEY, DEFAULT_LAYOUT));
   const t = useMemo(() => makeTranslator(layout.lang), [layout.lang]);
+  // Opções da tela Ferramentas → Opções (guardadas no banco local; sem ele valem os padrões).
+  const [appOptions, setAppOptions] = useState<AppOptions>(DEFAULT_OPTIONS);
+  useEffect(() => {
+    if (!isDesktop) return;
+    void local.getPref<Partial<AppOptions>>("ui.options").then((v) => setAppOptions(sanitizeOptions(v))).catch(() => undefined);
+  }, []);
+  useEffect(() => {
+    document.documentElement.style.setProperty("--editor-font-size", `${appOptions.editorFontSize}px`);
+  }, [appOptions.editorFontSize]);
   const patchLayout = useCallback((p: Partial<Layout>) => setLayout((l) => ({ ...l, ...p })), []);
 
   useEffect(() => writeJson(LAYOUT_KEY, layout), [layout]);
@@ -1485,7 +1497,7 @@ export default function App() {
     dataSync: { id: "dataSync", label: "cmd.dataSync" },
     structureSync: { id: "structureSync", label: "cmd.structureSync" },
     serverMonitor: { id: "serverMonitor", label: "cmd.serverMonitor" },
-    options: { id: "options", label: "cmd.options" },
+    options: { id: "options", label: "cmd.options", run: () => setDialog({ kind: "options" }) },
     nextTab: { id: "nextTab", label: "cmd.nextTab", shortcut: "Ctrl+Tab", run: () => cycleTab(1) },
     previousTab: { id: "previousTab", label: "cmd.previousTab", shortcut: "Ctrl+Shift+Tab", run: () => cycleTab(-1) },
     closeAllTabs: { id: "closeAllTabs", label: "cmd.closeAllTabs", run: tabs.length > 1 ? () => { setTabs([OBJECTS_TAB]); setActiveTab("objects"); } : undefined },
@@ -2017,6 +2029,7 @@ export default function App() {
 
   return (
     <I18nContext.Provider value={t}>
+      <OptionsContext.Provider value={appOptions}>
       <div className="shell">
         <MenuBar menus={menus} commands={commands} />
         <MainToolbar
@@ -2118,6 +2131,15 @@ export default function App() {
       )}
 
       {exportTarget && <ExportWizard target={exportTarget} onClose={() => setExportTarget(null)} />}
+
+      {dialog?.kind === "options" && (
+        <OptionsDialog
+          options={appOptions}
+          appearance={{ theme: layout.theme, lang: layout.lang, showCaptions: layout.showCaptions }}
+          onApply={(opts, look) => { setAppOptions(opts); patchLayout(look); }}
+          onClose={() => setDialog(null)}
+        />
+      )}
 
       {dialog?.kind === "dump" && <DumpDialog target={dialog} onClose={() => setDialog(null)} />}
 
@@ -2270,6 +2292,7 @@ export default function App() {
           onCancel={() => setDialog(null)}
         />
       )}
+      </OptionsContext.Provider>
     </I18nContext.Provider>
   );
 }
