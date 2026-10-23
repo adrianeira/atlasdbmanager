@@ -68,6 +68,14 @@ pub struct ImportSpec {
     pub max_statement_bytes: usize,
     #[serde(default)]
     pub continue_on_error: bool,
+    /// `false`: quem chama controla o `BEGIN`/`COMMIT` (várias chamadas numa transação só). Em erro sem "continuar em
+    /// erro" devolve `rolled_back` e deixa o `ROLLBACK` para quem chamou.
+    #[serde(default = "yes")]
+    pub manage_transaction: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 fn default_statement_bytes() -> usize {
@@ -384,7 +392,9 @@ fn row_error(e: DatabaseError, row_no: u64) -> DatabaseError {
 pub async fn run(s: &PgSession, spec: &ImportSpec, feed: &mut (dyn FnMut() -> Feed + Send), hooks: Hooks<'_>) -> Result<ImportStats, DatabaseError> {
     let table = format!("{}.{}", quote_ident(&spec.schema), quote_ident(spec.create.as_ref().map(|_| spec.table.as_str()).unwrap_or(&spec.table)));
     let mut runner = Runner { s, spec, hooks, stats: ImportStats::default(), last_progress: Instant::now(), row_no: 0, prepared: HashMap::new(), table };
-    s.client.batch_execute("BEGIN").await.map_err(sql_err)?;
+    if spec.manage_transaction {
+        s.client.batch_execute("BEGIN").await.map_err(sql_err)?;
+    }
     let result = async {
         if let Some(cols) = &spec.create {
             let defs: Vec<String> = cols.iter().map(|(n, t)| format!("{} {}", quote_ident(n), t)).collect();
@@ -402,11 +412,15 @@ pub async fn run(s: &PgSession, spec: &ImportSpec, feed: &mut (dyn FnMut() -> Fe
     .await;
     match result {
         Ok(()) => {
-            s.client.batch_execute("COMMIT").await.map_err(sql_err)?;
+            if spec.manage_transaction {
+                s.client.batch_execute("COMMIT").await.map_err(sql_err)?;
+            }
             Ok(runner.stats)
         }
         Err(e) => {
-            let _ = s.client.batch_execute("ROLLBACK").await;
+            if spec.manage_transaction {
+                let _ = s.client.batch_execute("ROLLBACK").await;
+            }
             if e.kind == ErrorKind::Canceled || e.kind == ErrorKind::ConnectionLost {
                 return Err(e);
             }

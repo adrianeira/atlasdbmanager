@@ -241,6 +241,7 @@ pub async fn pg_import(
             extended_insert: req.advanced.extended_insert,
             max_statement_bytes: req.advanced.max_statement_kb.max(1) as usize * 1024,
             continue_on_error: req.advanced.continue_on_error,
+            manage_transaction: true,
         };
         let mut convert_opts = req.convert.clone();
         convert_opts.empty_as_null = req.advanced.empty_as_null;

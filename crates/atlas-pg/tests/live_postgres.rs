@@ -957,6 +957,7 @@ async fn import_engine_modes_errors_and_rollback() {
         extended_insert: false,
         max_statement_bytes: 1024 * 1024,
         continue_on_error: false,
+        manage_transaction: true,
     };
     // Acrescentar (um INSERT por linha), com conversão de tipos pelo servidor.
     let rows = vec![
@@ -1065,6 +1066,7 @@ async fn import_engine_modes_errors_and_rollback() {
         extended_insert: true,
         max_statement_bytes: 1024,
         continue_on_error: false,
+        manage_transaction: true,
     };
     let rows = vec![import_row(&[Some("1"), Some("a")]), import_row(&[Some("2"), Some("b")])];
     let st = run_import_rows(&s, &created, rows, None).await.0.unwrap();
@@ -1091,6 +1093,7 @@ async fn import_engine_modes_errors_and_rollback() {
             extended_insert: false,
             max_statement_bytes: 1024,
             continue_on_error: false,
+            manage_transaction: true,
         };
         let st = run_import_rows(&s, &ident, vec![import_row(&[Some("7"), Some("sete")])], None).await.0.unwrap();
         assert_eq!(st.added, 1);
@@ -1148,6 +1151,106 @@ async fn dump_selection_only_includes_chosen_objects() {
     assert!(!text.contains("CREATE SCHEMA"), "a seleção não cria o schema: {text}");
     assert_eq!(plan.data_tables.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(), vec!["clientes"]);
     atlas_pg::execute(&s, &format!("DROP SCHEMA {ns} CASCADE"), 1).await.unwrap();
+}
+
+#[tokio::test]
+async fn transfer_copies_objects_between_schemas_and_servers() {
+    use atlas_pg::{TableOverride, TransferHooks, TransferSpec};
+    let p = require_server!();
+    let src = atlas_pg::connect(&p, None).await.expect("connect source");
+    // Destino: outra porta se `ATLAS_TEST_PG_TARGET_PORT` existir (cruza 9.6 e 18); senão o mesmo servidor.
+    let mut tp = p.clone();
+    if let Some(port) = std::env::var("ATLAS_TEST_PG_TARGET_PORT").ok().and_then(|x| x.parse().ok()) {
+        tp.port = port;
+    }
+    let dst = atlas_pg::connect(&tp, None).await.expect("connect target");
+    let pid = std::process::id();
+    let (a, b) = (format!("atlas_tr_a_{pid}"), format!("atlas_tr_b_{pid}"));
+    atlas_pg::execute(
+        &src,
+        &format!(
+            "DROP SCHEMA IF EXISTS {a} CASCADE; CREATE SCHEMA {a}; \
+             CREATE TYPE {a}.cor AS ENUM ('azul', 'verde'); \
+             CREATE FUNCTION {a}.dobro(x integer) RETURNS integer LANGUAGE sql AS $$ SELECT x * 2 $$; \
+             CREATE TABLE {a}.clientes(id serial PRIMARY KEY, nome text NOT NULL, cor {a}.cor DEFAULT 'azul', nota text, total numeric(12,2)); \
+             CREATE TABLE {a}.pedidos(id integer PRIMARY KEY, cliente_id integer NOT NULL REFERENCES {a}.clientes(id), valor numeric); \
+             CREATE INDEX pedidos_valor_idx ON {a}.pedidos (valor); \
+             CREATE VIEW {a}.v_base AS SELECT id, nome FROM {a}.clientes; \
+             CREATE SEQUENCE {a}.avulsa START WITH 10 INCREMENT BY 3; SELECT nextval('{a}.avulsa'); \
+             INSERT INTO {a}.clientes(nome, cor, nota, total) VALUES ('Ana', 'verde', E'linha1\\nlinha2\\ttab \\\\ barra', 10.5), ('João ''Zé''', 'azul', NULL, NULL), ('日本', 'azul', '', 0); \
+             INSERT INTO {a}.pedidos VALUES (1, 1, 5), (2, 1, 7.5), (3, 2, NULL)"
+        ),
+        1,
+    )
+    .await
+    .expect("create source");
+    atlas_pg::execute(&dst, &format!("DROP SCHEMA IF EXISTS {b} CASCADE"), 1).await.unwrap();
+
+    let mut spec = TransferSpec {
+        source_schema: a.clone(),
+        target_schema: b.clone(),
+        tables: vec!["clientes".into(), "pedidos".into()],
+        views: vec!["v_base".into()],
+        functions: vec!["dobro".into()],
+        sequences: vec!["avulsa".into()],
+        types: vec!["cor".into()],
+        overrides: vec![],
+        drop_before_create: false,
+        continue_on_error: false,
+        structure: true,
+        data: true,
+    };
+    async fn go(src: &atlas_pg::PgSession, dst: &atlas_pg::PgSession, spec: &TransferSpec) -> (atlas_pg::TransferStats, Vec<String>) {
+        let mut log = Vec::new();
+        let mut progress = 0usize;
+        let stats = {
+            let mut on_log = |l: String| log.push(l);
+            let mut on_progress = |_: &atlas_pg::TransferStats| progress += 1;
+            atlas_pg::run_transfer(src, dst, spec, TransferHooks { log: &mut on_log, progress: &mut on_progress, cancelled: &|| false }).await.expect("transfer")
+        };
+        assert!(progress > 0, "o progresso deve ser avisado");
+        (stats, log)
+    }
+    async fn text(s: &atlas_pg::PgSession, sql: String) -> String {
+        atlas_pg::execute(s, &sql, 10).await.unwrap().statements[0].result.as_ref().unwrap().rows[0][0].clone().unwrap_or_default()
+    }
+    let (stats, log) = go(&src, &dst, &spec).await;
+    assert_eq!(stats.errors, 0, "{log:#?}");
+    assert_eq!(stats.transferred, 6, "{log:#?}");
+    let rows_sql = |ns: &str| format!("SELECT string_agg(id || ':' || nome || ':' || cor || ':' || coalesce(nota, '~') || ':' || coalesce(total::text, '~'), ' | ' ORDER BY id) FROM {ns}.clientes");
+    assert_eq!(text(&dst, rows_sql(&b)).await, text(&src, rows_sql(&a)).await);
+    assert_eq!(text(&dst, format!("SELECT count(*) FROM {b}.pedidos")).await, "3");
+    assert_eq!(text(&dst, format!("SELECT count(*) FROM {b}.v_base")).await, "3");
+    assert_eq!(text(&dst, format!("SELECT {b}.dobro(4)")).await, "8");
+    assert_eq!(text(&dst, format!("SELECT count(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace WHERE n.nspname = '{b}' AND c.contype = 'f'")).await, "1");
+    assert_eq!(text(&dst, format!("SELECT count(*) FROM pg_indexes WHERE schemaname = '{b}' AND indexname = 'pedidos_valor_idx'")).await, "1");
+    // A sequência avulsa continua de onde a origem parou.
+    assert_eq!(text(&dst, format!("SELECT nextval('{b}.avulsa')")).await, text(&src, format!("SELECT nextval('{a}.avulsa')")).await);
+    // A sequência da coluna serial também (próximo id = 4).
+    assert_eq!(text(&dst, format!("SELECT nextval('{b}.clientes_id_seq')")).await, "4");
+
+    // Sem "apagar antes", repetir bate nas tabelas que já existem: erro e nada pela metade.
+    let (stats, log) = go(&src, &dst, &spec).await;
+    assert!(stats.errors > 0 && log.iter().any(|l| l.starts_with("[ERR]")), "{log:#?}");
+    assert_eq!(text(&dst, format!("SELECT count(*) FROM {b}.clientes")).await, "3");
+
+    // Apagando antes de criar, repete sem duplicar; filtro e lote por tabela.
+    spec.drop_before_create = true;
+    spec.overrides = vec![TableOverride { table: "pedidos".into(), rows_per_batch: Some(1), recordsets: Some(vec!["valor > 5".into()]), ..Default::default() }];
+    let (stats, log) = go(&src, &dst, &spec).await;
+    assert_eq!(stats.errors, 0, "{log:#?}");
+    assert_eq!(text(&dst, format!("SELECT count(*) FROM {b}.clientes")).await, "3");
+    assert_eq!(text(&dst, format!("SELECT count(*) FROM {b}.pedidos")).await, "1");
+
+    // Só estrutura.
+    spec.data = false;
+    spec.overrides = vec![];
+    let (stats, _) = go(&src, &dst, &spec).await;
+    assert_eq!(stats.transferred, 0);
+    assert_eq!(text(&dst, format!("SELECT count(*) FROM {b}.clientes")).await, "0");
+
+    atlas_pg::execute(&src, &format!("DROP SCHEMA {a} CASCADE"), 1).await.unwrap();
+    atlas_pg::execute(&dst, &format!("DROP SCHEMA {b} CASCADE"), 1).await.unwrap();
 }
 
 #[tokio::test]
