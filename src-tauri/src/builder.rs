@@ -5,7 +5,28 @@
 
 use crate::WebviewArgs;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::webview::PageLoadEvent;
+use tauri::window::Color;
+use tauri::{AppHandle, Manager, State, Theme, WebviewUrl, WebviewWindowBuilder};
+
+/// Cor de fundo da janela enquanto a página carrega (a do tema que a janela principal está mostrando): sem isso o
+/// WebView2 pinta preto no primeiro instante.
+fn backdrop(app: &AppHandle) -> Color {
+    match app.get_webview_window("main").and_then(|m| m.theme().ok()) {
+        Some(Theme::Dark) => Color(38, 38, 38, 255),
+        _ => Color(240, 240, 240, 255),
+    }
+}
+
+/// A janela nasce oculta e só aparece quando a página termina de carregar (evita a tela preta/branca inicial).
+fn show_when_loaded<R: tauri::Runtime>(b: WebviewWindowBuilder<'_, R, AppHandle<R>>) -> WebviewWindowBuilder<'_, R, AppHandle<R>> {
+    b.visible(false).on_page_load(|window, payload| {
+        if matches!(payload.event(), PageLoadEvent::Finished) {
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    })
+}
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -38,7 +59,9 @@ pub async fn open_query_builder(app: AppHandle, args: State<'_, WebviewArgs>, re
         .min_inner_size(900.0, 560.0)
         .center()
         .initialization_script(&init)
+        .background_color(backdrop(&app))
         .additional_browser_args(&args.0);
+    builder = show_when_loaded(builder);
     // Janela "filha": fica à frente da principal e some junto com ela, mas a principal continua utilizável.
     if let Some(main) = app.get_webview_window("main") {
         builder = builder.parent(&main).map_err(|e| e.to_string())?;
@@ -74,14 +97,14 @@ pub async fn open_data_transfer(app: AppHandle, args: State<'_, WebviewArgs>, re
         return Ok(());
     }
     let init = format!("window.__ATLAS_DT__ = {};", serde_json::to_string(&req.params).map_err(|e| e.to_string())?);
-    WebviewWindowBuilder::new(&app, label, WebviewUrl::default())
+    let builder = WebviewWindowBuilder::new(&app, label, WebviewUrl::default())
         .title(&req.title)
         .inner_size(1186.0, 793.0)
         .min_inner_size(900.0, 560.0)
         .center()
         .initialization_script(&init)
-        .additional_browser_args(&args.0)
-        .build()
-        .map_err(|e| e.to_string())?;
+        .background_color(backdrop(&app))
+        .additional_browser_args(&args.0);
+    show_when_loaded(builder).build().map_err(|e| e.to_string())?;
     Ok(())
 }

@@ -121,6 +121,8 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       depois dos dados; **entre schemas com nomes diferentes**, entre servidores e entre versões (9.6 ↔ 18: `CREATE SEQUENCE ... AS`
       é adaptado); "apagar antes de criar", "continuar em erro" (senão estrutura e pós-dados são tudo ou nada) e cancelamento que
       desfaz a tabela em andamento; 1,5 milhão de linhas em 14 s
+- [x] As janelas do sistema à parte (Data Transfer e Query Builder) nascem ocultas, com o fundo na cor do tema, e só aparecem
+      quando a página termina de carregar: sem a tela preta inicial
 - [ ] Destino Arquivo só grava SQL (as opções avançadas por tabela não valem nele); outros formatos de arquivo
 - [ ] Objetos de bancos em outras versões que o planejador não cobre (partições, identidade e colunas geradas no 9.6, privilégios)
 - [ ] Transferir também para conexões ainda fechadas (hoje é preciso abri-las na janela principal)
