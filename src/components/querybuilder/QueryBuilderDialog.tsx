@@ -160,6 +160,15 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
         const tables: QbTable[] = [];
         const saved = await local.getPref<{ k: string; p: QbLayout }[]>(LAYOUTS_KEY).catch(() => null);
         const exact = Array.isArray(saved) ? saved.find((e) => e.k === layoutKey(text))?.p : undefined;
+        // Views e views materializadas por schema (para o cartão ter a cor e o ícone certos).
+        const viewNames = new Map<string, Set<string>>();
+        const isView = async (schema: string, name: string) => {
+          if (!viewNames.has(schema)) {
+            const o = await pg.listObjects(connId, database, schema).catch(() => null);
+            viewNames.set(schema, new Set(o ? [...o.views, ...o.matviews].map((x) => x.name) : []));
+          }
+          return viewNames.get(schema)?.has(name) ?? false;
+        };
         for (const [n, pt] of parsed.tables.entries()) {
           const schema = pt.schema ?? defaultSchema;
           const d = await pg.tableDetail(connId, database, schema, pt.name);
@@ -167,7 +176,7 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
             .filter((c) => c.kind === "f" && c.refTable)
             .map((c) => ({ fields: c.fields.split(", "), refSchema: c.refSchema ?? schema, refTable: c.refTable ?? "", refFields: (c.refFields ?? "").split(", ") }));
           tables.push({
-            id: uid("t"), schema, name: pt.name, alias: pt.alias, view: false, columns: d.columns.map((c) => c.name), fks,
+            id: uid("t"), schema, name: pt.name, alias: pt.alias, view: await isView(schema, pt.name), columns: d.columns.map((c) => c.name), fks,
             x: 24 + (n % 4) * 200, y: 24 + Math.floor(n / 4) * 220,
           });
         }
