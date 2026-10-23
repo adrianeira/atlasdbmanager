@@ -117,6 +117,8 @@ struct Named {
 struct TableSnap {
     name: String,
     unlogged: bool,
+    /// `reloptions` (`fillfactor=70`...), em ordem.
+    options: Vec<String>,
     partition_key: Option<String>,
     partition_bound: Option<String>,
     is_partition: bool,
@@ -201,7 +203,8 @@ async fn load(s: &PgSession, schema: &str, hooks: &mut CompareHooks<'_>, side: &
                         ARRAY(SELECT quote_ident(pn.nspname) || '.' || quote_ident(pc.relname) FROM pg_catalog.pg_inherits i \
                                 JOIN pg_catalog.pg_class pc ON pc.oid = i.inhparent JOIN pg_catalog.pg_namespace pn ON pn.oid = pc.relnamespace \
                                WHERE i.inhrelid = c.oid ORDER BY i.inhseqno), \
-                        pg_get_userbyid(c.relowner)::text, obj_description(c.oid, 'pg_class') \
+                        pg_get_userbyid(c.relowner)::text, obj_description(c.oid, 'pg_class'), \
+                        ARRAY(SELECT o FROM unnest(COALESCE(c.reloptions, ARRAY[]::text[])) o ORDER BY o) \
                    FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
                   WHERE n.nspname = ANY($1) AND c.relkind IN ({kinds}) AND {} ORDER BY c.relname",
                 in_extension("pg_class", "c.oid")
@@ -218,6 +221,7 @@ async fn load(s: &PgSession, schema: &str, hooks: &mut CompareHooks<'_>, side: &
         snap.tables.push(TableSnap {
             name: r.get(1),
             unlogged: r.get(2),
+            options: r.get(9),
             partition_key: r.get(3),
             partition_bound: r.get(4),
             is_partition: r.get(5),
@@ -568,13 +572,18 @@ fn create_table(cx: &Ctx, t: &TableSnap) -> String {
     let tail = t.partition_key.as_ref().map(|k| format!(" PARTITION BY {k}")).unwrap_or_default();
     if t.is_partition {
         let parent = t.parents.first().cloned().unwrap_or_default();
-        return format!("CREATE {persistence}TABLE {q} PARTITION OF {parent} {}{tail}\n;", t.partition_bound.clone().unwrap_or_default());
+        return format!("CREATE {persistence}TABLE {q} PARTITION OF {parent} {}{tail}{}\n;", t.partition_bound.clone().unwrap_or_default(), with_options(t));
     }
     let mut lines: Vec<String> = t.columns.iter().map(|c| format!("  {}", column_line(c))).collect();
     lines.extend(t.constraints.iter().filter(|c| c.kind != "f").map(|c| format!("  CONSTRAINT {} {}", quote_ident(&c.name), c.def)));
     let inherits = if t.parents.is_empty() { String::new() } else { format!("\nINHERITS ({})", t.parents.join(", ")) };
     let body = if lines.is_empty() { "()".to_string() } else { format!("(\n{}\n)", lines.join(",\n")) };
-    format!("CREATE {persistence}TABLE {q} {body}{inherits}{tail}\n;")
+    format!("CREATE {persistence}TABLE {q} {body}{inherits}{tail}{}\n;", with_options(t))
+}
+
+/// ` WITH (fillfactor=70)` ou nada.
+fn with_options(t: &TableSnap) -> String {
+    if t.options.is_empty() { String::new() } else { format!(" WITH ({})", t.options.join(", ")) }
 }
 
 fn add_column(q: &str, c: &Col) -> String {
@@ -804,6 +813,28 @@ fn alter_column(o: &mut Out, cx: &Ctx, q: &str, order: i64, idx: usize, s: &Col,
     }
 }
 
+/// Comandos que igualam as opções da tabela: comentário, `reloptions` e `LOGGED`/`UNLOGGED`.
+fn table_option_changes(q: &str, s: &TableSnap, d: &TableSnap) -> Vec<String> {
+    let mut out = Vec::new();
+    if s.comment != d.comment {
+        out.push(comment_on("TABLE", q, &s.comment));
+    }
+    if s.unlogged != d.unlogged {
+        out.push(format!("ALTER TABLE {q} SET {};", if s.unlogged { "UNLOGGED" } else { "LOGGED" }));
+    }
+    let set: Vec<&String> = s.options.iter().filter(|o| !d.options.contains(o)).collect();
+    if !set.is_empty() {
+        out.push(format!("ALTER TABLE {q} SET ({});", set.iter().map(|o| o.as_str()).collect::<Vec<_>>().join(", ")));
+    }
+    let key = |o: &str| o.split('=').next().unwrap_or(o).to_string();
+    let kept: Vec<String> = s.options.iter().map(|o| key(o)).collect();
+    let reset: Vec<String> = d.options.iter().map(|o| key(o)).filter(|k| !kept.contains(k)).collect();
+    if !reset.is_empty() {
+        out.push(format!("ALTER TABLE {q} RESET ({});", reset.join(", ")));
+    }
+    out
+}
+
 fn diff_table(cx: &Ctx, order: i64, src: Option<&TableSnap>, dst: Option<&TableSnap>) -> ObjectDiff {
     let name = src.or(dst).map(|t| t.name.clone()).unwrap_or_default();
     let q = cx.q(&name);
@@ -874,11 +905,10 @@ fn diff_table(cx: &Ctx, order: i64, src: Option<&TableSnap>, dst: Option<&TableS
             diff_named(&mut o, "index", &s.indexes, &d.indexes, order, &|n| format!("DROP INDEX {}.{};", quote_ident(&qi), quote_ident(&n.name)), &|n| (TABLE_PARTS, format!("{};", n.def)));
             diff_named(&mut o, "trigger", &s.triggers, &d.triggers, order, &|n| format!("DROP TRIGGER {} ON {qt};", quote_ident(&n.name)), &|n| (TABLE_PARTS, format!("{};", n.def)));
             let idx = o.parts.len();
-            if s.comment != d.comment {
-                o.parts.push(Part { kind: "options".into(), name: "(Table Options)".into(), op: Op::Modify });
-                o.push(TABLES, order, Some(idx), comment_on("TABLE", &q, &s.comment));
-            } else {
-                o.parts.push(Part { kind: "options".into(), name: "(Table Options)".into(), op: Op::Same });
+            let changes = table_option_changes(&q, s, d);
+            o.parts.push(Part { kind: "options".into(), name: "(Table Options)".into(), op: if changes.is_empty() { Op::Same } else { Op::Modify } });
+            for sql in changes {
+                o.push(TABLES, order, Some(idx), sql);
             }
             if o.parts.iter().all(|p| p.op == Op::Same) { Op::Same } else { Op::Modify }
         }
@@ -1121,6 +1151,7 @@ mod tests {
         TableSnap {
             name: name.into(),
             unlogged: false,
+            options: vec![],
             partition_key: None,
             partition_bound: None,
             is_partition: false,
@@ -1168,6 +1199,28 @@ mod tests {
         assert!(adapt(stmt, 90619).contains("EXECUTE PROCEDURE s.f()"));
         assert_eq!(adapt(stmt, 180006), stmt);
         assert_eq!(loosen("EXECUTE PROCEDURE s.f()"), loosen("EXECUTE FUNCTION s.f()"));
+    }
+
+    #[test]
+    fn storage_options_are_set_and_reset() {
+        let cx = Ctx { schema: "public".into(), target_version: 180000, loose: false, legacy_sequences: false };
+        let mut s = table("t", vec![col("id", "integer")]);
+        let mut d = s.clone();
+        s.options = vec!["fillfactor=70".into()];
+        d.options = vec!["autovacuum_enabled=false".into()];
+        s.unlogged = true;
+        let diff = diff_table(&cx, 1, Some(&s), Some(&d));
+        let c = StructComparison { objects: vec![diff] };
+        let sel = [StructSelection { kind: "table".into(), name: "t".into(), parts: None }];
+        assert_eq!(
+            script(&c, &sel),
+            vec![
+                r#"ALTER TABLE "public"."t" SET UNLOGGED;"#.to_string(),
+                r#"ALTER TABLE "public"."t" SET (fillfactor=70);"#.to_string(),
+                r#"ALTER TABLE "public"."t" RESET (autovacuum_enabled);"#.to_string(),
+            ]
+        );
+        assert!(create_table(&cx, &s).contains("WITH (fillfactor=70)"));
     }
 
     #[test]

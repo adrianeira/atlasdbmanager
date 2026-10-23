@@ -1645,7 +1645,7 @@ async fn structure_sync_compares_scripts_and_deploys() {
              CREATE TYPE {a}.mood AS ENUM ('sad', 'ok', 'happy'); \
              CREATE SEQUENCE {a}.seq1 INCREMENT BY 2; \
              CREATE SEQUENCE {a}.only_seq; \
-             CREATE TABLE {a}.clients(id integer PRIMARY KEY, name varchar(50) NOT NULL DEFAULT 'x', status boolean, humor {a}.mood); \
+             CREATE TABLE {a}.clients(id integer PRIMARY KEY, name varchar(50) NOT NULL DEFAULT 'x', status boolean, humor {a}.mood) WITH (fillfactor=70); \
              CREATE INDEX idx_name ON {a}.clients(name); \
              COMMENT ON TABLE {a}.clients IS 'clientes'; \
              CREATE TABLE {a}.orders(id serial PRIMARY KEY, client_id integer REFERENCES {a}.clients(id), amount numeric CONSTRAINT amount_ok CHECK (amount >= 0)); \
