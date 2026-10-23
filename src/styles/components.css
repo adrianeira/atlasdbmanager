@@ -1482,12 +1482,22 @@ textarea.field.remarks {
   max-width: calc(100vw - 24px);
   max-height: calc(100vh - 24px);
 }
+/* Mesmo cabeçalho de `.window-title`: fundo branco, sem borda inferior e com o ícone do aplicativo. */
 .modal-header {
   flex: none;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--c-border);
-  background: var(--c-surface-alt);
-  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 12px 0 9px;
+  background: var(--c-surface);
+}
+.modal-header::before {
+  content: "";
+  flex: none;
+  width: 16px;
+  height: 16px;
+  background: url("/logo.png") center / contain no-repeat;
 }
 .modal-body {
   flex: 1;
