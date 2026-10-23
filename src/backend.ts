@@ -770,6 +770,9 @@ export async function onExportProgress(exportId: string, cb: (rows: number) => v
 
 /** Janela nativa "Salvar como". `null` se o usuário cancelar. */
 export async function chooseExportPath(defaultName: string, extensions: string[]): Promise<string | null> {
+  // Só em desenvolvimento: testes automatizados informam o arquivo sem abrir a janela nativa.
+  const injected = import.meta.env.DEV ? (window as { __atlasSavePath?: string }).__atlasSavePath : undefined;
+  if (injected) return injected;
   return save({ defaultPath: defaultName, filters: [{ name: extensions.map((x) => `*.${x}`).join(", "), extensions }] });
 }
 

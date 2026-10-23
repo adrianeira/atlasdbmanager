@@ -108,6 +108,23 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [x] **Table Relation** como no original: a linha liga o centro de cada cartão (bolinhas nas pontas) e leva no meio o
       ícone de diagrama de Venn do tipo de JOIN (INNER, LEFT, RIGHT, FULL); clicar no ícone abre o menu do tipo
 
+### Data Transfer
+- [x] **Janela do sistema à parte** (Tools → Data Transfer...), no desenho do original: **origem** (conexão, banco, schema) e **destino**
+      (conexão ou arquivo), painéis de informação (servidor, porta e versão), botão de trocar origem e destino, árvore de **objetos**
+      (tabelas, views, funções, sequências e tipos, com contagem e marcação em lote), **resumo** e **andamento** com registro
+      `[DTF]`/`[ERR]`, contadores e cronômetro, Salvar/Carregar perfil e Opções (estrutura e/ou dados)
+      *(`src/components/transfer/`, `src-tauri/src/transfer.rs`, `crates/atlas-pg/src/transfer.rs`)*
+- [x] **Modo Advanced por tabela**: nome no destino, campos escolhidos (origem → destino, com ordem), todas as linhas ou **linhas por lote**
+      (cada lote numa transação) ou **filtros** `WHERE` (um por recordset, com o **gerador** de faixas e a **prévia do SQL**)
+- [x] Motor: estrutura pelo planejador do Dump SQL com seleção objeto a objeto (`DumpScope::Selection`), dados em lotes pelo motor de
+      importação (parâmetros com cast; transação por lote ou por tabela), restrições, índices, FKs, views e valores das sequências
+      depois dos dados; **entre schemas com nomes diferentes**, entre servidores e entre versões (9.6 ↔ 18: `CREATE SEQUENCE ... AS`
+      é adaptado); "apagar antes de criar", "continuar em erro" (senão estrutura e pós-dados são tudo ou nada) e cancelamento que
+      desfaz a tabela em andamento; 1,5 milhão de linhas em 14 s
+- [ ] Destino Arquivo só grava SQL (as opções avançadas por tabela não valem nele); outros formatos de arquivo
+- [ ] Objetos de bancos em outras versões que o planejador não cobre (partições, identidade e colunas geradas no 9.6, privilégios)
+- [ ] Transferir também para conexões ainda fechadas (hoje é preciso abri-las na janela principal)
+
 ### Importação de dados
 - [x] **Assistente de importação em 7 etapas** (formato → arquivos → opções da origem → tabela de destino →
       campos → modo → resumo com log e barra de progresso), vários arquivos/planilhas de uma vez (cada um
@@ -411,7 +428,7 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [ ] Formatos que faltam: Access (`.accdb`; não há biblioteca livre que o grave, depende do driver do Windows), Markdown
 - [ ] Exportação agendada (a estrutura junto com os dados já sai pelo Dump SQL)
 - [x] Dump SQL completo (ver "Dump SQL" em Entregues)
-- [ ] Data Transfer entre conexões / bancos
+- [x] Data Transfer entre conexões e bancos (ver "Data Transfer" em Entregues)
 - [ ] Data Synchronization / Structure Synchronization
 
 ## 8. Backup / Restore

@@ -536,7 +536,7 @@ function Wizard({ params }: { params: Params }) {
       <h2 className="dt-h">{t("dt.objects")}</h2>
       <div className="dt-split">
         {tree}
-        <div className="dt-right">{focusTable && advancedPanel ? advancedPanel : <p className="dt-hint">{t("dt.objectsHint")}</p>}</div>
+        <div className="dt-right">{focusTable && advancedPanel && targetKind === "connection" ? advancedPanel : <p className="dt-hint">{focusTable && targetKind === "file" ? t("dt.fileNoAdvanced") : t("dt.objectsHint")}</p>}</div>
       </div>
     </div>
   );
