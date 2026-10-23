@@ -335,6 +335,10 @@ export interface DataTransferConn {
   version: string;
   versionNum: number;
   open: boolean;
+  /** Para a janela abrir a conexão sozinha (a senha vem do cofre pelo `id`). */
+  initialDatabase: string;
+  sslMode?: SslMode;
+  hasPassword?: boolean;
 }
 export interface DataTransferParams {
   connections: DataTransferConn[];

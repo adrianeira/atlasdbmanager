@@ -125,7 +125,9 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       quando a página termina de carregar: sem a tela preta inicial
 - [ ] Destino Arquivo só grava SQL (as opções avançadas por tabela não valem nele); outros formatos de arquivo
 - [ ] Objetos de bancos em outras versões que o planejador não cobre (partições, identidade e colunas geradas no 9.6, privilégios)
-- [ ] Transferir também para conexões ainda fechadas (hoje é preciso abri-las na janela principal)
+- [x] Escolher uma conexão **fechada** na própria janela: ela abre sozinha (senha do cofre; pede a senha só se não houver ou for
+      recusada), lista os bancos e schemas e mostra a versão do servidor; a janela principal não precisa estar com ela aberta
+- [ ] A janela principal ainda mostra fechada a conexão que o Data Transfer abriu (o contrário não acontece)
 
 ### Importação de dados
 - [x] **Assistente de importação em 7 etapas** (formato → arquivos → opções da origem → tabela de destino →

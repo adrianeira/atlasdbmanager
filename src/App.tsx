@@ -1783,6 +1783,7 @@ export default function App() {
           connections: live.map((c) => ({
             id: c.id, name: c.name, provider: c.provider, host: c.host, port: c.port, user: c.user,
             version: c.serverVersion, versionNum: c.serverVersionNum, open: openConnections.has(c.id),
+            initialDatabase: c.initialDatabase, sslMode: c.sslMode, hasPassword: c.hasPassword,
           })),
           source: ctx.connection?.live && ctx.database && ctx.schema ? { connId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name } : undefined,
         }).catch((e) => showError(t("dt.title"), e));

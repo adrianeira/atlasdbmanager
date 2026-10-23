@@ -48,7 +48,14 @@ export function DataTransferWindow() {
 
 function Wizard({ params }: { params: Params }) {
   const t = useT();
-  const conns = params.connections;
+  // Conexões que esta janela abriu sozinha (a janela principal continua achando que estão fechadas, e tudo bem).
+  const [opened, setOpened] = useState<Record<string, { version: string; versionNum: number }>>({});
+  const [connecting, setConnecting] = useState<string | null>(null);
+  const [pwPrompt, setPwPrompt] = useState<{ connId: string; retry?: string } | null>(null);
+  const conns = useMemo(
+    () => params.connections.map((c) => (opened[c.id] ? { ...c, open: true, version: opened[c.id].version, versionNum: opened[c.id].versionNum } : c)),
+    [params.connections, opened],
+  );
   const connOf = useCallback((id: string) => conns.find((c) => c.id === id), [conns]);
   const first = conns.find((c) => c.open) ?? conns[0];
 
@@ -92,6 +99,34 @@ function Wizard({ params }: { params: Params }) {
 
   const sourceConn = connOf(source.connId);
   const targetConn = connOf(target.connId);
+
+  /* ---------- Abrir a conexão escolhida (senha do cofre; pede só se faltar ou for recusada) ---------- */
+  const openConn = async (id: string, password?: string) => {
+    const c = params.connections.find((x) => x.id === id);
+    if (!c || c.open || opened[id] || connecting === id) return;
+    if (password === undefined && !c.hasPassword) {
+      setPwPrompt((p) => p ?? { connId: id });
+      return;
+    }
+    setConnecting(id);
+    setMessage(null);
+    try {
+      const info = await pg.open(id, { host: c.host, port: c.port, database: c.initialDatabase || "postgres", user: c.user, password: password ?? "", sslMode: c.sslMode ?? "disable" }, id);
+      setOpened((o) => ({ ...o, [id]: { version: info.version, versionNum: info.versionNum } }));
+    } catch (e) {
+      const err = toAtlasError(e);
+      if (err.kind === "authenticationFailed") setPwPrompt({ connId: id, retry: errorText(err) });
+      else setMessage(errorText(err));
+    } finally {
+      setConnecting(null);
+    }
+  };
+
+  useEffect(() => {
+    for (const id of new Set([source.connId, targetKind === "connection" ? target.connId : ""])) if (id) void openConn(id);
+    // Só reage à escolha da conexão.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source.connId, target.connId, targetKind]);
 
   /* ---------- Bancos e schemas de cada ponta ---------- */
   const loadDatabases = useCallback(async (connId: string) => {
@@ -347,7 +382,7 @@ function Wizard({ params }: { params: Params }) {
   }, [running, finished, percent, t]);
 
   /* ---------- Peças das etapas ---------- */
-  const connItems = conns.map((c) => ({ value: c.id, label: c.open ? c.name : `${c.name} (${t("dt.closed")})` }));
+  const connItems = conns.map((c) => ({ value: c.id, label: c.name }));
   const connIcon = (c?: DataTransferConn) => (c ? <ProviderIcon provider={c.provider as never} open={c.open} /> : <SmallIcon name="myConnections" />);
 
   const info = (c?: DataTransferConn) => (
@@ -389,6 +424,7 @@ function Wizard({ params }: { params: Params }) {
         <label>{t("dt.schema")}</label>
         <Dropdown className="dt-dd" value={source.schema} items={(sourceSchemas ?? []).map((d) => ({ value: d, label: d }))} leftIcon={<SmallIcon name="schema" />}
           onChange={(v) => { setSource((s) => ({ ...s, schema: v })); setSelected(new Set()); }} disabled={!sourceConn?.open} />
+        {connecting === source.connId && <div className="muted dt-loading"><span className="spinner" />{t("dt.connecting")}</div>}
         <h2 className="dt-h dt-h-gap">{t("dt.information")}</h2>
         {info(sourceConn)}
       </section>
@@ -420,6 +456,7 @@ function Wizard({ params }: { params: Params }) {
             </div>
           </>
         )}
+        {targetKind === "connection" && connecting === target.connId && <div className="muted dt-loading"><span className="spinner" />{t("dt.connecting")}</div>}
         <h2 className="dt-h dt-h-gap">{t("dt.information")}</h2>
         {targetKind === "connection" ? info(targetConn) : <p className="muted">{t("dt.fileNote")}</p>}
       </section>
@@ -638,6 +675,17 @@ function Wizard({ params }: { params: Params }) {
             <div className="modal-footer"><span className="spacer" /><button type="button" className="btn btn-primary" onClick={() => setOptionsOpen(false)}>OK</button></div>
           </div>
         </div>
+      )}
+      {pwPrompt && (
+        <MessageDialog
+          title={t("dt.title")}
+          message={[t("dt.passwordFor", { name: connOf(pwPrompt.connId)?.name ?? "" }), pwPrompt.retry].filter(Boolean).join("\n\n")}
+          prompt={{ label: t("dt.password"), initial: "" }}
+          secret
+          allowEmpty
+          onOk={(pw) => { const id = pwPrompt.connId; setPwPrompt(null); void openConn(id, pw ?? ""); }}
+          onCancel={() => setPwPrompt(null)}
+        />
       )}
       {confirmDrop && <MessageDialog title={t("dt.title")} message={t("dt.confirmDrop")} onOk={() => void start()} onCancel={() => setConfirmDrop(false)} />}
       {namePrompt && <MessageDialog title={t("exp.saveProfile")} prompt={{ label: t("exp.profileName"), initial: "" }} okLabel={t("exp.saveProfile")} onOk={(n) => { if (n) saveProfile(n); }} onCancel={() => setNamePrompt(false)} />}
