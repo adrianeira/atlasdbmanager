@@ -53,6 +53,10 @@ pub struct FindResult {
     pub truncated: bool,
 }
 
+fn is_transient_catalog_error(e: &tokio_postgres::Error) -> bool {
+    e.as_db_error().is_some_and(|d| d.message().contains("could not open relation") || d.message().contains("cache lookup failed"))
+}
+
 /// Condição "a coluna contém o texto" para o modo escolhido (parâmetro `$1`).
 fn matches(col: &str, o: &FindOptions) -> String {
     match (o.regex, o.match_case) {
@@ -178,7 +182,16 @@ pub async fn find(s: &PgSession, o: &FindOptions) -> Result<FindResult, Database
         parts.join(" UNION ALL "),
         MAX_HITS + 1
     );
-    let rows = s.client.query(&sql, &[&text, &o.schema]).await.map_err(|e| map_error(&e))?;
+    // Outra sessão pode apagar um objeto entre a leitura do catálogo e `pg_get_viewdef`/`obj_description`: o servidor
+    // responde "could not open relation" / "cache lookup failed". É passageiro, então tenta mais uma ou duas vezes.
+    let mut attempt = 0;
+    let rows = loop {
+        match s.client.query(&sql, &[&text, &o.schema]).await {
+            Ok(rows) => break rows,
+            Err(e) if attempt < 2 && is_transient_catalog_error(&e) => attempt += 1,
+            Err(e) => return Err(map_error(&e)),
+        }
+    };
     let truncated = rows.len() > MAX_HITS;
     let hits = rows
         .iter()
