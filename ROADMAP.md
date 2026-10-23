@@ -60,6 +60,20 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       *(`.modal-header` em `src/styles/components.css`)*
 - [ ] Botão de fechar (X) no cabeçalho de todos os diálogos (hoje só Conexão e Mensagem têm)
 
+### Query Builder *(prioridade máxima)*
+- [x] **Janela do Query Builder** aberta pelo botão da aba de consulta: árvore de schemas/tabelas/views, canvas
+      com cartões de tabela (arrastar da árvore ou duplo clique, mover pelo título, `Delete` remove), campos
+      marcáveis (inclusive `*`), SQL ao vivo com palavras-chave coloridas, **Build** e **Build and Run**
+      (insere o SELECT no editor e, se houver texto, executa só o novo trecho) e painéis laterais ocultáveis
+      *(`src/components/querybuilder/`, `src/sql/querybuilder.ts`)*
+- [x] **Relações**: JOINs criados sozinhos pelas chaves estrangeiras ao soltar a tabela; ligar campo a campo
+      arrastando; "Field Relation" / "Table Relation"; tipo INNER/LEFT/RIGHT/FULL e remoção na aba FROM
+- [x] Abas **SELECT** (apelido, agregações COUNT/SUM/AVG/MIN/MAX, DISTINCT, ordem), **FROM**, **WHERE** (AND/OR,
+      `=`, `<>`, `<`, `>`, LIKE, ILIKE, IN, BETWEEN, IS NULL...), **GROUP BY**, **HAVING**, **ORDER BY** e **LIMIT/OFFSET**
+- [ ] Reabrir o builder a partir de um SELECT já escrito no editor (hoje ele monta sempre do zero)
+- [ ] Expressões livres no SELECT/WHERE, subconsultas, UNION e tabelas derivadas
+- [ ] Salvar/abrir o desenho (posição dos cartões) junto com a consulta
+
 ### Importação de dados
 - [x] **Assistente de importação em 7 etapas** (formato → arquivos → opções da origem → tabela de destino →
       campos → modo → resumo com log e barra de progresso), vários arquivos/planilhas de uma vez (cada um
@@ -354,7 +368,7 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [ ] Colaboração: comentários, histórico de versões
 - [ ] Compare Database (schema diff)
 - [ ] Server Monitor (métricas, locks, slow queries)
-- [ ] Query Builder visual
+- [x] Query Builder visual (ver "Query Builder" em Entregues)
 - [ ] Pivot Table
 - [ ] Charts a partir de consulta
 - [x] Tema claro/escuro manual (menu Exibir e tela Opções; padrão: seguir o sistema)

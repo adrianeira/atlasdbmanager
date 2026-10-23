@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as R
 import { DataGrid, typeKind, type GridColumn } from "../components/DataGrid";
 import { Dropdown } from "../components/Dropdown";
 import { HistoryDialog } from "../components/HistoryDialog";
+import { QueryBuilderDialog } from "../components/querybuilder/QueryBuilderDialog";
 import { SnippetDialog } from "../components/SnippetDialog";
 import { PopupMenu } from "../components/PopupMenu";
 import { SqlEditor, type SqlEditorHandle } from "../components/SqlEditor";
@@ -146,6 +147,7 @@ export function QueryDoc({
   const [cursor, setCursor] = useState({ line: 1, col: 1 });
   const [running, setRunning] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [builderOpen, setBuilderOpen] = useState(false);
   // Gerenciador de snippets; guarda a seleção do editor para oferecê-la como snippet novo.
   const [snippets, setSnippets] = useState<{ selection: string } | null>(null);
   const [outcome, setOutcome] = useState<RunOutcome | null>(null);
@@ -370,7 +372,7 @@ export function QueryDoc({
     <div className="doc">
       <div className="object-toolbar" role="toolbar">
         {tool("save", "query.save")}
-        {tool("queryBuilder", "query.builder")}
+        {tool("queryBuilder", "query.builder", backend && conn && ctx.database ? () => setBuilderOpen(true) : undefined)}
         {tool("beautify", "query.beautify", beautify)}
         {tool("history", "query.history", () => setHistoryOpen(true))}
         {tool("snippet", "query.snippet", () => setSnippets({ selection: editor.current?.getSelection() ?? "" }))}
@@ -476,6 +478,30 @@ export function QueryDoc({
           </>
         )}
       </div>
+      {builderOpen && conn && ctx.database && (
+        <QueryBuilderDialog
+          connId={conn.id}
+          database={ctx.database}
+          defaultSchema={ctx.schema ?? "public"}
+          onClose={() => setBuilderOpen(false)}
+          onBuild={(sql, andRun) => {
+            const ed = editor.current;
+            setBuilderOpen(false);
+            if (!ed) return;
+            const current = ed.getText();
+            const text = `${sql};`;
+            ed.replaceAll(current.trim() ? `${current.replace(/\s+$/, "")}\n\n${text}` : text);
+            ed.focus();
+            // Com texto antigo no editor, `run` usaria o documento inteiro: seleciona só o SELECT montado.
+            if (andRun) {
+              window.setTimeout(() => {
+                if (current.trim()) ed.selectLast(text);
+                run(false);
+              }, 60);
+            }
+          }}
+        />
+      )}
       {snippets && (
         <SnippetDialog
           initialBody={snippets.selection}

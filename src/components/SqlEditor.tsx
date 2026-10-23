@@ -39,6 +39,8 @@ export interface SqlEditorHandle {
   replaceAll: (text: string) => void;
   /** Insere no cursor (ou no lugar da seleção); `${1:padrão}` vira ponto de tabulação (Tab/Shift+Tab). */
   insertSnippet: (template: string) => void;
+  /** Seleciona o trecho final do documento (para executar só ele). */
+  selectLast: (text: string) => void;
   focus: () => void;
 }
 
@@ -114,6 +116,10 @@ export function SqlEditor({ value, readOnly, schema, defaultSchema, placeholder,
         const { from, to } = v.state.selection.main;
         snippet(template)({ state: v.state, dispatch: v.dispatch }, null, from, to);
         v.focus();
+      },
+      selectLast: (text) => {
+        const end = v.state.doc.length;
+        v.dispatch({ selection: { anchor: Math.max(0, end - text.length), head: end } });
       },
       focus: () => v.focus(),
     });
