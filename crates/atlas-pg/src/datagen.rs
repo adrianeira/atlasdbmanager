@@ -23,7 +23,7 @@ pub enum TextStyle {
 
 /// Como se gera o valor de uma coluna.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum Generator {
     /// Números em sequência. Sem `start`, continua do maior valor que a coluna já tem (mais 1).
     Sequence { start: Option<i64>, step: i64 },

@@ -2420,3 +2420,35 @@ select.et-input {
 .ss-reorder-row span { overflow: hidden; text-overflow: ellipsis; }
 
 .ss-opt-title:not(:first-child) { margin-top: 16px; }
+
+/* ---------- Data Generation ---------- */
+.dt-head.is-single { justify-content: flex-start; padding-left: 50px; gap: 18px; }
+.dt-columns.is-single { grid-template-columns: minmax(0, 470px) 1fr; gap: 0 60px; }
+.dt-aside { display: flex; align-items: flex-start; justify-content: center; padding-top: 14px; }
+.dg-illustration { width: 330px; height: 360px; }
+.dg-hint { font-size: 12px; line-height: 1.35; color: var(--c-text); }
+.dg-objects { flex: 1; min-height: 0; display: grid; grid-template-columns: 360px 1fr; gap: 0; margin: -18px -28px; }
+.dg-pane-left { min-height: 0; overflow: auto; padding: 18px 20px; border-right: 1px solid var(--c-border); }
+.dg-pane-right { min-height: 0; overflow: auto; padding: 18px 30px; }
+.dg-tree { margin-top: 28px; user-select: none; }
+.dg-node { display: flex; align-items: center; gap: 6px; height: 26px; padding-right: 6px; white-space: nowrap; }
+.dg-node input[type="checkbox"] { margin: 0; flex: none; }
+.dg-node .icon16 { flex: none; }
+.dg-node.is-focus { background: var(--c-selected); }
+.dg-node.is-muted { color: var(--c-text-disabled); }
+.dg-dim { color: var(--c-text-muted); }
+.dg-props { display: flex; flex-direction: column; gap: 14px; margin-top: 28px; max-width: 460px; }
+.dg-field { display: grid; grid-template-columns: 190px 1fr; align-items: center; gap: 10px; }
+.dg-field.is-top { align-items: start; }
+.dg-rows { max-width: 200px; }
+.dg-values { min-height: 120px; resize: vertical; font-family: var(--font-mono); }
+.dg-dd { width: 100%; }
+.dg-preview { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: -18px -28px; padding: 18px 20px 0; }
+.dg-preview-bar { display: flex; align-items: center; gap: 12px; margin: 12px 0; }
+.dg-preview-bar .dg-dd { width: 240px; }
+.dg-grid-wrap { flex: 1; min-height: 0; overflow: auto; background: var(--c-surface); border: 1px solid var(--c-border); }
+.dg-grid { min-width: 0; }
+.dg-grid td { max-width: 260px; }
+.dg-rownum { width: 44px; text-align: right; color: var(--c-text-muted); background: var(--c-surface-alt); }
+.dg-grid td.is-null { color: var(--c-text-muted); font-style: italic; }
+.dg-order { width: 420px; }

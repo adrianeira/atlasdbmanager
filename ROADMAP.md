@@ -376,6 +376,20 @@ Também sincroniza as opções de armazenamento da tabela (`reloptions`, `LOGGED
 Fora desta entrega: privilégios por coluna, opções de armazenamento de índices e views, e a mudança do tipo base de um domínio e do
 subtipo de um tipo faixa (o script avisa por comentário).
 
+### Data Generation
+Tools → Data Generation abre uma janela do sistema (como o Data Transfer): destino (conexão, banco e schema, com a conexão abrindo
+sozinha), árvore de tabelas e campos com a quantidade de linhas por tabela (1000 por padrão) e o gerador de cada coluna,
+"Table Generation Order" (as tabelas referenciadas saem na frente), prévia de 100 linhas com "Regenerate", execução com
+registro (`[DGR]`) e contadores (objetos, registros gerados e inseridos, erros, tempo), perfis salvos e as opções
+"Continuar em caso de erro", "Esvaziar as tabelas antes", "Usar transação" e "Vários comandos de inserção".
+O gerador sugerido sai do tipo da coluna, da chave e do padrão: sequência (que continua do maior valor existente e deixa a
+sequência serial no lugar certo), inteiro, decimal (respeitando precisão e escala), texto (frases, palavras ou letras, dentro do
+tamanho da coluna), data, data e hora, booleano, UUID, lista (os rótulos de um enum), valor fixo, nulo e referência (um valor que
+já existe na tabela da chave estrangeira, então as linhas filhas nunca ficam órfãs); colunas que aceitam nulo ganham a
+porcentagem de nulos. Testado ao vivo em 9.6 e 18 (descrever, prévia, gerar, falha com e sem "continuar", esvaziar antes).
+Fora desta entrega: chaves estrangeiras compostas (cada coluna sorteia o valor sozinha), tipos sem gerador próprio (que saem
+nulos ou vazios até o usuário escolher um) e o painel de propriedades por coluna, que foi desenhado sem captura da referência.
+
 ## Limitações conhecidas
 - Exportar o resultado de uma consulta exige um único comando que devolva linhas.
 - Exportação de tabela sem filtro/ordenação usa a ordem natural do servidor.
@@ -409,7 +423,7 @@ subtipo de um tipo faixa (o script avisa por comentário).
       *(`src/components/FilterSortDialog.tsx`, `crates/atlas-pg/src/exec.rs`)*
 - [x] Columns (mostrar/ocultar colunas)
 - [ ] Data Profiling *(sem handler)*
-- [ ] Data Generation *(sem handler)*
+- [x] Data Generation (ver "Data Generation" em Entregues)
 - [ ] Create BI Workspace *(sem handler)*
 - [x] Begin Transaction manual (ver "Grid de dados" em Entregues)
 - [x] Cell Editor expandido para texto grande / JSON (painel inferior com textarea, quebra de

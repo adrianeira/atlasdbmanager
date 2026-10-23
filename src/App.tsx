@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  appReady, errorText, isDesktop, local, onOpenScript, openDataSync, openDataTransfer, openStructSync, pg, toAtlasError, type OpenScriptRequest,
+  appReady, errorText, isDesktop, local, onOpenScript, openDataGen, openDataSync, openDataTransfer, openStructSync, pg, toAtlasError, type OpenScriptRequest,
   type ConnectionParams, type DatabaseDetail, type DumpScope, type FindHit, type ProfileRecord, type SchemaDetail,
 } from "./backend";
 import { entries, matchesShortcut, sub, type CommandMap, type MenuDef, type MenuEntry } from "./commands";
@@ -1835,6 +1835,21 @@ export default function App() {
         }).catch((e) => showError(t("ss.title"), e));
       },
     },
+    dataGen: {
+      id: "dataGen", label: "cmd.dataGen",
+      run: () => {
+        const live = connections.filter((c) => c.live);
+        if (live.length === 0) return;
+        void openDataGen(t("dg.title"), {
+          connections: live.map((c) => ({
+            id: c.id, name: c.name, provider: c.provider, host: c.host, port: c.port, user: c.user,
+            version: c.serverVersion, versionNum: c.serverVersionNum, open: openConnections.has(c.id),
+            initialDatabase: c.initialDatabase, sslMode: c.sslMode, hasPassword: c.hasPassword,
+          })),
+          source: ctx.connection?.live && ctx.database && ctx.schema ? { connId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name } : undefined,
+        }).catch((e) => showError(t("dg.title"), e));
+      },
+    },
     serverMonitor: { id: "serverMonitor", label: "cmd.serverMonitor" },
     options: { id: "options", label: "cmd.options", run: () => setDialog({ kind: "options" }) },
     nextTab: { id: "nextTab", label: "cmd.nextTab", shortcut: "Ctrl+Tab", run: () => cycleTab(1) },
@@ -1906,7 +1921,7 @@ export default function App() {
   const tableMenu: MenuDef = { label: "menu.table", items: entries("addRecord", "deleteRecord", "-", "applyChanges", "discardChanges", "-", "refreshData") };
   const tailMenus: MenuDef[] = [
     { label: "menu.favorites", items: entries("addFavorite", "manageFavorites") },
-    { label: "menu.tools", items: entries("dataTransfer", "dataSync", "structureSync", "-", "serverMonitor", "-", "options") },
+    { label: "menu.tools", items: entries("dataTransfer", "dataSync", "structureSync", "dataGen", "-", "serverMonitor", "-", "options") },
     { label: "menu.window", items: entries("nextTab", "previousTab", "-", "closeTab", "closeAllTabs") },
     { label: "menu.help", items: entries("documentation", "-", "about") },
   ];

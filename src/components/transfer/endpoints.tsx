@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { chooseExportPath, errorText, pg, toAtlasError, type DataTransferConn, type DataTransferParams } from "../../backend";
 import { useT } from "../../i18n";
 import { ProviderIcon, SmallIcon } from "../../icons";
@@ -23,7 +23,7 @@ export function Arrow() {
  * Origem e destino das janelas Data Transfer e Data Synchronization: conexão, banco e schema de cada lado, abrir a conexão
  * escolhida (senha do cofre; pede só se faltar), listas de bancos e schemas, cabeçalho, painéis de informação e a troca.
  */
-export function useEndpoints(params: DataTransferParams, opts: { allowFile: boolean; onSourceChange?: () => void }) {
+export function useEndpoints(params: DataTransferParams, opts: { allowFile: boolean; onSourceChange?: () => void; /** Um lado só (Data Generation): o destino, com `aside` no lugar do outro lado. */ single?: boolean; aside?: ReactNode }) {
   const t = useT();
   // Conexões que a janela abriu sozinha (a janela principal continua achando que estão fechadas, e tudo bem).
   const [opened, setOpened] = useState<Record<string, { version: string; versionNum: number }>>({});
@@ -68,7 +68,7 @@ export function useEndpoints(params: DataTransferParams, opts: { allowFile: bool
   };
 
   useEffect(() => {
-    for (const id of new Set([source.connId, targetKind === "connection" ? target.connId : ""])) if (id) void openConn(id);
+    for (const id of new Set([source.connId, targetKind === "connection" && !opts.single ? target.connId : ""])) if (id) void openConn(id);
     // Só reage à escolha da conexão.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source.connId, target.connId, targetKind]);
@@ -127,7 +127,8 @@ export function useEndpoints(params: DataTransferParams, opts: { allowFile: bool
 
   /** O que falta para sair da primeira etapa (origem e destino escolhidos e abertos), ou `null`. */
   const endpointProblem = (): string | null => {
-    if (!sourceReady) return sourceConn && !sourceConn.open ? t("dt.needOpen", { name: sourceConn.name }) : t("dt.needSource");
+    if (!sourceReady) return sourceConn && !sourceConn.open ? t("dt.needOpen", { name: sourceConn.name }) : t(opts.single ? "dt.needTarget" : "dt.needSource");
+    if (opts.single) return null;
     if (targetKind === "connection" && targetConn && !targetConn.open) return t("dt.needOpen", { name: targetConn.name });
     if (!targetReady) return t("dt.needTarget");
     if (sameTarget) return t("dt.sameTarget");
@@ -171,7 +172,12 @@ export function useEndpoints(params: DataTransferParams, opts: { allowFile: bool
   const [srcA, srcB] = label(sourceConn, source);
   const [dstA, dstB] = label(targetConn, target, targetKind === "file");
 
-  const header = (
+  const header = opts.single ? (
+    <div className="dt-head is-single">
+      <SmallIcon name="database" size={34} />
+      <div className="dt-end"><span>{srcA}</span><span>{srcB}</span></div>
+    </div>
+  ) : (
     <div className="dt-head">
       <div className="dt-end is-left"><span>{srcA}</span><span>{srcB}</span></div>
       <SmallIcon name="database" size={26} />
@@ -183,9 +189,9 @@ export function useEndpoints(params: DataTransferParams, opts: { allowFile: bool
 
   const changed = () => opts.onSourceChange?.();
   const connectStep = (
-    <div className="dt-columns">
+    <div className={`dt-columns${opts.single ? " is-single" : ""}`}>
       <section className="dt-side">
-        <h2 className="dt-h">{t("dt.source")}</h2>
+        <h2 className="dt-h">{t(opts.single ? "dt.target" : "dt.source")}</h2>
         <label>{t("dt.connection")}</label>
         <Dropdown className="dt-dd" value={source.connId} items={connItems} leftIcon={connIcon(sourceConn)} onChange={(v) => { setSource({ connId: v, database: "", schema: "" }); changed(); }} />
         <label>{t("dt.database")}</label>
@@ -198,6 +204,8 @@ export function useEndpoints(params: DataTransferParams, opts: { allowFile: bool
         <h2 className="dt-h dt-h-gap">{t("dt.information")}</h2>
         {info(sourceConn)}
       </section>
+      {opts.single ? <div className="dt-aside">{opts.aside}</div> : (
+        <>
       <button type="button" className="dt-swap" title={t("dt.swap")} aria-label={t("dt.swap")} onClick={swap} disabled={targetKind !== "connection"}>
         <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><path d="M5 9h15M16 5l4 4-4 4M21 17H6M10 13l-4 4 4 4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
       </button>
@@ -232,6 +240,8 @@ export function useEndpoints(params: DataTransferParams, opts: { allowFile: bool
         <h2 className="dt-h dt-h-gap">{t("dt.information")}</h2>
         {targetKind === "connection" ? info(targetConn) : <p className="muted">{t("dt.fileNote")}</p>}
       </section>
+        </>
+      )}
     </div>
   );
 

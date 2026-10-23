@@ -440,6 +440,47 @@ export async function onSyncDeployProgress(id: string, cb: (done: number, total:
   });
 }
 
+/* ----- Data Generation (janela separada) ----- */
+
+export type TextStyle = "sentence" | "words" | "letters";
+export type Generator =
+  | { kind: "sequence"; start: number | null; step: number }
+  | { kind: "integer"; min: number; max: number }
+  | { kind: "decimal"; min: number; max: number; scale: number }
+  | { kind: "text"; minLen: number; maxLen: number; style: TextStyle }
+  | { kind: "dateTime"; from: string; to: string }
+  | { kind: "date"; from: string; to: string }
+  | { kind: "boolean"; truePercent: number }
+  | { kind: "uuid" }
+  | { kind: "list"; values: string[] }
+  | { kind: "fixed"; value: string }
+  | { kind: "null" }
+  | { kind: "reference"; table: string; column: string };
+export type GeneratorKind = Generator["kind"];
+export interface GenColumnMeta { name: string; dataType: string; notNull: boolean; isPk: boolean; generated: boolean; charLen: number | null; suggested: Generator }
+export interface GenTableMeta { name: string; columns: GenColumnMeta[]; dependsOn: string[] }
+export interface GenColumnSpec { name: string; generator: Generator; nullPercent: number }
+export interface GenTableSpec { name: string; rows: number; columns: GenColumnSpec[] }
+export interface GenOptions { continueOnError: boolean; emptyFirst: boolean; transaction: boolean; multiInsert: boolean }
+export interface GenSpec { schema: string; tables: GenTableSpec[]; options: GenOptions }
+export interface GenPreview { columns: string[]; rows: (string | null)[][] }
+export interface GenStats { objects: number; generated: number; inserted: number; errors: number }
+export interface GenResult extends GenStats { elapsedMs: number }
+
+/** Abre (ou traz para a frente) a janela do Data Generation. */
+export const openDataGen = (title: string, params: DataTransferParams) => call<void>("open_data_gen", { req: { title, params: { ...params, title } } });
+
+export async function onGenLog(id: string, cb: (line: string) => void): Promise<() => void> {
+  return listen<{ id: string; line: string }>("datagen-log", (e) => {
+    if (e.payload.id === id) cb(e.payload.line);
+  });
+}
+export async function onGenProgress(id: string, cb: (s: GenStats) => void): Promise<() => void> {
+  return listen<GenStats & { id: string }>("datagen-progress", (e) => {
+    if (e.payload.id === id) cb(e.payload);
+  });
+}
+
 /* ----- Structure Synchronization (janela separada) ----- */
 
 export type StructOp = "add" | "delete" | "modify" | "same";
@@ -794,6 +835,9 @@ export const pg = {
   syncScript: (compareId: string, selection: SyncSelection[]) => call<SyncScript>("datasync_script", { compareId, selection }),
   syncScriptFull: (compareId: string, selection: SyncSelection[]) => call<string>("datasync_script_full", { compareId, selection }),
   syncDeploy: (req: SyncDeployRequest) => call<SyncDeployCounts>("datasync_deploy", { req }),
+  genDescribe: (conn: string, database: string, schema: string) => call<GenTableMeta[]>("datagen_describe", { conn, database, schema }),
+  genPreview: (conn: string, database: string, schema: string, table: GenTableSpec, rows: number) => call<GenPreview>("datagen_preview", { conn, database, schema, table, rows }),
+  genRun: (req: { runId: string; conn: string; database: string; spec: GenSpec }) => call<GenResult>("datagen_run", { req }),
   structCompare: (req: StructCompareRequest) => call<StructObject[]>("structsync_compare", { req }),
   structScript: (compareId: string, selection: StructSelection[]) => call<string[]>("structsync_script", { compareId, selection }),
   structDeploy: (req: StructDeployRequest) => call<SyncDeployCounts>("structsync_deploy", { req }),
