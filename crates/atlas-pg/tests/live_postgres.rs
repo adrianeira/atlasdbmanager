@@ -1759,3 +1759,45 @@ async fn structure_sync_compares_scripts_and_deploys() {
     atlas_pg::execute(&src, &format!("DROP SCHEMA {a} CASCADE"), 1).await.unwrap();
     atlas_pg::execute(&dst, &format!("DROP SCHEMA {b} CASCADE"), 1).await.unwrap();
 }
+
+#[tokio::test]
+async fn structure_sync_alters_generated_columns() {
+    use atlas_pg::{CompareHooks, DeployHooks, StructOp, StructSelection, StructSpec};
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    if s.server.version_num < 170000 {
+        eprintln!("coluna gerada com SET EXPRESSION exige PostgreSQL 17: teste pulado");
+        return;
+    }
+    let pid = std::process::id();
+    let (a, b) = (format!("atlas_sg_a_{pid}"), format!("atlas_sg_b_{pid}"));
+    atlas_pg::execute(
+        &s,
+        &format!(
+            "DROP SCHEMA IF EXISTS {a} CASCADE; DROP SCHEMA IF EXISTS {b} CASCADE; CREATE SCHEMA {a}; CREATE SCHEMA {b}; \
+             CREATE TABLE {a}.t(x integer, g integer GENERATED ALWAYS AS (x + 1) STORED, p integer GENERATED ALWAYS AS (x * 2) STORED, h integer); \
+             CREATE TABLE {b}.t(x integer, g integer GENERATED ALWAYS AS (x + 2) STORED, p integer, h integer GENERATED ALWAYS AS (x * 3) STORED); \
+             INSERT INTO {b}.t(x, p) VALUES (1, 7)"
+        ),
+        1,
+    )
+    .await
+    .expect("ddl");
+    let spec = StructSpec { source_schema: a.clone(), target_schema: b.clone() };
+    let c = atlas_pg::compare_structure(&s, &s, &spec, CompareHooks { progress: &mut |_: &str, _: f64| {}, cancelled: &|| false }).await.expect("compare");
+    let table = c.objects.iter().find(|o| o.kind == "table" && o.name == "t").expect("table");
+    assert_eq!(table.op, StructOp::Modify);
+    let statements = atlas_pg::structure_script(&c, &[StructSelection { kind: "table".into(), name: "t".into(), parts: None }]);
+    assert!(statements.iter().any(|x| x.contains("SET EXPRESSION AS")), "{statements:#?}");
+    assert!(statements.iter().any(|x| x.contains("DROP EXPRESSION")), "{statements:#?}");
+    let mut log = Vec::new();
+    let stats = {
+        let mut on_log = |l: String| log.push(l);
+        atlas_pg::deploy_data(&s, &statements, false, false, DeployHooks { log: &mut on_log, progress: &mut |_: u64, _: u64| {}, cancelled: &|| false, echo: false }).await.expect("deploy")
+    };
+    assert_eq!(stats.errors, 0, "{log:#?} {statements:#?}");
+    let again = atlas_pg::compare_structure(&s, &s, &spec, CompareHooks { progress: &mut |_: &str, _: f64| {}, cancelled: &|| false }).await.expect("compare");
+    let left: Vec<String> = again.objects.iter().filter(|o| o.op != StructOp::Same).map(|o| o.name.clone()).collect();
+    assert!(left.is_empty(), "{left:?}");
+    atlas_pg::execute(&s, &format!("DROP SCHEMA {a} CASCADE; DROP SCHEMA {b} CASCADE"), 1).await.unwrap();
+}
