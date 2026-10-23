@@ -360,6 +360,81 @@ export async function onTransferLog(id: string, cb: (line: string) => void): Pro
   });
 }
 
+/* ----- Data Synchronization (janela separada) ----- */
+
+export interface SyncTableSpec {
+  source: string;
+  target: string;
+  /** Ausente = a chave primária da origem. */
+  key?: TransferFieldMap[];
+  /** Ausente = os campos de mesmo nome. */
+  fields?: TransferFieldMap[];
+}
+export interface SyncSpec { sourceSchema: string; targetSchema: string; tables: SyncTableSpec[] }
+export interface SyncCompareRequest {
+  compareId: string;
+  sourceConn: string;
+  sourceDatabase: string;
+  targetConn: string;
+  targetDatabase: string;
+  spec: SyncSpec;
+}
+export interface SyncTableSummary {
+  source: string;
+  target: string;
+  insert: number;
+  update: number;
+  delete: number;
+  same: number;
+  message: string | null;
+  sourceFields: string[];
+  targetFields: string[];
+  keyPositions: number[];
+  rows: number;
+}
+export interface SyncSummary { tables: SyncTableSummary[] }
+export interface SyncRow {
+  /** Número da linha na lista da tabela (o que se marca e desmarca). */
+  id: number;
+  kind: "insert" | "update" | "delete";
+  source: (string | null)[] | null;
+  target: (string | null)[] | null;
+  changed: boolean[];
+}
+export interface SyncRowsPage { total: number; rows: SyncRow[] }
+export interface SyncSelection { table: string; insert: boolean; update: boolean; delete: boolean; excluded: number[] }
+export interface SyncScript { statements: number; text: string; truncated: boolean }
+export interface SyncDeployRequest {
+  deployId: string;
+  compareId: string;
+  targetConn: string;
+  targetDatabase: string;
+  selection: SyncSelection[];
+  transaction: boolean;
+  continueOnError: boolean;
+}
+export interface SyncDeployCounts { total: number; done: number; errors: number; rolledBack: boolean; elapsedMs: number }
+
+/** Abre (ou traz para a frente) a janela do Data Synchronization. */
+export const openDataSync = (title: string, params: DataTransferParams) => call<void>("open_data_sync", { req: { title, params: { ...params, title } } });
+
+/** Progresso da comparação: o que está sendo lido e a fração concluída. */
+export async function onSyncProgress(id: string, cb: (text: string, fraction: number) => void): Promise<() => void> {
+  return listen<{ id: string; text: string; fraction: number }>("datasync-progress", (e) => {
+    if (e.payload.id === id) cb(e.payload.text, e.payload.fraction);
+  });
+}
+export async function onSyncLog(id: string, cb: (line: string) => void): Promise<() => void> {
+  return listen<{ id: string; line: string }>("datasync-log", (e) => {
+    if (e.payload.id === id) cb(e.payload.line);
+  });
+}
+export async function onSyncDeployProgress(id: string, cb: (done: number, total: number) => void): Promise<() => void> {
+  return listen<{ id: string; done: number; total: number }>("datasync-deploy-progress", (e) => {
+    if (e.payload.id === id) cb(e.payload.done, e.payload.total);
+  });
+}
+
 /** O que o dump SQL cobre. */
 export type DumpScope =
   | { kind: "database" }
@@ -677,6 +752,13 @@ export const pg = {
     call<TableDetail>("pg_table_detail", { sessionId, database, schema, table }),
   viewDetail: (sessionId: string, database: string, schema: string, view: string) =>
     call<ViewDetail>("pg_view_detail", { sessionId, database, schema, view }),
+  syncCompare: (req: SyncCompareRequest) => call<SyncSummary>("datasync_compare", { req }),
+  syncRows: (compareId: string, table: string, kind: string | null, offset: number, limit: number) =>
+    call<SyncRowsPage>("datasync_rows", { compareId, table, kind, offset, limit }),
+  syncScript: (compareId: string, selection: SyncSelection[]) => call<SyncScript>("datasync_script", { compareId, selection }),
+  syncScriptFull: (compareId: string, selection: SyncSelection[]) => call<string>("datasync_script_full", { compareId, selection }),
+  syncDeploy: (req: SyncDeployRequest) => call<SyncDeployCounts>("datasync_deploy", { req }),
+  syncForget: (compareId: string) => call<void>("datasync_forget", { compareId }),
   transfer: (req: TransferRequest) => call<TransferCounts>("pg_transfer", { req }),
   importListTables: (path: string, format: ImportFormat) => call<string[]>("import_list_tables", { path, format }),
   importPreview: (spec: SourceSpec, convert: ConvertOptions, limit: number) => call<ImportPreview>("import_preview", { spec, convert, limit }),

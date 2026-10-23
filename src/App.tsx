@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  appReady, errorText, isDesktop, local, openDataTransfer, pg, toAtlasError,
+  appReady, errorText, isDesktop, local, openDataSync, openDataTransfer, pg, toAtlasError,
   type ConnectionParams, type DatabaseDetail, type DumpScope, type FindHit, type ProfileRecord, type SchemaDetail,
 } from "./backend";
 import { entries, matchesShortcut, sub, type CommandMap, type MenuDef, type MenuEntry } from "./commands";
@@ -1789,7 +1789,21 @@ export default function App() {
         }).catch((e) => showError(t("dt.title"), e));
       },
     },
-    dataSync: { id: "dataSync", label: "cmd.dataSync" },
+    dataSync: {
+      id: "dataSync", label: "cmd.dataSync",
+      run: () => {
+        const live = connections.filter((c) => c.live);
+        if (live.length === 0) return;
+        void openDataSync(t("ds.title"), {
+          connections: live.map((c) => ({
+            id: c.id, name: c.name, provider: c.provider, host: c.host, port: c.port, user: c.user,
+            version: c.serverVersion, versionNum: c.serverVersionNum, open: openConnections.has(c.id),
+            initialDatabase: c.initialDatabase, sslMode: c.sslMode, hasPassword: c.hasPassword,
+          })),
+          source: ctx.connection?.live && ctx.database && ctx.schema ? { connId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name } : undefined,
+        }).catch((e) => showError(t("ds.title"), e));
+      },
+    },
     structureSync: { id: "structureSync", label: "cmd.structureSync" },
     serverMonitor: { id: "serverMonitor", label: "cmd.serverMonitor" },
     options: { id: "options", label: "cmd.options", run: () => setDialog({ kind: "options" }) },

@@ -351,6 +351,14 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 ### i18n
 - [x] Novas chaves `data.find.*`, `dtp.*`, `grid.generated`, `cmd.closeSchema` (pt + en)
 
+### Data Synchronization
+Tools → Data Synchronization abre uma janela do sistema (como o Data Transfer): origem/destino com conexão que abre sozinha,
+grade de tabelas com tabela de destino, mapeamento de chave e de campos, modos Comparar e visualizar / Comparar e implantar.
+O resultado mostra inserir/atualizar/excluir/iguais por tabela, marcação por categoria e por linha, filtro e painéis
+origem × destino; depois vêm o Script de implantação (copiar), a implantação (transação, continuar em erro, savepoints) com
+o Registro, perfis salvos e opções padrão. Testado ao vivo entre PG 9.6 e PG 18 (comparação, script, implantação e nova
+comparação sem diferenças).
+
 ## Limitações conhecidas
 - Exportar o resultado de uma consulta exige um único comando que devolva linhas.
 - Exportação de tabela sem filtro/ordenação usa a ordem natural do servidor.
@@ -433,7 +441,8 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [ ] Exportação agendada (a estrutura junto com os dados já sai pelo Dump SQL)
 - [x] Dump SQL completo (ver "Dump SQL" em Entregues)
 - [x] Data Transfer entre conexões e bancos (ver "Data Transfer" em Entregues)
-- [ ] Data Synchronization / Structure Synchronization
+- [x] Data Synchronization entre conexões e bancos (ver "Data Synchronization" em Entregues)
+- [ ] Structure Synchronization (capturas em `capturas/Tools/Structure Synchronization`)
 
 ## 8. Backup / Restore
 - [x] **Novo backup do schema ou do banco inteiro** (menu do banco, do schema e categoria Backup) no formato da referência: abas **Geral**
