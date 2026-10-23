@@ -116,6 +116,48 @@ pub struct SchemaObjects {
     pub extensions: Vec<ExtensionInfo>,
 }
 
+/// Coluna de um cartão do diagrama ER (tamanho e decimais no mesmo formato de `ColumnInfo`).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagramColumn {
+    pub name: String,
+    pub data_type: String,
+    pub length: i32,
+    pub decimal: i32,
+    pub is_pk: bool,
+    pub is_fk: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagramTable {
+    pub name: String,
+    pub columns: Vec<DiagramColumn>,
+}
+
+/// Chave estrangeira de uma tabela do schema (a tabela referenciada pode estar em outro schema).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagramRelation {
+    pub name: String,
+    pub table: String,
+    pub columns: Vec<String>,
+    pub ref_schema: String,
+    pub ref_table: String,
+    pub ref_columns: Vec<String>,
+    /// Obrigatória: todas as colunas da chave são `NOT NULL` na tabela que a tem (toda linha precisa referenciar uma da outra).
+    /// Se alguma aceita nulo, a referência é opcional.
+    pub required: bool,
+}
+
+/// Tudo o que o diagrama ER de um schema precisa, lido de uma vez.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SchemaDiagram {
+    pub tables: Vec<DiagramTable>,
+    pub relations: Vec<DiagramRelation>,
+}
+
 /// Extensão instalada (`pg_extension`).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

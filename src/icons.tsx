@@ -583,6 +583,13 @@ const small: Record<string, ReactElement> = {
       <rect x="9" y="9" width="5" height="5" fill="none" stroke="currentColor" />
     </>
   ),
+  viewEr: (
+    <>
+      <rect x="1.5" y="2.5" width="6" height="5" fill="none" stroke="currentColor" />
+      <rect x="8.5" y="9" width="6" height="5" fill="none" stroke="currentColor" />
+      <path d="M7.5 5h2.5v4" fill="none" stroke="currentColor" />
+    </>
+  ),
   paneNav: (
     <>
       <rect x="1.5" y="2.5" width="13" height="11" fill="none" stroke="currentColor" />

@@ -445,12 +445,28 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 
 ## 14. Área de objetos / menu Exibir
 Hoje o menu Exibir tem só Lista, Detalhe e Ícones (`viewMode` em `src/App.tsx`). O que falta para igualar o da referência:
-- [ ] **ER Diagram** como modo de exibição da área de objetos (Exibir → ER Diagram): desenha ao vivo as tabelas do
-      schema como cartões, com as chaves estrangeiras como linhas e o nome da FK sobre elas; opções **Show Grid**,
-      **Snap to Grid** e **Show Foreign Key Names**; barra inferior com Refresh, ferramentas de selecionar, mover e
-      ligar, Preview e Size. Não é a Modelagem da seção 10 (projetar um modelo): aqui é a visão do schema como ele
-      está no banco. Dá para reaproveitar o canvas de cartões e relações do Query Builder
-      *(`src/components/querybuilder/`)*
+- [x] **ER Diagram** como modo de exibição da área de objetos (Exibir → ER Diagram, ou o botão na barra de status; vale
+      para a lista de tabelas de um schema): desenha as tabelas do schema como cartões (colunas com tipo e ícone de
+      **PK** e **FK**) e as chaves estrangeiras como linhas com cotovelo, com o nome da FK sobre elas. Os cartões se
+      arrastam (a posição é lembrada por schema), entram já arrumados (tabelas ligadas ficam vizinhas) e o canvas rola;
+      clicar seleciona (os botões Abrir/Projetar tabela e o menu de contexto valem), duplo clique abre a tabela.
+      **Clicar numa linha** seleciona a chave estrangeira: a linha engrossa com bolinhas nas pontas, os dois cartões
+      ganham contorno e as colunas da chave ficam destacadas; passar o mouse mostra o nome da FK e a tabela que a
+      referencia ("Referenciando: ..."). Os rótulos levam o ícone de corrente e ficam ao lado da linha, perto da tabela
+      que tem a chave, e dizem se a referência é **obrigatória** (todas as colunas da chave são `NOT NULL`) ou
+      **opcional** (alguma aceita nulo); a dica repete. Com a linha selecionada, uma **alça** no meio dela (ou arrastar a própria linha) **reposiciona**
+      o trecho do meio: a parte vertical do cotovelo ou a altura/posição da linha reta, sempre entre os dois cartões;
+      o caminho fica salvo por schema e o **duplo clique** na linha volta ao automático. Arrastar a **bolinha de uma
+      ponta** mostra os 4 pontos de ligação do cartão (topo, direita, base, esquerda) e a linha passa a sair/entrar pelo
+      mais próximo, refazendo-se ao vivo; o lado escolhido também fica salvo. A rota não desvia de outros cartões que
+      estejam no caminho. As
+      opções **Show Grid**, **Snap to Grid** e **Show Foreign Key Names** ficam no menu Exibir e são lembradas; o botão
+      Atualizar relê o schema. Os dados vêm de uma consulta só (`pg_schema_diagram`); sem servidor, usa as tabelas da
+      demonstração. Não é a Modelagem da seção 10: aqui é a visão do schema como ele está no banco
+      *(`src/components/ErDiagram.tsx`, `src/er.ts`, `crates/atlas-pg/src/meta.rs`)*
+- Ainda não há no ER Diagram: zoom, ferramentas de ligar (criar chave estrangeira pelo desenho), Preview e Size da barra
+  inferior da referência, chaves para tabelas de outro schema (não têm cartão), tabelas com mais de 40 colunas mostram as
+  40 primeiras e a linha "mais N colunas"
 - [ ] **Flatten Object List**: lista única dos objetos do schema, sem as pastas
 - [ ] **Sort**: ordenação da lista de objetos (nome, tipo...)
 - [ ] **Choose Columns**: escolher as colunas exibidas na lista de objetos *(o grid de dados já tem "Columns")*

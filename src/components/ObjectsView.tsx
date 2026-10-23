@@ -3,9 +3,15 @@ import type { MessageKey } from "../i18n";
 import { useT } from "../i18n";
 import { SmallIcon, type SmallIconName } from "../icons";
 import { formatBytes, formatInt, functionLabel, type Category, type DbObject, type NodeContext } from "../model";
+import { pg } from "../backend";
+import { diagramFromObjects } from "../er";
+import { ErDiagram } from "./ErDiagram";
 import { PopupMenu } from "./PopupMenu";
 
-export type ViewMode = "list" | "detail" | "icons";
+export type ViewMode = "list" | "detail" | "icons" | "er";
+
+/** Opções do diagrama ER (menu Exibir). */
+export interface ErOptions { showGrid: boolean; snapToGrid: boolean; showFkNames: boolean }
 
 interface ActionDef {
   id: string;
@@ -188,6 +194,7 @@ interface Props {
   ctx: NodeContext;
   connectionOpen: boolean;
   viewMode: ViewMode;
+  erOptions: ErOptions;
   lang: string;
   selected: string[];
   onSelect: (names: string[]) => void;
@@ -196,7 +203,7 @@ interface Props {
   onContextMenu?: (name: string | null, x: number, y: number) => void;
 }
 
-export function ObjectsView({ category, ctx, connectionOpen, viewMode, lang, selected, onSelect, onAction, onContextMenu }: Props) {
+export function ObjectsView({ category, ctx, connectionOpen, viewMode, erOptions, lang, selected, onSelect, onAction, onContextMenu }: Props) {
   const t = useT();
   const [search, setSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -211,6 +218,11 @@ export function ObjectsView({ category, ctx, connectionOpen, viewMode, lang, sel
     return () => window.removeEventListener("mousedown", close);
   }, [newMenu]);
 
+  // O diagrama ER só existe para tabelas de um schema escolhido; nos demais casos cai no modo Detalhe.
+  const er = viewMode === "er" && category === "table" && ctx.connection && ctx.database && ctx.schema
+    ? { conn: ctx.connection, db: ctx.database, schema: ctx.schema }
+    : null;
+  const mode: ViewMode = viewMode === "er" && !er ? "detail" : viewMode;
   const all = objectsFor(category, ctx, connectionOpen);
   const hasContext = all !== null;
   // Com conexão selecionada (mesmo sem schema) as colunas já seguem o provedor, como na referência.
@@ -337,7 +349,7 @@ export function ObjectsView({ category, ctx, connectionOpen, viewMode, lang, sel
       </div>
 
       <div
-        className="object-list"
+        className={`object-list${er ? " is-er" : ""}`}
         tabIndex={0}
         onKeyDown={onKeyDown}
         onMouseDown={(e) => e.target === e.currentTarget && onSelect([])}
@@ -350,7 +362,23 @@ export function ObjectsView({ category, ctx, connectionOpen, viewMode, lang, sel
           onContextMenu(name, e.clientX, e.clientY);
         }}
       >
-        {viewMode === "detail" && (
+        {er && (
+          <ErDiagram
+            storageKey={`${er.conn.id}/${er.db.name}/${er.schema.name}`}
+            schema={er.schema.name}
+            load={() => (er.conn.live
+              ? pg.schemaDiagram(er.conn.id, er.db.name, er.schema.name)
+              : Promise.resolve(diagramFromObjects(er.schema.objects.table ?? [], er.schema.name)))}
+            showGrid={erOptions.showGrid}
+            snapToGrid={erOptions.snapToGrid}
+            showFkNames={erOptions.showFkNames}
+            selected={selected}
+            onSelect={onSelect}
+            onOpen={openDefault}
+          />
+        )}
+
+        {mode === "detail" && (
           <table className="grid-table" role="grid">
             <colgroup>
               {columns.map((c) => <col key={c.key} style={{ width: c.width }} />)}
@@ -400,7 +428,7 @@ export function ObjectsView({ category, ctx, connectionOpen, viewMode, lang, sel
           </table>
         )}
 
-        {viewMode === "list" && (
+        {mode === "list" && (
           <div className="list-flow">
             {objects.map((o) => (
               <div
@@ -417,7 +445,7 @@ export function ObjectsView({ category, ctx, connectionOpen, viewMode, lang, sel
           </div>
         )}
 
-        {viewMode === "icons" && (
+        {mode === "icons" && (
           <div className="icon-flow">
             {objects.map((o) => (
               <div

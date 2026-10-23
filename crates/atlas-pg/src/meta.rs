@@ -4,8 +4,8 @@
 use crate::connect::PgSession;
 use crate::error::map_error;
 use atlas_core::{
-    AvailableExtension, ColumnInfo, ConstraintInfo, DatabaseDetail, DatabaseError, DatabaseList, ErrorKind, ExtensionDetail,
-    ExtensionInfo, IndexInfo, ObjectInfo, RoleInfo, RuleInfo,
+    AvailableExtension, ColumnInfo, ConstraintInfo, DatabaseDetail, DatabaseError, DatabaseList, DiagramColumn, DiagramRelation,
+    DiagramTable, ErrorKind, ExtensionDetail, ExtensionInfo, IndexInfo, ObjectInfo, RoleInfo, RuleInfo, SchemaDiagram,
     FunctionDetail, RoleDetail, SchemaDetail, SchemaInfo, SchemaObjects, SequenceDetail, TableDetail, TypeAttribute, TypeCheck, TypeDetail,
     TriggerInfo, ViewDetail,
 };
@@ -144,6 +144,66 @@ pub async fn list_objects(s: &PgSession, schema: &str) -> Result<SchemaObjects, 
         .collect();
 
     Ok(SchemaObjects { tables, views, matviews, functions, types, sequences, extensions })
+}
+
+/// Diagrama ER do schema: as tabelas com colunas (marcando chave primária e estrangeira) e as chaves estrangeiras,
+/// em duas consultas, sem ler a estrutura completa de cada tabela.
+pub async fn schema_diagram(s: &PgSession, schema: &str) -> Result<SchemaDiagram, DatabaseError> {
+    // Tabelas particionadas (relkind 'p') só existem a partir do PostgreSQL 10.
+    let kinds = if s.server.version_num >= 100000 { "'r','p'" } else { "'r'" };
+    let csql = format!(
+        "SELECT c.relname::text, a.attname::text, t.typname::text, a.atttypmod, \
+                EXISTS (SELECT 1 FROM pg_catalog.pg_constraint k WHERE k.conrelid = c.oid AND k.contype = 'p' AND a.attnum = ANY (k.conkey)), \
+                EXISTS (SELECT 1 FROM pg_catalog.pg_constraint k WHERE k.conrelid = c.oid AND k.contype = 'f' AND a.attnum = ANY (k.conkey)) \
+           FROM pg_catalog.pg_class c \
+           JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+           JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped \
+           JOIN pg_catalog.pg_type t ON t.oid = a.atttypid \
+          WHERE n.nspname = $1 AND c.relkind IN ({kinds}) \
+          ORDER BY c.relname, a.attnum"
+    );
+    let rows = s.client.query(&csql, &[&schema]).await.map_err(|e| map_error(&e))?;
+    let mut tables: Vec<DiagramTable> = Vec::new();
+    for r in &rows {
+        let table: String = r.get(0);
+        let data_type: String = r.get(2);
+        let (length, decimal) = length_decimal(&data_type, r.get(3));
+        let column = DiagramColumn { name: r.get(1), data_type, length, decimal, is_pk: r.get(4), is_fk: r.get(5) };
+        match tables.last_mut() {
+            Some(t) if t.name == table => t.columns.push(column),
+            _ => tables.push(DiagramTable { name: table, columns: vec![column] }),
+        }
+    }
+
+    let rsql = "SELECT k.conname::text, c.relname::text, \
+                       ARRAY(SELECT a.attname::text FROM unnest(k.conkey) WITH ORDINALITY u(attnum, ord) \
+                               JOIN pg_catalog.pg_attribute a ON a.attrelid = k.conrelid AND a.attnum = u.attnum ORDER BY u.ord), \
+                       rn.nspname::text, rc.relname::text, \
+                       ARRAY(SELECT a.attname::text FROM unnest(k.confkey) WITH ORDINALITY u(attnum, ord) \
+                               JOIN pg_catalog.pg_attribute a ON a.attrelid = k.confrelid AND a.attnum = u.attnum ORDER BY u.ord), \
+                       NOT EXISTS (SELECT 1 FROM unnest(k.conkey) u(attnum) \
+                                    JOIN pg_catalog.pg_attribute a ON a.attrelid = k.conrelid AND a.attnum = u.attnum WHERE NOT a.attnotnull) \
+                  FROM pg_catalog.pg_constraint k \
+                  JOIN pg_catalog.pg_class c ON c.oid = k.conrelid \
+                  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+                  JOIN pg_catalog.pg_class rc ON rc.oid = k.confrelid \
+                  JOIN pg_catalog.pg_namespace rn ON rn.oid = rc.relnamespace \
+                 WHERE k.contype = 'f' AND n.nspname = $1 \
+                 ORDER BY c.relname, k.conname";
+    let frows = s.client.query(rsql, &[&schema]).await.map_err(|e| map_error(&e))?;
+    let relations = frows
+        .iter()
+        .map(|r| DiagramRelation {
+            name: r.get(0),
+            table: r.get(1),
+            columns: r.get(2),
+            ref_schema: r.get(3),
+            ref_table: r.get(4),
+            ref_columns: r.get(5),
+            required: r.get(6),
+        })
+        .collect();
+    Ok(SchemaDiagram { tables, relations })
 }
 
 /// Extensões que o servidor oferece e ainda não foram instaladas neste banco (para o "Nova extensão").

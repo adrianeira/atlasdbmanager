@@ -448,6 +448,60 @@ async fn role_detail_reads_attributes_and_memberships() {
     atlas_pg::execute(&s, &format!("DROP ROLE {usuario}; DROP ROLE {grupo}"), 1).await.unwrap();
 }
 
+/// Diagrama ER: tabelas com colunas (PK e FK marcadas) e chaves estrangeiras, inclusive composta e para a própria
+/// tabela, num schema descartável; views não entram.
+#[tokio::test]
+async fn schema_diagram_reads_tables_columns_and_foreign_keys() {
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    let ns = format!("atlas_er_{}", std::process::id());
+    atlas_pg::execute(
+        &s,
+        &format!(
+            "DROP SCHEMA IF EXISTS {ns} CASCADE; CREATE SCHEMA {ns}; \
+             CREATE TABLE {ns}.comp(a integer, b integer, PRIMARY KEY (a, b)); \
+             CREATE TABLE {ns}.pai(id integer PRIMARY KEY, nome varchar(30) NOT NULL, avo_id integer REFERENCES {ns}.pai(id)); \
+             CREATE TABLE {ns}.filha(id integer PRIMARY KEY, pai_id integer NOT NULL, ca integer, cb integer, criado timestamp(3), \
+                CONSTRAINT fk_filha_pai FOREIGN KEY (pai_id) REFERENCES {ns}.pai(id), \
+                CONSTRAINT fk_filha_comp FOREIGN KEY (ca, cb) REFERENCES {ns}.comp(a, b)); \
+             CREATE VIEW {ns}.v AS SELECT 1 AS x"
+        ),
+        1,
+    )
+    .await
+    .unwrap();
+
+    let d = atlas_pg::schema_diagram(&s, &ns).await.expect("diagram");
+    let names: Vec<&str> = d.tables.iter().map(|t| t.name.as_str()).collect();
+    assert_eq!(names, ["comp", "filha", "pai"], "só tabelas, em ordem de nome (a view não entra)");
+
+    let filha = d.tables.iter().find(|t| t.name == "filha").unwrap();
+    let col = |n: &str| filha.columns.iter().find(|c| c.name == n).unwrap();
+    assert!(col("id").is_pk && !col("id").is_fk);
+    assert!(col("pai_id").is_fk && !col("pai_id").is_pk);
+    assert!(col("ca").is_fk && col("cb").is_fk);
+    assert_eq!((col("criado").data_type.as_str(), col("criado").length), ("timestamp", 3));
+    let pai = d.tables.iter().find(|t| t.name == "pai").unwrap();
+    let nome = pai.columns.iter().find(|c| c.name == "nome").unwrap();
+    assert_eq!((nome.data_type.as_str(), nome.length), ("varchar", 30));
+    assert_eq!(d.tables.iter().find(|t| t.name == "comp").unwrap().columns.iter().filter(|c| c.is_pk).count(), 2);
+
+    let rel = |n: &str| d.relations.iter().find(|r| r.name == n).unwrap_or_else(|| panic!("relação {n}"));
+    let r = rel("fk_filha_pai");
+    assert_eq!((r.table.as_str(), r.ref_schema.as_str(), r.ref_table.as_str()), ("filha", ns.as_str(), "pai"));
+    assert_eq!((r.columns.as_slice(), r.ref_columns.as_slice()), (&["pai_id".to_string()][..], &["id".to_string()][..]));
+    let r = rel("fk_filha_comp");
+    assert_eq!(r.columns, ["ca", "cb"]);
+    assert_eq!(r.ref_columns, ["a", "b"]);
+    assert!(d.relations.iter().any(|r| r.table == "pai" && r.ref_table == "pai"), "a chave para a própria tabela vem na lista");
+    // Obrigatória só quando todas as colunas da chave são NOT NULL.
+    assert!(rel("fk_filha_pai").required, "pai_id é NOT NULL");
+    assert!(!rel("fk_filha_comp").required, "ca e cb aceitam nulo");
+    assert!(!d.relations.iter().find(|r| r.table == "pai" && r.ref_table == "pai").unwrap().required, "avo_id aceita nulo");
+
+    atlas_pg::execute(&s, &format!("DROP SCHEMA {ns} CASCADE"), 1).await.unwrap();
+}
+
 /// Extensões: lista do banco (com o schema de cada uma), disponíveis para instalar e detalhe de uma instalada.
 #[tokio::test]
 async fn extensions_are_listed_available_and_described() {

@@ -19,6 +19,6 @@ pub use dump::{DumpOptions, DumpPlan, DumpScope, DumpTable, begin_snapshot, copy
 pub use import::{Feed, Hooks as ImportHooks, ImportMode, ImportSpec, ImportStats, TargetColumn, run as run_import};
 pub use find::{FindHit, FindOptions, FindResult, find};
 pub use meta::{
-    available_extensions, database_detail, extension_detail, function_detail, list_databases, list_objects, list_roles, list_schemas, matview_detail, role_detail,
+    available_extensions, database_detail, extension_detail, function_detail, schema_diagram, list_databases, list_objects, list_roles, list_schemas, matview_detail, role_detail,
     schema_detail, sequence_detail, table_detail, type_detail, view_detail,
 };

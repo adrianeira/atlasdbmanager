@@ -5,7 +5,7 @@ use crate::local::Local;
 use crate::sessions::Sessions;
 use atlas_core::{
     AvailableExtension, ConnectionParams, DatabaseDetail, DatabaseError, DatabaseList, ExtensionDetail, FunctionDetail, OrderBy, RoleDetail, SchemaDetail, SequenceDetail,
-    TypeDetail, QueryOutcome, RoleInfo, SchemaInfo, SchemaObjects, ServerInfo, TableDetail, TableFilter, ViewDetail,
+    TypeDetail, QueryOutcome, RoleInfo, SchemaDiagram, SchemaInfo, SchemaObjects, ServerInfo, TableDetail, TableFilter, ViewDetail,
 };
 use serde::Serialize;
 use tauri::State;
@@ -110,6 +110,18 @@ pub async fn pg_find(
 ) -> Result<atlas_pg::FindResult, DatabaseError> {
     let s = sessions.get(&session_id, Some(&database)).await?;
     atlas_pg::find(&s, &options).await
+}
+
+/// Tabelas (com colunas) e chaves estrangeiras de um schema, para o diagrama ER.
+#[tauri::command]
+pub async fn pg_schema_diagram(
+    sessions: State<'_, Sessions>,
+    session_id: String,
+    database: String,
+    schema: String,
+) -> Result<SchemaDiagram, DatabaseError> {
+    let s = sessions.get(&session_id, Some(&database)).await?;
+    atlas_pg::schema_diagram(&s, &schema).await
 }
 
 /// Extensões que o servidor oferece e ainda não estão instaladas no banco.

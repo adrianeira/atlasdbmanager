@@ -24,7 +24,7 @@ interface Props {
 
 export function StatusBar(p: Props) {
   const t = useT();
-  const mode = (m: ViewMode, icon: "viewList" | "viewDetail" | "viewIcons", label: "status.viewList" | "status.viewDetail" | "status.viewIcons") => (
+  const mode = (m: ViewMode, icon: "viewList" | "viewDetail" | "viewIcons" | "viewEr", label: "status.viewList" | "status.viewDetail" | "status.viewIcons" | "status.viewEr") => (
     <button type="button" className={`sb-button${p.viewMode === m ? " is-active" : ""}`} title={t(label)} aria-pressed={p.viewMode === m} onClick={() => p.onViewMode?.(m)}>
       <SmallIcon name={icon} />
     </button>
@@ -44,6 +44,7 @@ export function StatusBar(p: Props) {
             {mode("list", "viewList", "status.viewList")}
             {mode("detail", "viewDetail", "status.viewDetail")}
             {mode("icons", "viewIcons", "status.viewIcons")}
+            {mode("er", "viewEr", "status.viewEr")}
             <span className="sb-gap" />
           </>
         )}

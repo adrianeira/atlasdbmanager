@@ -535,6 +535,267 @@ input {
   background: var(--c-surface);
 }
 
+/* Diagrama ER (Exibir → ER Diagram): o canvas ocupa a área de objetos e rola por conta própria. */
+.object-list.is-er {
+  overflow: hidden;
+  display: flex;
+}
+
+.er-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.er-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+}
+
+.er-canvas {
+  position: relative;
+  min-width: 100%;
+  min-height: 100%;
+}
+
+.er-canvas.has-grid {
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--c-border) 55%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--c-border) 55%, transparent) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.er-lines {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.er-line-vis {
+  fill: none;
+  stroke: var(--c-text-muted);
+  stroke-width: 1.2;
+}
+
+/* Sombra azul da linha selecionada, na mesma cor do contorno dos cartões selecionados. */
+.er-line-glow {
+  fill: none;
+  stroke: var(--c-selected-border);
+  stroke-width: 8;
+  stroke-opacity: 0.7;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.er-line.is-selected .er-line-vis {
+  stroke: var(--c-text);
+  stroke-width: 2;
+}
+
+/* Faixa larga e invisível para clicar na linha (o svg em si não recebe o mouse). */
+.er-line-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 12;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+/* Durante um arrasto: cursor de "agarrado" e as linhas deixam de reagir ao mouse (menos trabalho por movimento). */
+.er-canvas[data-dragging],
+.er-canvas[data-dragging] .er-card,
+.er-canvas[data-dragging] .er-handle {
+  cursor: grabbing;
+}
+
+.er-canvas[data-dragging] .er-line-hit {
+  pointer-events: none;
+}
+
+.er-line-hit.is-x {
+  cursor: ew-resize;
+}
+
+.er-line-hit.is-y {
+  cursor: ns-resize;
+}
+
+/* Alça no meio da linha selecionada: arrastar move o trecho do meio. */
+.er-handle {
+  fill: var(--c-surface);
+  stroke: var(--c-text);
+  stroke-width: 1.5;
+  pointer-events: all;
+}
+
+.er-handle.is-x {
+  cursor: ew-resize;
+}
+
+.er-handle.is-y {
+  cursor: ns-resize;
+}
+
+.er-end {
+  fill: var(--c-surface);
+  stroke: var(--c-text);
+  stroke-width: 1.5;
+  /* A bolinha da ponta se arrasta para outro lado do cartão. */
+  pointer-events: all;
+  cursor: crosshair;
+}
+
+/* Pontos de ligação do cartão, mostrados enquanto se arrasta a ponta de uma linha; o mais próximo fica cheio. */
+.er-anchor {
+  fill: var(--c-surface);
+  stroke: var(--c-accent);
+  stroke-width: 1.5;
+}
+
+.er-anchor.is-near {
+  fill: var(--c-accent);
+}
+
+/* O nome da FK não tem caixa: um contorno na cor do fundo o mantém legível sobre a grade e as linhas. */
+.er-label text {
+  fill: var(--c-text);
+  font-size: 12px;
+  paint-order: stroke;
+  stroke: var(--c-surface);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+.er-link-icon rect {
+  fill: none;
+  stroke: var(--c-accent);
+  stroke-width: 1.2;
+}
+
+.er-tip {
+  position: absolute;
+  z-index: 5;
+  padding: 6px 9px;
+  border-radius: 3px;
+  background: #4b5056;
+  color: #fff;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.er-tip b {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.er-tip span {
+  color: #cfd5db;
+}
+
+.er-card {
+  /* Azul do cabeçalho, mais claro que o de destaque do app (como na referência). */
+  --er-head: color-mix(in srgb, var(--c-accent) 55%, #7ab8ee);
+  position: absolute;
+  /* A posição vem de `transform` (o navegador a move sem refazer o layout); aqui só a origem. */
+  left: 0;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--c-surface);
+  border: 1px solid var(--er-head);
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
+  cursor: default;
+  user-select: none;
+}
+
+/* No tema escuro o azul claro do cabeçalho perderia contraste com o texto branco. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .er-card {
+    --er-head: #2d6ca3;
+  }
+}
+
+:root[data-theme="dark"] .er-card {
+  --er-head: #2d6ca3;
+}
+
+.er-card.is-selected,
+.er-card.is-related {
+  box-shadow: 0 0 0 3px var(--c-selected-border), 0 1px 4px rgba(0, 0, 0, 0.22);
+}
+
+.er-card-head {
+  flex: none;
+  height: 28px;
+  padding: 0 10px;
+  line-height: 28px;
+  text-align: center;
+  font-weight: 600;
+  color: #fff;
+  background: var(--er-head);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.er-card-body {
+  flex: 1;
+  padding: 3px 0;
+}
+
+.er-col {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 21px;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
+.er-col.is-hl {
+  background: var(--c-selected);
+}
+
+.er-col-icon {
+  flex: none;
+  width: 14px;
+  display: inline-flex;
+  justify-content: center;
+}
+
+.er-col-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.er-col-type,
+.er-more {
+  color: var(--c-text-muted);
+}
+
+.er-empty {
+  padding: 24px;
+}
+
+.er-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 6px;
+  border-top: 1px solid var(--c-border);
+  background: var(--c-surface-alt);
+}
+
 .grid-table {
   border-collapse: separate;
   border-spacing: 0;

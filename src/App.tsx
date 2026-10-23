@@ -65,6 +65,10 @@ interface Layout {
   navVisible: boolean;
   infoVisible: boolean;
   viewMode: ViewMode;
+  /** Opções do diagrama ER (menu Exibir). */
+  erShowGrid: boolean;
+  erSnapGrid: boolean;
+  erShowFkNames: boolean;
   showCaptions: boolean;
   theme: Theme;
   lang: Lang;
@@ -73,7 +77,7 @@ interface Layout {
 const LAYOUT_KEY = "atlas.layout.v1";
 const CONNECTIONS_KEY = "atlas.connections.v1";
 const DEFAULT_LAYOUT: Layout = {
-  navWidth: 384, navVisible: true, infoVisible: false, viewMode: "detail", showCaptions: true, theme: "system", lang: detectLang(),
+  navWidth: 384, navVisible: true, infoVisible: false, viewMode: "detail", erShowGrid: true, erSnapGrid: true, erShowFkNames: true, showCaptions: true, theme: "system", lang: detectLang(),
 };
 
 /* ---------- Persistência local do protótipo (no M1: SQLite local + cofre do SO) ---------- */
@@ -1635,6 +1639,10 @@ export default function App() {
     viewList: { id: "viewList", label: "cmd.viewList", checked: layout.viewMode === "list", run: () => patchLayout({ viewMode: "list" }) },
     viewDetail: { id: "viewDetail", label: "cmd.viewDetail", checked: layout.viewMode === "detail", run: () => patchLayout({ viewMode: "detail" }) },
     viewIcons: { id: "viewIcons", label: "cmd.viewIcons", checked: layout.viewMode === "icons", run: () => patchLayout({ viewMode: "icons" }) },
+    viewEr: { id: "viewEr", label: "cmd.viewEr", checked: layout.viewMode === "er", run: () => patchLayout({ viewMode: "er" }) },
+    erShowGrid: { id: "erShowGrid", label: "cmd.erShowGrid", checked: layout.erShowGrid ?? true, run: () => patchLayout({ erShowGrid: !(layout.erShowGrid ?? true) }) },
+    erSnapGrid: { id: "erSnapGrid", label: "cmd.erSnapGrid", checked: layout.erSnapGrid ?? true, run: () => patchLayout({ erSnapGrid: !(layout.erSnapGrid ?? true) }) },
+    erShowFkNames: { id: "erShowFkNames", label: "cmd.erShowFkNames", checked: layout.erShowFkNames ?? true, run: () => patchLayout({ erShowFkNames: !(layout.erShowFkNames ?? true) }) },
     themeSystem: { id: "themeSystem", label: "cmd.themeSystem", checked: layout.theme === "system", run: () => patchLayout({ theme: "system" }) },
     themeLight: { id: "themeLight", label: "cmd.themeLight", checked: layout.theme === "light", run: () => patchLayout({ theme: "light" }) },
     themeDark: { id: "themeDark", label: "cmd.themeDark", checked: layout.theme === "dark", run: () => patchLayout({ theme: "dark" }) },
@@ -1695,7 +1703,7 @@ export default function App() {
   const editMenu: MenuDef = { label: "menu.edit", items: entries("undo", "redo", "-", "cut", "copy", "paste", "selectAll", "-", "find") };
   const viewMenu: MenuDef = {
     label: "menu.view",
-    items: entries("navigationPane", "informationPane", "toolbarCaptions", "-", "viewList", "viewDetail", "viewIcons", "-", "themeSystem", "themeLight", "themeDark", "-", "langPt", "langEn", "-", "resetLayout"),
+    items: entries("navigationPane", "informationPane", "toolbarCaptions", "-", "viewList", "viewDetail", "viewIcons", "viewEr", "-", "erShowGrid", "erSnapGrid", "erShowFkNames", "-", "themeSystem", "themeLight", "themeDark", "-", "langPt", "langEn", "-", "resetLayout"),
   };
   const queryMenu: MenuDef = { label: "menu.query", items: entries("run", "runSelected", "stop", "-", "explain", "-", "beautify", "queryBuilder") };
   const formatMenu: MenuDef = { label: "menu.format", items: entries("indent", "outdent", "-", "toggleComment", "-", "upper", "lower") };
@@ -2259,6 +2267,7 @@ export default function App() {
                   ctx={ctx}
                   connectionOpen={connectionOpen}
                   viewMode={layout.viewMode}
+                  erOptions={{ showGrid: layout.erShowGrid ?? true, snapToGrid: layout.erSnapGrid ?? true, showFkNames: layout.erShowFkNames ?? true }}
                   lang={layout.lang}
                   selected={selectedObjects}
                   onSelect={setSelectedObjects}

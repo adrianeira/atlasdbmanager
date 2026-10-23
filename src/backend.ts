@@ -77,6 +77,28 @@ export interface SchemaObjects {
   extensions: ExtensionInfo[];
 }
 
+/** Diagrama ER de um schema: tabelas com colunas (PK/FK marcadas) e chaves estrangeiras. */
+export interface DiagramColumn {
+  name: string;
+  dataType: string;
+  length: number;
+  decimal: number;
+  isPk: boolean;
+  isFk: boolean;
+}
+export interface DiagramTable { name: string; columns: DiagramColumn[] }
+export interface DiagramRelation {
+  name: string;
+  table: string;
+  columns: string[];
+  refSchema: string;
+  refTable: string;
+  refColumns: string[];
+  /** Todas as colunas da chave são NOT NULL: a referência é obrigatória; senão, opcional. */
+  required: boolean;
+}
+export interface SchemaDiagram { tables: DiagramTable[]; relations: DiagramRelation[] }
+
 /** Extensão instalada, com o schema onde foi instalada. */
 export interface ExtensionInfo {
   name: string;
@@ -559,6 +581,8 @@ export const pg = {
   import: (req: ImportRequest) => call<ImportSummary>("pg_import", { req }),
   dumpSql: (req: DumpRequest) => call<DumpResult>("pg_dump_sql", { req }),
   find: (sessionId: string, database: string, options: FindOptions) => call<FindResult>("pg_find", { sessionId, database, options }),
+  schemaDiagram: (sessionId: string, database: string, schema: string) =>
+    call<SchemaDiagram>("pg_schema_diagram", { sessionId, database, schema }),
   availableExtensions: (sessionId: string, database: string) =>
     call<AvailableExtension[]>("pg_available_extensions", { sessionId, database }),
   extensionDetail: (sessionId: string, database: string, name: string) =>
