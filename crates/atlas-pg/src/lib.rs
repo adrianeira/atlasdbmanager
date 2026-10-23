@@ -6,6 +6,7 @@ mod find;
 mod import;
 mod transfer;
 mod connect;
+mod datagen;
 mod datasync;
 mod error;
 mod exec;
@@ -19,6 +20,7 @@ pub use exec::{
     execute, execute_in_schema, is_single_statement, quote_ident, search_path_for, select_sql, stream_rows, table_count, table_rows, wrap_query,
 };
 pub use dump::{DumpOptions, DumpPlan, DumpScope, DumpTable, begin_snapshot, copy_header, copy_table, data_select, end_snapshot, header as dump_header, plan as dump_plan};
+pub use datagen::{ColumnMeta as GenColumnMeta, ColumnSpec as GenColumnSpec, GenHooks, GenOptions, GenSpec, GenStats, Generator, Preview as GenPreview, TableMeta as GenTableMeta, TableSpec as GenTableSpec, TextStyle, describe as describe_generation, preview as preview_generation, run as run_generation};
 pub use datasync::{CompareHooks, Comparison, DeployHooks, DeployStats, DiffKind, DiffRow, SyncSpec, SyncTable, TableDiff, TableSelection, compare as compare_data, deploy as deploy_data, script as data_script};
 pub use structsync::{Op as StructOp, ObjectDiff as StructObject, Part as StructPart, StructComparison, StructSelection, StructSpec, compare as compare_structure, script as structure_script};
 pub use transfer::{FieldMap, Hooks as TransferHooks, TableOverride, TransferSpec, TransferStats, rewrite_schema, run as run_transfer};

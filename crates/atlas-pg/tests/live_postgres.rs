@@ -1802,3 +1802,101 @@ async fn structure_sync_alters_generated_columns() {
     assert!(left.is_empty(), "{left:?}");
     atlas_pg::execute(&s, &format!("DROP SCHEMA {a} CASCADE; DROP SCHEMA {b} CASCADE"), 1).await.unwrap();
 }
+
+#[tokio::test]
+async fn data_generation_describes_previews_and_runs() {
+    use atlas_pg::{GenHooks, GenOptions, GenSpec, GenTableSpec, GenColumnSpec, Generator};
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    let ns = format!("atlas_dg_{}", std::process::id());
+    atlas_pg::execute(
+        &s,
+        &format!(
+            "DROP SCHEMA IF EXISTS {ns} CASCADE; CREATE SCHEMA {ns}; \
+             CREATE TYPE {ns}.mood AS ENUM ('sad', 'ok'); \
+             CREATE TABLE {ns}.clients(id serial PRIMARY KEY, name varchar(30) NOT NULL, active boolean, born date, balance numeric(10,2), mood {ns}.mood, ts timestamptz); \
+             CREATE TABLE {ns}.orders(id serial PRIMARY KEY, client_id integer NOT NULL REFERENCES {ns}.clients(id), amount numeric(8,2) NOT NULL, created timestamptz NOT NULL DEFAULT now()); \
+             INSERT INTO {ns}.clients(id, name) VALUES (5, 'existing')"
+        ),
+        1,
+    )
+    .await
+    .expect("ddl");
+
+    let meta = atlas_pg::describe_generation(&s, &ns).await.expect("describe");
+    let names: Vec<&str> = meta.iter().map(|t| t.name.as_str()).collect();
+    assert_eq!(names, vec!["clients", "orders"], "a tabela referenciada vem antes");
+    let col = |t: &str, c: &str| meta.iter().find(|x| x.name == t).unwrap().columns.iter().find(|x| x.name == c).unwrap();
+    assert!(matches!(col("clients", "id").suggested, Generator::Sequence { start: None, step: 1 }));
+    assert!(matches!(col("clients", "name").suggested, Generator::Text { max_len: 30, .. }), "{:?}", col("clients", "name").suggested);
+    assert!(matches!(col("clients", "mood").suggested, Generator::List { .. }));
+    assert!(matches!(col("clients", "born").suggested, Generator::Date { .. }));
+    assert!(matches!(&col("orders", "client_id").suggested, Generator::Reference { table, column } if table == "clients" && column == "id"));
+    assert!(matches!(col("orders", "amount").suggested, Generator::Decimal { scale: 2, .. }));
+
+    let table = |name: &str, rows: u64| GenTableSpec {
+        name: name.into(),
+        rows,
+        columns: meta
+            .iter()
+            .find(|t| t.name == name)
+            .unwrap()
+            .columns
+            .iter()
+            .filter(|c| !c.generated && !(name == "orders" && c.name == "created"))
+            .map(|c| GenColumnSpec { name: c.name.clone(), generator: c.suggested.clone(), null_percent: if c.not_null { 0 } else { 20 } })
+            .collect(),
+    };
+    let preview = atlas_pg::preview_generation(&s, &ns, &table("clients", 3), 3).await.expect("preview");
+    assert_eq!(preview.rows.len(), 3);
+    assert_eq!(preview.rows[0][0].as_deref(), Some("6"), "a sequência continua do maior valor");
+    assert_eq!(preview.rows[1][0].as_deref(), Some("7"));
+    assert_eq!(atlas_pg::preview_generation(&s, &ns, &table("clients", 1), 1).await.unwrap().rows[0][0].as_deref(), Some("6"), "a prévia não grava nada");
+
+    let count = |t: &str| {
+        let sql = format!("SELECT count(*) FROM {ns}.{t}");
+        let s = &s;
+        async move { s.client.query_one(&sql, &[]).await.unwrap().get::<_, i64>(0) }
+    };
+    let options = |continue_on_error, transaction, multi_insert| GenOptions { continue_on_error, empty_first: false, transaction, multi_insert };
+    let go = |tables: Vec<GenTableSpec>, options: GenOptions| {
+        let s = &s;
+        let ns = ns.clone();
+        async move {
+            let mut log = Vec::new();
+            let stats = {
+                let mut on_log = |l: String| log.push(l);
+                atlas_pg::run_generation(s, &GenSpec { schema: ns, tables, options }, GenHooks { log: &mut on_log, progress: &mut |_| {}, cancelled: &|| false }).await.expect("run")
+            };
+            (stats, log)
+        }
+    };
+
+    // Duas tabelas, com transação e inserção em lote.
+    let (stats, log) = go(vec![table("clients", 700), table("orders", 120)], options(false, true, true)).await;
+    assert_eq!((stats.objects, stats.generated, stats.inserted, stats.errors), (2, 820, 820, 0), "{log:#?}");
+    assert_eq!((count("clients").await, count("orders").await), (701, 120));
+    assert!(log.iter().any(|l| l.contains("1> clients: --Transaction - Commit--")) && log.last().unwrap().contains("Finished successfully"), "{log:#?}");
+    // A sequência da coluna serial ficou depois do que foi gerado.
+    let next: i32 = s.client.query_one(&format!("SELECT nextval(pg_get_serial_sequence('{ns}.clients', 'id'))::int"), &[]).await.unwrap().get(0);
+    assert_eq!(next, 706, "5 existente + 700 gerados a partir do 6 = 705");
+
+    // Valores repetidos: sem continuar, a primeira falha desfaz a tabela e para; continuando, só as linhas ruins ficam de fora.
+    let mut dup = table("clients", 3);
+    dup.columns[0].generator = Generator::Sequence { start: Some(5), step: 0 };
+    let (stats, log) = go(vec![dup.clone()], options(false, true, false)).await;
+    assert_eq!((stats.errors, stats.inserted), (1, 0), "{log:#?}");
+    assert!(log.iter().any(|l| l.contains("--Transaction - Rollback--")) && log.last().unwrap().contains("Finished with error"), "{log:#?}");
+    let (stats, _) = go(vec![dup], options(true, true, false)).await;
+    assert_eq!((stats.errors, stats.inserted), (3, 0));
+    assert_eq!(count("clients").await, 701);
+
+    // Esvaziar antes: as tabelas selecionadas saem (as filhas primeiro).
+    let mut empty = options(false, true, true);
+    empty.empty_first = true;
+    let (stats, _) = go(vec![table("clients", 10), table("orders", 10)], empty).await;
+    assert_eq!((stats.inserted, stats.errors), (20, 0));
+    assert_eq!((count("clients").await, count("orders").await), (10, 10));
+
+    atlas_pg::execute(&s, &format!("DROP SCHEMA {ns} CASCADE"), 1).await.unwrap();
+}
