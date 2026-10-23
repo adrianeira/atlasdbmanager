@@ -33,6 +33,12 @@ const ROW_H = 20;
 const PAD = 4;
 /** Linhas visíveis de um cartão; acima disso ele rola por dentro. */
 const MAX_ROWS = 12;
+const MIN_W = 120;
+const MIN_H = HEAD_H + ROW_H + PAD * 2;
+
+const cardW = (t: QbTable) => t.w ?? CARD_W;
+/** Altura do corpo do cartão (a lista de campos). */
+const bodyH = (t: QbTable) => (t.h ? t.h - HEAD_H : Math.min(t.columns.length + 1, MAX_ROWS) * ROW_H + PAD * 2);
 
 interface Objects {
   tables: string[];
@@ -95,6 +101,7 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
   const [draftJoin, setDraftJoin] = useState<{ left: QbRef | null; right: QbRef | null }>({ left: null, right: null });
   const [error, setError] = useState<string | null>(null);
   const [drag, setDrag] = useState<{ id: string; dx: number; dy: number } | null>(null);
+  const [resize, setResize] = useState<{ id: string; x0: number; y0: number; w0: number; h0: number } | null>(null);
   const [link, setLink] = useState<{ from: QbRef; x: number; y: number } | null>(null);
   const [treeDrag, setTreeDrag] = useState<{ schema: string; name: string; view: boolean; x: number; y: number; sx: number; sy: number; moved: boolean } | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -289,8 +296,12 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
   };
 
   useEffect(() => {
-    if (!drag && !link && !treeDrag) return;
+    if (!drag && !link && !treeDrag && !resize) return;
     const move = (e: MouseEvent) => {
+      if (resize) {
+        const p = canvasPoint(e);
+        setSt((s) => ({ ...s, tables: s.tables.map((x) => (x.id === resize.id ? { ...x, w: Math.max(MIN_W, Math.round(resize.w0 + p.x - resize.x0)), h: Math.max(MIN_H, Math.round(resize.h0 + p.y - resize.y0)) } : x)) }));
+      }
       if (drag) {
         const p = canvasPoint(e);
         setSt((s) => ({ ...s, tables: s.tables.map((x) => (x.id === drag.id ? { ...x, x: Math.max(0, p.x - drag.dx), y: Math.max(0, p.y - drag.dy) } : x)) }));
@@ -310,6 +321,7 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
         if (r && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) addTable(treeDrag.schema, treeDrag.name, treeDrag.view, canvasPoint(e));
       }
       setDrag(null);
+      setResize(null);
       setLink(null);
       setTreeDrag(null);
     };
@@ -321,7 +333,7 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
     };
     // As funções usadas leem o estado mais recente por atualização funcional.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drag, link, treeDrag]);
+  }, [drag, link, treeDrag, resize]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -338,19 +350,19 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
     const tb = st.tables.find((x) => x.id === r.table);
     if (!tb) return { x: 0, y: 0 };
     const idx = r.column === "*" ? 0 : tb.columns.indexOf(r.column) + 1;
-    const visible = Math.min(tb.columns.length + 1, MAX_ROWS);
+    const visible = Math.max(1, Math.min(tb.columns.length + 1, Math.floor((bodyH(tb) - PAD * 2) / ROW_H)));
     const top = tb.y + HEAD_H + PAD;
     const raw = top + idx * ROW_H - (scrolls[tb.id] ?? 0) + ROW_H / 2;
     // Campo rolado para fora do cartão: a linha prende na borda de cima ou de baixo.
     const y = mode === "table" ? tb.y + HEAD_H / 2 : Math.min(top + visible * ROW_H - ROW_H / 2, Math.max(top + ROW_H / 2, raw));
-    const right = tb.x + CARD_W / 2 < otherX;
-    return { x: right ? tb.x + CARD_W : tb.x, y };
+    const right = tb.x + cardW(tb) / 2 < otherX;
+    return { x: right ? tb.x + cardW(tb) : tb.x, y };
   };
-  const centerX = (r: QbRef) => (st.tables.find((x) => x.id === r.table)?.x ?? 0) + CARD_W / 2;
+  const centerX = (r: QbRef) => (() => { const t = st.tables.find((x) => x.id === r.table); return t ? t.x + cardW(t) / 2 : 0; })();
 
   const size = useMemo(() => ({
-    w: Math.max(600, ...st.tables.map((x) => x.x + CARD_W + 40)),
-    h: Math.max(300, ...st.tables.map((x) => x.y + HEAD_H + PAD * 2 + Math.min(x.columns.length + 1, MAX_ROWS) * ROW_H + 40)),
+    w: Math.max(600, ...st.tables.map((x) => x.x + cardW(x) + 40)),
+    h: Math.max(300, ...st.tables.map((x) => x.y + HEAD_H + bodyH(x) + 40)),
   }), [st.tables]);
 
   /* ---------- Etapas de edição ---------- */
@@ -522,7 +534,7 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
 
   /** Guarda a posição dos cartões (pelo texto do SELECT) para reabrir o desenho do mesmo jeito. */
   const build = (run: boolean) => {
-    const layout: QbLayout = Object.fromEntries(st.tables.map((x) => [layoutId(x), { x: Math.round(x.x), y: Math.round(x.y) }]));
+    const layout: QbLayout = Object.fromEntries(st.tables.map((x) => [layoutId(x), { x: Math.round(x.x), y: Math.round(x.y), w: x.w, h: x.h }]));
     const key = layoutKey(`${sql};`);
     void local.getPref<{ k: string; p: QbLayout }[]>(LAYOUTS_KEY)
       .catch(() => null)
@@ -645,7 +657,7 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
                     })()}
                   </svg>
                   {st.tables.map((tb) => (
-                    <div key={tb.id} className={`qb-card${selTable === tb.id ? " is-selected" : ""}${tb.view ? " is-view" : ""}`} style={{ left: tb.x, top: tb.y, width: CARD_W }}
+                    <div key={tb.id} className={`qb-card${selTable === tb.id ? " is-selected" : ""}${tb.view ? " is-view" : ""}`} style={{ left: tb.x, top: tb.y, width: cardW(tb) }}
                       onMouseDown={() => setSelTable(tb.id)} onContextMenu={(e) => { setSelTable(tb.id); showMenu(e, cardMenu(tb)); }}>
                       <div className="qb-card-head" title={`${tb.schema}.${tb.name}`} onDoubleClick={() => setAliasEdit(tb.id)}
                         onMouseDown={(e) => {
@@ -655,7 +667,20 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
                         }}>
                         <span>{tb.alias.trim() ? `${tb.name} ( ${tb.alias.trim()} )` : tb.name}</span>
                       </div>
-                      <div className="qb-card-body" style={{ padding: PAD, maxHeight: MAX_ROWS * ROW_H + PAD * 2 }} onScroll={(e) => { const top = e.currentTarget.scrollTop; setScrolls((m) => (m[tb.id] === top ? m : { ...m, [tb.id]: top })); }}>
+                      <div
+                        className="qb-resize"
+                        title={t("qb.resize")}
+                        onMouseDown={(e) => {
+                          if (e.button !== 0) return;
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const p = canvasPoint(e);
+                          setSelTable(tb.id);
+                          setResize({ id: tb.id, x0: p.x, y0: p.y, w0: cardW(tb), h0: HEAD_H + bodyH(tb) });
+                        }}
+                        onDoubleClick={() => setSt((s) => ({ ...s, tables: s.tables.map((x) => (x.id === tb.id ? { ...x, w: undefined, h: undefined } : x)) }))}
+                      />
+                      <div className="qb-card-body" style={tb.h ? { padding: PAD, height: bodyH(tb) } : { padding: PAD, maxHeight: MAX_ROWS * ROW_H + PAD * 2 }} onScroll={(e) => { const top = e.currentTarget.scrollTop; setScrolls((m) => (m[tb.id] === top ? m : { ...m, [tb.id]: top })); }}>
                         {tb.columns.length === 0 ? <div className="qb-row-col muted">{t("qb.loading")}</div> : ["*", ...tb.columns].map((c) => (
                           <label key={c} className="qb-row-col" data-qb-table={tb.id} data-qb-column={c}>
                             <input type="checkbox" checked={st.fields.some((f) => f.ref.table === tb.id && f.ref.column === c)} onChange={(e) => toggleColumn(tb.id, c, e.target.checked)} />

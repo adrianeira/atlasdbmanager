@@ -16,6 +16,9 @@ export interface QbTable {
   view: boolean;
   x: number;
   y: number;
+  /** Tamanho escolhido pelo usuário (alça do canto); vazio = automático. */
+  w?: number;
+  h?: number;
   /** Vazio enquanto as colunas ainda estão sendo lidas. */
   columns: string[];
   fks: QbFk[];
@@ -225,7 +228,7 @@ export function foreignKeyJoins(added: QbTable, others: QbTable[], existing: QbJ
 }
 
 /** Posição dos cartões de uma consulta, guardada pelo texto do SELECT (sem espaços extras nem o `;` final). */
-export type QbLayout = Record<string, { x: number; y: number }>;
+export type QbLayout = Record<string, { x: number; y: number; w?: number; h?: number }>;
 
 export function layoutKey(sql: string): string {
   const norm = sql.replace(/\s+/g, " ").replace(/\s*;\s*$/, "").trim();

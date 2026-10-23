@@ -2181,6 +2181,7 @@ select.et-input {
 .qb-card-head span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 6px; }
 .qb-card.is-view .qb-card-head { background: #5a8f3c; }
 .qb-card.is-view { border-color: #5a8f3c; }
+.qb-resize { position: absolute; right: 0; bottom: 0; width: 14px; height: 14px; cursor: nwse-resize; z-index: 3; background: linear-gradient(135deg, transparent 55%, #3584c4 55%, #3584c4 62%, transparent 62%, transparent 72%, #3584c4 72%, #3584c4 79%, transparent 79%); }
 .qb-card-body { overflow-y: auto; overflow-x: hidden; box-sizing: border-box; }
 .qb-row-col { display: flex; align-items: center; gap: 6px; height: 20px; padding: 0 4px; cursor: default; }
 .qb-row-col input { margin: 0; }
