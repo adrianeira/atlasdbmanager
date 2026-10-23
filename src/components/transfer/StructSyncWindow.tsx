@@ -43,13 +43,13 @@ interface StructProfile {
 }
 
 const PROFILES_KEY = "structsync.profiles";
-const KINDS: StructKind[] = ["table", "view", "matview", "sequence", "function", "type"];
+const KINDS: StructKind[] = ["table", "ftable", "view", "matview", "sequence", "function", "type"];
 const OPS: Exclude<StructOp, "same">[] = ["add", "modify", "delete"];
 
 const keyOf = (o: { kind: string; name: string }) => `${o.kind}:${o.name}`;
 const OP_GLYPH: Record<StructOp, string> = { add: "+", delete: "−", modify: "→", same: "=" };
 
-const KIND_ICON: Record<StructKind, SmallIconName> = { table: "table", view: "view", matview: "matview", sequence: "sequence", function: "function", type: "type" };
+const KIND_ICON: Record<StructKind, SmallIconName> = { table: "table", ftable: "table", view: "view", matview: "matview", sequence: "sequence", function: "function", type: "type" };
 const PART_ICON: Record<string, SmallIconName> = {
   column: "column", primary: "columnPk", foreign: "columnFk", unique: "key", check: "key", constraint: "key", index: "columns", trigger: "function", options: "tableDesign",
 };
@@ -63,7 +63,7 @@ export function StructSyncWindow() {
   );
 }
 
-const isModifiedTable = (o: StructObject) => o.kind === "table" && o.op === "modify";
+const isModifiedTable = (o: StructObject) => (o.kind === "table" || o.kind === "ftable") && o.op === "modify";
 const changedParts = (o: StructObject) => o.parts.flatMap((p, i) => (p.op === "same" ? [] : [i]));
 
 function Wizard({ params }: { params: Params }) {

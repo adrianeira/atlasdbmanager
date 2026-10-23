@@ -443,7 +443,7 @@ export async function onSyncDeployProgress(id: string, cb: (done: number, total:
 /* ----- Structure Synchronization (janela separada) ----- */
 
 export type StructOp = "add" | "delete" | "modify" | "same";
-export type StructKind = "table" | "view" | "matview" | "sequence" | "function" | "type";
+export type StructKind = "table" | "ftable" | "view" | "matview" | "sequence" | "function" | "type";
 export interface StructPart { kind: string; name: string; op: StructOp }
 export interface StructObject { kind: StructKind; name: string; op: StructOp; parts: StructPart[]; sourceDdl: string; targetDdl: string }
 /** `parts` ausente (null) = todas as partes do objeto. */

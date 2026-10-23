@@ -132,6 +132,17 @@ struct TableSnap {
 }
 
 #[derive(Clone)]
+struct ForeignSnap {
+    name: String,
+    server: String,
+    /// `ftoptions` como pares chave/valor, em ordem.
+    options: Vec<(String, String)>,
+    owner: String,
+    comment: Option<String>,
+    columns: Vec<Col>,
+}
+
+#[derive(Clone)]
 struct ViewSnap {
     name: String,
     materialized: bool,
@@ -166,6 +177,7 @@ struct TypeSnap {
 #[derive(Default, Clone)]
 struct Snapshot {
     tables: Vec<TableSnap>,
+    foreign: Vec<ForeignSnap>,
     views: Vec<ViewSnap>,
     seqs: Vec<SeqSnap>,
     funcs: Vec<FuncSnap>,
@@ -235,6 +247,35 @@ async fn load(s: &PgSession, schema: &str, hooks: &mut CompareHooks<'_>, side: &
         });
     }
 
+    // ---- Tabelas estrangeiras.
+    let rows = s
+        .client
+        .query(
+            &format!(
+                "SELECT c.oid, c.relname::text, COALESCE(srv.srvname::text, ''), COALESCE(ft.ftoptions, ARRAY[]::text[]), pg_get_userbyid(c.relowner)::text, obj_description(c.oid, 'pg_class') \
+                   FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+                   LEFT JOIN pg_catalog.pg_foreign_table ft ON ft.ftrelid = c.oid \
+                   LEFT JOIN pg_catalog.pg_foreign_server srv ON srv.oid = ft.ftserver \
+                  WHERE n.nspname = ANY($1) AND c.relkind = 'f' AND {} ORDER BY c.relname",
+                in_extension("pg_class", "c.oid")
+            ),
+            &[&schemas],
+        )
+        .await
+        .map_err(sql_err)?;
+    let mut foreign_by_oid: HashMap<u32, usize> = HashMap::new();
+    for r in rows {
+        foreign_by_oid.insert(r.get(0), snap.foreign.len());
+        oids.push(r.get(0));
+        let mut options: Vec<(String, String)> = r
+            .get::<_, Vec<String>>(3)
+            .iter()
+            .map(|o| o.split_once('=').map(|(k, v)| (k.to_string(), v.to_string())).unwrap_or_else(|| (o.clone(), String::new())))
+            .collect();
+        options.sort();
+        snap.foreign.push(ForeignSnap { name: r.get(1), server: r.get(2), options, owner: r.get(4), comment: r.get(5), columns: Vec::new() });
+    }
+
     step("Getting table fields", 0.2, hooks)?;
     let identity = if v >= 100000 { "a.attidentity::text" } else { "''::text" };
     let generated = if v >= 120000 { "a.attgenerated::text" } else { "''::text" };
@@ -256,21 +297,26 @@ async fn load(s: &PgSession, schema: &str, hooks: &mut CompareHooks<'_>, side: &
         .await
         .map_err(sql_err)?;
     for r in rows {
-        if let Some(&i) = by_oid.get(&r.get::<_, u32>(0)) {
-            snap.tables[i].columns.push(Col {
-                name: r.get(1),
-                data_type: r.get(2),
-                not_null: r.get(3),
-                default: r.get(4),
-                identity: r.get(5),
-                generated: r.get(6),
-                collation: r.get(7),
-                comment: r.get(8),
-            });
+        let oid: u32 = r.get(0);
+        let col = Col {
+            name: r.get(1),
+            data_type: r.get(2),
+            not_null: r.get(3),
+            default: r.get(4),
+            identity: r.get(5),
+            generated: r.get(6),
+            collation: r.get(7),
+            comment: r.get(8),
+        };
+        if let Some(&i) = by_oid.get(&oid) {
+            snap.tables[i].columns.push(col);
+        } else if let Some(&i) = foreign_by_oid.get(&oid) {
+            snap.foreign[i].columns.push(col);
         }
     }
 
     step("Getting table constraints", 0.4, hooks)?;
+    let oids: Vec<u32> = oids.into_iter().filter(|o| by_oid.contains_key(o)).collect();
     let rows = s
         .client
         .query(
@@ -460,6 +506,13 @@ fn retarget(snap: &mut Snapshot, from: &str, to: &str) {
         rw_opt(&mut t.partition_key);
         rw_opt(&mut t.partition_bound);
     }
+    for f in &mut snap.foreign {
+        for c in &mut f.columns {
+            rw(&mut c.data_type);
+            rw_opt(&mut c.default);
+            rw_opt(&mut c.collation);
+        }
+    }
     for v in &mut snap.views {
         rw(&mut v.def);
         v.indexes.iter_mut().for_each(|n| rw(&mut n.def));
@@ -586,8 +639,8 @@ fn with_options(t: &TableSnap) -> String {
     if t.options.is_empty() { String::new() } else { format!(" WITH ({})", t.options.join(", ")) }
 }
 
-fn add_column(q: &str, c: &Col) -> String {
-    format!("ALTER TABLE {q} ADD COLUMN {};", column_line(c))
+fn add_column(kw: &str, q: &str, c: &Col) -> String {
+    format!("ALTER {kw} {q} ADD COLUMN {};", column_line(c))
 }
 
 fn comment_on(kind: &str, target: &str, comment: &Option<String>) -> String {
@@ -609,6 +662,28 @@ fn table_ddl(cx: &Ctx, t: &TableSnap) -> String {
     out.extend(t.indexes.iter().map(|i| format!("{};", i.def)));
     out.extend(t.triggers.iter().map(|g| format!("{};", g.def)));
     out.extend(t.constraints.iter().filter(|c| c.kind == "f").map(|c| format!("ALTER TABLE {q} ADD CONSTRAINT {} {};", quote_ident(&c.name), c.def)));
+    out.join("\n\n")
+}
+
+fn foreign_options(options: &[(String, String)]) -> String {
+    if options.is_empty() {
+        return String::new();
+    }
+    format!(" OPTIONS ({})", options.iter().map(|(k, v)| format!("{} {}", quote_ident(k), literal(v))).collect::<Vec<_>>().join(", "))
+}
+
+fn create_foreign(cx: &Ctx, f: &ForeignSnap) -> String {
+    let lines: Vec<String> = f.columns.iter().map(|c| format!("  {}", column_line(c))).collect();
+    let body = if lines.is_empty() { "()".to_string() } else { format!("(\n{}\n)", lines.join(",\n")) };
+    format!("CREATE FOREIGN TABLE {} {body}\nSERVER {}{};", cx.q(&f.name), quote_ident(&f.server), foreign_options(&f.options))
+}
+
+fn foreign_ddl(cx: &Ctx, f: &ForeignSnap) -> String {
+    let q = cx.q(&f.name);
+    let mut out = vec![create_foreign(cx, f), format!("ALTER FOREIGN TABLE {q} OWNER TO {};", quote_ident(&f.owner))];
+    if f.comment.is_some() {
+        out.push(comment_on("FOREIGN TABLE", &q, &f.comment));
+    }
     out.join("\n\n")
 }
 
@@ -782,9 +857,10 @@ fn col_same(cx: &Ctx, a: &Col, b: &Col) -> bool {
         && (&a.identity, &a.generated, &a.collation, &a.comment) == (&b.identity, &b.generated, &b.collation, &b.comment)
 }
 
-fn alter_column(o: &mut Out, cx: &Ctx, q: &str, order: i64, idx: usize, s: &Col, d: &Col) {
+#[allow(clippy::too_many_arguments)]
+fn alter_column(o: &mut Out, cx: &Ctx, kw: &str, q: &str, order: i64, idx: usize, s: &Col, d: &Col) {
     let col = quote_ident(&s.name);
-    let alter = |what: String| format!("ALTER TABLE {q} ALTER COLUMN {col} {what};");
+    let alter = |what: String| format!("ALTER {kw} {q} ALTER COLUMN {col} {what};");
     if s.data_type != d.data_type || s.collation != d.collation {
         let collate = s.collation.as_ref().map(|c| format!(" COLLATE {c}")).unwrap_or_default();
         o.push(TABLES, order, Some(idx), alter(format!("TYPE {}{collate}", s.data_type)));
@@ -874,14 +950,14 @@ fn diff_table(cx: &Ctx, order: i64, src: Option<&TableSnap>, dst: Option<&TableS
                 match dst_cols.get(c.name.as_str()) {
                     None => {
                         o.parts.push(Part { kind: "column".into(), name: c.name.clone(), op: Op::Add });
-                        o.push(TABLES, order, Some(idx), add_column(&q, c));
+                        o.push(TABLES, order, Some(idx), add_column("TABLE", &q, c));
                         if c.comment.is_some() {
                             o.push(TABLES, order, Some(idx), comment_on("COLUMN", &format!("{q}.{}", quote_ident(&c.name)), &c.comment));
                         }
                     }
                     Some(t) if !col_same(cx, c, t) => {
                         o.parts.push(Part { kind: "column".into(), name: c.name.clone(), op: Op::Modify });
-                        alter_column(&mut o, cx, &q, order, idx, c, t);
+                        alter_column(&mut o, cx, "TABLE", &q, order, idx, c, t);
                     }
                     Some(_) => o.parts.push(Part { kind: "column".into(), name: c.name.clone(), op: Op::Same }),
                 }
@@ -915,6 +991,83 @@ fn diff_table(cx: &Ctx, order: i64, src: Option<&TableSnap>, dst: Option<&TableS
         (None, None) => Op::Same,
     };
     ObjectDiff { kind: "table", name, op, parts: o.parts, source_ddl, target_ddl, stmts: o.stmts }
+}
+
+fn diff_foreign(cx: &Ctx, order: i64, src: Option<&ForeignSnap>, dst: Option<&ForeignSnap>) -> ObjectDiff {
+    let name = src.or(dst).map(|t| t.name.clone()).unwrap_or_default();
+    let q = cx.q(&name);
+    let mut o = Out { cx, stmts: Vec::new(), parts: Vec::new() };
+    let op = match (src, dst) {
+        (Some(f), None) => {
+            o.push(TABLES, order, None, create_foreign(cx, f));
+            if f.comment.is_some() {
+                o.push(TABLE_PARTS, order, None, comment_on("FOREIGN TABLE", &q, &f.comment));
+            }
+            Op::Add
+        }
+        (None, Some(_)) => {
+            o.push(DROP_OBJECTS, order, None, format!("DROP FOREIGN TABLE {q};"));
+            Op::Delete
+        }
+        (Some(s), Some(d)) => {
+            let dst_cols: HashMap<&str, &Col> = d.columns.iter().map(|c| (c.name.as_str(), c)).collect();
+            for c in &s.columns {
+                let idx = o.parts.len();
+                match dst_cols.get(c.name.as_str()) {
+                    None => {
+                        o.parts.push(Part { kind: "column".into(), name: c.name.clone(), op: Op::Add });
+                        o.push(TABLES, order, Some(idx), add_column("FOREIGN TABLE", &q, c));
+                    }
+                    Some(t) if !col_same(cx, c, t) => {
+                        o.parts.push(Part { kind: "column".into(), name: c.name.clone(), op: Op::Modify });
+                        alter_column(&mut o, cx, "FOREIGN TABLE", &q, order, idx, c, t);
+                    }
+                    Some(_) => o.parts.push(Part { kind: "column".into(), name: c.name.clone(), op: Op::Same }),
+                }
+            }
+            let src_cols: std::collections::HashSet<&str> = s.columns.iter().map(|c| c.name.as_str()).collect();
+            for c in d.columns.iter().filter(|c| !src_cols.contains(c.name.as_str())) {
+                let idx = o.parts.len();
+                o.parts.push(Part { kind: "column".into(), name: c.name.clone(), op: Op::Delete });
+                o.push(TABLES, order, Some(idx), format!("ALTER FOREIGN TABLE {q} DROP COLUMN {};", quote_ident(&c.name)));
+            }
+            let changes = foreign_option_changes(&q, s, d);
+            let idx = o.parts.len();
+            o.parts.push(Part { kind: "options".into(), name: "(Table Options)".into(), op: if changes.is_empty() { Op::Same } else { Op::Modify } });
+            for sql in changes {
+                o.push(TABLES, order, Some(idx), sql);
+            }
+            if o.parts.iter().all(|p| p.op == Op::Same) { Op::Same } else { Op::Modify }
+        }
+        (None, None) => Op::Same,
+    };
+    ObjectDiff { kind: "ftable", name, op, parts: o.parts, source_ddl: src.map(|f| foreign_ddl(cx, f)).unwrap_or_default(), target_ddl: dst.map(|f| foreign_ddl(cx, f)).unwrap_or_default(), stmts: o.stmts }
+}
+
+/// `ALTER FOREIGN TABLE ... OPTIONS (ADD/SET/DROP ...)`, o comentário e o aviso de servidor diferente.
+fn foreign_option_changes(q: &str, s: &ForeignSnap, d: &ForeignSnap) -> Vec<String> {
+    let mut out = Vec::new();
+    if s.server != d.server {
+        out.push(format!("-- foreign table {q}: the server differs ({} -> {}) and cannot be altered automatically", d.server, s.server));
+    }
+    let mut actions: Vec<String> = Vec::new();
+    for (k, v) in &s.options {
+        match d.options.iter().find(|(dk, _)| dk == k) {
+            None => actions.push(format!("ADD {} {}", quote_ident(k), literal(v))),
+            Some((_, dv)) if dv != v => actions.push(format!("SET {} {}", quote_ident(k), literal(v))),
+            Some(_) => {}
+        }
+    }
+    for (k, _) in d.options.iter().filter(|(k, _)| !s.options.iter().any(|(sk, _)| sk == k)) {
+        actions.push(format!("DROP {}", quote_ident(k)));
+    }
+    if !actions.is_empty() {
+        out.push(format!("ALTER FOREIGN TABLE {q} OPTIONS ({});", actions.join(", ")));
+    }
+    if s.comment != d.comment {
+        out.push(comment_on("FOREIGN TABLE", q, &s.comment));
+    }
+    out
 }
 
 fn diff_view(cx: &Ctx, order: i64, src: Option<&ViewSnap>, dst: Option<&ViewSnap>) -> ObjectDiff {
@@ -1178,6 +1331,9 @@ pub async fn compare(src: &PgSession, dst: &PgSession, spec: &StructSpec, mut ho
     for (s, d) in pair(&a.tables, &b.tables, |t| t.name.as_str()) {
         objects.push(diff_table(&cx, next(), s, d));
     }
+    for (s, d) in pair(&a.foreign, &b.foreign, |t| t.name.as_str()) {
+        objects.push(diff_foreign(&cx, next(), s, d));
+    }
     // Views e views materializadas dividem o espaço de nomes.
     for (s, d) in pair(&a.views, &b.views, |t| t.name.as_str()) {
         objects.push(diff_view(&cx, next(), s, d));
@@ -1340,6 +1496,34 @@ mod tests {
             ]
         );
         assert!(type_changes(&cx, "q", &s, &s.clone()).is_empty());
+    }
+
+    #[test]
+    fn foreign_table_options_and_columns_are_altered_in_place() {
+        let cx = Ctx { schema: "public".into(), target_version: 180000, loose: false, legacy_sequences: false };
+        let ft = |cols: Vec<Col>, options: Vec<(&str, &str)>| ForeignSnap {
+            name: "f".into(),
+            server: "srv".into(),
+            options: options.into_iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            owner: "o".into(),
+            comment: None,
+            columns: cols,
+        };
+        let s = ft(vec![col("a", "integer"), col("b", "text")], vec![("table_name", "t2"), ("schema_name", "x")]);
+        let d = ft(vec![col("a", "integer"), col("old", "text")], vec![("table_name", "t1"), ("fetch_size", "10")]);
+        let diff = diff_foreign(&cx, 1, Some(&s), Some(&d));
+        assert_eq!(diff.op, Op::Modify);
+        let c = StructComparison { objects: vec![diff] };
+        let sel = [StructSelection { kind: "ftable".into(), name: "f".into(), parts: None }];
+        assert_eq!(
+            script(&c, &sel),
+            vec![
+                r#"ALTER FOREIGN TABLE "public"."f" ADD COLUMN "b" text;"#.to_string(),
+                r#"ALTER FOREIGN TABLE "public"."f" DROP COLUMN "old";"#.to_string(),
+                r#"ALTER FOREIGN TABLE "public"."f" OPTIONS (SET "table_name" 't2', ADD "schema_name" 'x', DROP "fetch_size");"#.to_string(),
+            ]
+        );
+        assert!(create_foreign(&cx, &s).contains(r#"SERVER "srv" OPTIONS ("table_name" 't2', "schema_name" 'x');"#));
     }
 
     #[test]
