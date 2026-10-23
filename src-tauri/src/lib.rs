@@ -1,6 +1,7 @@
 mod backup;
 mod builder;
 mod commands;
+mod datasync;
 mod dump;
 mod export;
 mod import;
@@ -65,6 +66,7 @@ pub fn run() {
         .manage(export::Exports::default())
         .manage(backup::Backups::default())
         .manage(tx::Transactions::default())
+        .manage(datasync::Comparisons::default())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Info).build())?;
@@ -172,6 +174,13 @@ pub fn run() {
             builder::close_query_builder,
             builder::open_data_transfer,
             transfer::pg_transfer,
+            builder::open_data_sync,
+            datasync::datasync_compare,
+            datasync::datasync_rows,
+            datasync::datasync_script,
+            datasync::datasync_script_full,
+            datasync::datasync_deploy,
+            datasync::datasync_forget,
             export::pg_export,
             dump::pg_dump_sql,
             backup::pg_tools_locate,
