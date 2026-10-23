@@ -3,6 +3,7 @@ import { errorText, pg, toAtlasError, type ObjectInfo } from "../../backend";
 import { useT } from "../../i18n";
 import { parseSelect, type PRef } from "../../sql/querybuilderParse";
 import { SmallIcon } from "../../icons";
+import { MessageDialog } from "../MessageDialog";
 import {
   AGGREGATES, JOIN_TYPES, NO_VALUE, OPERATORS, buildSql, emptyState, foreignKeyJoins, uid,
   type Aggregate, type JoinType, type Operator, type QbCond, type QbRef, type QbState, type QbTable,
@@ -91,6 +92,7 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
   const [treeDrag, setTreeDrag] = useState<{ schema: string; name: string; view: boolean; x: number; y: number; sx: number; sy: number; moved: boolean } | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const [fromSql, setFromSql] = useState(false);
+  const [aliasEdit, setAliasEdit] = useState<string | null>(null);
 
   const sql = useMemo(() => buildSql(st, defaultSchema), [st, defaultSchema]);
 
@@ -308,13 +310,13 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" && !aliasEdit) onClose();
       const tag = (e.target as Element | null)?.tagName;
       if (e.key === "Delete" && selTable && tag !== "INPUT" && tag !== "SELECT") removeTable(selTable);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, selTable]);
+  }, [onClose, selTable, aliasEdit]);
 
   /* ---------- Ligações no desenho ---------- */
   const anchor = (r: QbRef, otherX: number) => {
@@ -577,7 +579,7 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
                   {st.tables.map((tb) => (
                     <div key={tb.id} className={`qb-card${selTable === tb.id ? " is-selected" : ""}${tb.view ? " is-view" : ""}`} style={{ left: tb.x, top: tb.y, width: CARD_W }}
                       onMouseDown={() => setSelTable(tb.id)}>
-                      <div className="qb-card-head" title={`${tb.schema}.${tb.name}`}
+                      <div className="qb-card-head" title={`${tb.schema}.${tb.name}`} onDoubleClick={() => setAliasEdit(tb.id)}
                         onMouseDown={(e) => {
                           if (e.button !== 0) return;
                           const p = canvasPoint(e);
@@ -641,6 +643,19 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
           <button type="button" className="btn" onClick={onClose}>{t("common.cancel")}</button>
         </div>
       </div>
+      {aliasEdit && (
+        <MessageDialog
+          title={t("qb.editAlias")}
+          prompt={{ label: t("qb.enterAlias"), initial: st.tables.find((x) => x.id === aliasEdit)?.alias ?? "" }}
+          allowEmpty
+          selectText
+          onOk={(v) => {
+            setSt((s) => ({ ...s, tables: s.tables.map((x) => (x.id === aliasEdit ? { ...x, alias: v ?? "" } : x)) }));
+            setAliasEdit(null);
+          }}
+          onCancel={() => setAliasEdit(null)}
+        />
+      )}
       {treeDrag?.moved && <div className="qb-ghost" style={{ left: treeDrag.x + 10, top: treeDrag.y + 6 }}><SmallIcon name={treeDrag.view ? "view" : "table"} />{treeDrag.name}</div>}
     </div>
   );

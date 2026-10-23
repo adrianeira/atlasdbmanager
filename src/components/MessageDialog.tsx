@@ -19,11 +19,15 @@ interface Props {
   error?: string;
   /** Campo de prompt como senha (mascarado). */
   secret?: boolean;
+  /** Campo de prompt pode ficar vazio (ex.: apagar um apelido). */
+  allowEmpty?: boolean;
+  /** Abre com o texto do prompt selecionado. */
+  selectText?: boolean;
   onOk: (value?: string) => void;
   onCancel: () => void;
 }
 
-export function MessageDialog({ title, message, sql, confirmText, prompt, danger, okLabel, busy, error, secret, onOk, onCancel }: Props) {
+export function MessageDialog({ title, message, sql, confirmText, prompt, danger, okLabel, busy, error, secret, allowEmpty, selectText, onOk, onCancel }: Props) {
   const t = useT();
   const [typed, setTyped] = useState("");
   const [value, setValue] = useState(prompt?.initial ?? "");
@@ -32,12 +36,13 @@ export function MessageDialog({ title, message, sql, confirmText, prompt, danger
 
   useEffect(() => {
     (inputRef.current ?? okRef.current)?.focus();
+    if (selectText) inputRef.current?.select();
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCancel();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onCancel]);
 
-  const canOk = !busy && (!confirmText || typed === confirmText) && (!prompt || secret || value.trim() !== "");
+  const canOk = !busy && (!confirmText || typed === confirmText) && (!prompt || secret || allowEmpty || value.trim() !== "");
   const ok = () => canOk && onOk(prompt ? (secret ? value : value.trim()) : undefined);
 
   return (
