@@ -1,12 +1,14 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { errorText, pg, toAtlasError, type ObjectInfo } from "../../backend";
+import type { MenuEntry } from "../../commands";
+import { errorText, local, pg, toAtlasError, type ObjectInfo } from "../../backend";
 import { useT } from "../../i18n";
 import { parseSelect, type PRef } from "../../sql/querybuilderParse";
 import { SmallIcon } from "../../icons";
 import { MessageDialog } from "../MessageDialog";
+import { PopupMenu } from "../PopupMenu";
 import {
-  AGGREGATES, JOIN_TYPES, NO_VALUE, OPERATORS, buildSql, emptyState, foreignKeyJoins, uid,
-  type Aggregate, type JoinType, type Operator, type QbCond, type QbRef, type QbState, type QbTable,
+  AGGREGATES, JOIN_TYPES, NO_VALUE, OPERATORS, buildSql, emptyState, foreignKeyJoins, layoutId, layoutKey, uid,
+  type Aggregate, type JoinType, type Operator, type QbCond, type QbLayout, type QbRef, type QbState, type QbTable,
 } from "../../sql/querybuilder";
 
 interface Props {
@@ -40,6 +42,9 @@ const parseKey = (k: string): QbRef | null => {
   const i = k.indexOf("|");
   return i < 0 ? null : { table: k.slice(0, i), column: k.slice(i + 1) };
 };
+
+const LAYOUTS_KEY = "querybuilder.layouts";
+const MAX_LAYOUTS = 100;
 
 const KEYWORDS = /\b(SELECT|DISTINCT|FROM|INNER|LEFT|RIGHT|FULL|CROSS|JOIN|ON|WHERE|GROUP BY|HAVING|ORDER BY|LIMIT|OFFSET|AND|OR|AS|DESC|NOT|IN|LIKE|ILIKE|BETWEEN|IS|NULL|COUNT|SUM|AVG|MIN|MAX)\b/g;
 
@@ -93,6 +98,8 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
   const canvasRef = useRef<HTMLDivElement>(null);
   const [fromSql, setFromSql] = useState(false);
   const [aliasEdit, setAliasEdit] = useState<string | null>(null);
+  const [win, setWin] = useState<"normal" | "max" | "min">("normal");
+  const [menu, setMenu] = useState<{ x: number; y: number; items: MenuEntry[] } | null>(null);
 
   const sql = useMemo(() => buildSql(st, defaultSchema), [st, defaultSchema]);
 
@@ -142,6 +149,8 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
     void (async () => {
       try {
         const tables: QbTable[] = [];
+        const saved = await local.getPref<{ k: string; p: QbLayout }[]>(LAYOUTS_KEY).catch(() => null);
+        const layout = Array.isArray(saved) ? saved.find((e) => e.k === layoutKey(text))?.p : undefined;
         for (const [n, pt] of parsed.tables.entries()) {
           const schema = pt.schema ?? defaultSchema;
           const d = await pg.tableDetail(connId, database, schema, pt.name);
@@ -152,6 +161,9 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
             id: uid("t"), schema, name: pt.name, alias: pt.alias, view: false, columns: d.columns.map((c) => c.name), fks,
             x: 24 + (n % 4) * 200, y: 24 + Math.floor(n / 4) * 220,
           });
+          const last = tables[tables.length - 1];
+          const at = layout?.[layoutId(last)];
+          if (at) Object.assign(last, at);
         }
         const resolve = (r: PRef): QbRef => {
           const hit = r.q
@@ -501,6 +513,47 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
     </div>
   );
 
+  /** Guarda a posição dos cartões (pelo texto do SELECT) para reabrir o desenho do mesmo jeito. */
+  const build = (run: boolean) => {
+    const layout: QbLayout = Object.fromEntries(st.tables.map((x) => [layoutId(x), { x: Math.round(x.x), y: Math.round(x.y) }]));
+    const key = layoutKey(`${sql};`);
+    void local.getPref<{ k: string; p: QbLayout }[]>(LAYOUTS_KEY)
+      .catch(() => null)
+      .then((saved) => {
+        const rest = (Array.isArray(saved) ? saved : []).filter((e) => e.k !== key);
+        return local.setPref(LAYOUTS_KEY, [{ k: key, p: layout }, ...rest].slice(0, MAX_LAYOUTS));
+      })
+      .catch(() => undefined);
+    onBuild(sql, run, fromSql);
+  };
+
+  const showMenu = (e: { clientX: number; clientY: number; preventDefault: () => void; stopPropagation: () => void }, items: MenuEntry[]) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMenu({ x: e.clientX, y: e.clientY, items });
+  };
+  const cardMenu = (tb: QbTable): MenuEntry[] => [
+    { kind: "item", text: t("qb.editAlias"), run: () => setAliasEdit(tb.id) },
+    { kind: "item", text: t("qb.selectAll"), run: () => tb.columns.forEach((c) => toggleColumn(tb.id, c, true)) },
+    { kind: "item", text: t("qb.clearFields"), run: () => setSt((s) => ({ ...s, fields: s.fields.filter((f) => f.ref.table !== tb.id) })) },
+    { kind: "sep" },
+    { kind: "item", text: t("qb.removeTable"), run: () => removeTable(tb.id) },
+  ];
+  const lineMenu = (id: string, type: JoinType): MenuEntry[] => [
+    ...JOIN_TYPES.map((jt): MenuEntry => ({ kind: "item", text: `${jt} JOIN`, checked: jt === type, run: () => setSt((s) => ({ ...s, joins: s.joins.map((x) => (x.id === id ? { ...x, type: jt } : x)) })) })),
+    { kind: "sep" },
+    { kind: "item", text: t("qb.removeRelation"), run: () => setSt((s) => ({ ...s, joins: s.joins.filter((x) => x.id !== id) })) },
+  ];
+
+  useEffect(() => {
+    if (!menu) return;
+    const close = (e: MouseEvent) => {
+      if (!(e.target as Element | null)?.closest?.(".qb-ctx")) setMenu(null);
+    };
+    window.addEventListener("mousedown", close);
+    return () => window.removeEventListener("mousedown", close);
+  }, [menu]);
+
   /* ---------- Render ---------- */
   const lines = st.joins.map((j) => {
     const a = anchor(j.left, centerX(j.right));
@@ -509,11 +562,17 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
   });
 
   return (
-    <div className="modal-overlay" role="presentation">
-      <div className="window qb-window" role="dialog" aria-modal="true" aria-label={t("qb.title")}>
+    <div className={`modal-overlay${win === "min" ? " qb-overlay-min" : ""}`} role="presentation">
+      <div className={`window qb-window${win === "max" ? " is-max" : ""}${win === "min" ? " is-min" : ""}`} role="dialog" aria-modal="true" aria-label={t("qb.title")}>
         <div className="window-title">
           <SmallIcon name="queryBuilder" />
           <span>{t("qb.title")}</span>
+          <button type="button" className="window-close" aria-label={t("qb.minimize")} title={t("qb.minimize")} onClick={() => setWin(win === "min" ? "normal" : "min")}>
+            <svg width="10" height="10" viewBox="0 0 10 10"><path d="M0 5.5h10" stroke="currentColor" /></svg>
+          </button>
+          <button type="button" className="window-close" aria-label={t("qb.maximize")} title={t("qb.maximize")} onClick={() => setWin(win === "max" ? "normal" : "max")}>
+            <svg width="10" height="10" viewBox="0 0 10 10">{win === "max" ? <path d="M2.5 0.5h7v7h-2M0.5 2.5h7v7h-7z" fill="none" stroke="currentColor" /> : <rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" />}</svg>
+          </button>
           <button type="button" className="window-close" aria-label={t("tab.close")} onClick={onClose}><SmallIcon name="close" /></button>
         </div>
 
@@ -565,9 +624,10 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
                       <marker id="qb-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L8 4L0 8z" fill="currentColor" /></marker>
                     </defs>
                     {lines.map(({ j, a, b }) => (
-                      <g key={j.id} className={`qb-line${selJoin === j.id ? " is-selected" : ""}`} onClick={() => { setSelJoin(j.id); setTab("FROM"); }}>
+                      <g key={j.id} className={`qb-line${selJoin === j.id ? " is-selected" : ""}`} onClick={() => { setSelJoin(j.id); setTab("FROM"); }} onContextMenu={(e) => { setSelJoin(j.id); showMenu(e, lineMenu(j.id, j.type)); }}>
                         <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} className="qb-hit" />
                         <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} markerEnd="url(#qb-arrow)" />
+                        {j.type !== "INNER" && <text className="qb-join-label" x={(a.x + b.x) / 2} y={(a.y + b.y) / 2 - 4} textAnchor="middle">{j.type}</text>}
                         <title>{`${j.type} JOIN: ${labelOf(j.left)} = ${labelOf(j.right)}`}</title>
                       </g>
                     ))}
@@ -578,7 +638,7 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
                   </svg>
                   {st.tables.map((tb) => (
                     <div key={tb.id} className={`qb-card${selTable === tb.id ? " is-selected" : ""}${tb.view ? " is-view" : ""}`} style={{ left: tb.x, top: tb.y, width: CARD_W }}
-                      onMouseDown={() => setSelTable(tb.id)}>
+                      onMouseDown={() => setSelTable(tb.id)} onContextMenu={(e) => { setSelTable(tb.id); showMenu(e, cardMenu(tb)); }}>
                       <div className="qb-card-head" title={`${tb.schema}.${tb.name}`} onDoubleClick={() => setAliasEdit(tb.id)}
                         onMouseDown={(e) => {
                           if (e.button !== 0) return;
@@ -638,11 +698,15 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
           <button type="button" className={`icon-button${panes.left ? " is-active" : ""}`} title={t("qb.toggleTree")} aria-pressed={panes.left} onClick={() => setPanes((p) => ({ ...p, left: !p.left }))}><SmallIcon name="sidebar" /></button>
           <button type="button" className={`icon-button qb-flip${panes.right ? " is-active" : ""}`} title={t("qb.toggleSql")} aria-pressed={panes.right} onClick={() => setPanes((p) => ({ ...p, right: !p.right }))}><SmallIcon name="sidebar" /></button>
           <span className="spacer" />
-          <button type="button" className="btn" disabled={st.tables.length === 0} onClick={() => onBuild(sql, false, fromSql)}>{t("qb.build")}</button>
-          <button type="button" className="btn btn-primary" disabled={st.tables.length === 0} onClick={() => onBuild(sql, true, fromSql)}>{t("qb.buildRun")}</button>
+          <button type="button" className="btn" disabled={st.tables.length === 0} onClick={() => { build(false); }}>{t("qb.build")}</button>
+          <button type="button" className="btn btn-primary" disabled={st.tables.length === 0} onClick={() => { build(true); }}>{t("qb.buildRun")}</button>
           <button type="button" className="btn" onClick={onClose}>{t("common.cancel")}</button>
         </div>
       </div>
+      {menu && (
+        <PopupMenu items={menu.items} commands={{}} onClose={() => setMenu(null)} className="ctx-menu qb-ctx"
+          style={{ position: "fixed", zIndex: 400, left: Math.min(menu.x, window.innerWidth - 240), top: Math.min(menu.y, window.innerHeight - 220) }} />
+      )}
       {aliasEdit && (
         <MessageDialog
           title={t("qb.editAlias")}

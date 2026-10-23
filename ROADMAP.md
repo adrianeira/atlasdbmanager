@@ -74,7 +74,12 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       apelido, JOINs, WHERE/HAVING, GROUP BY, ORDER BY, LIMIT/OFFSET, agregações), monta o desenho e, no Build,
       substitui aquele trecho; fora desse formato avisa e começa do zero
       *(`src/sql/querybuilderParse.ts`)*
-- [ ] Salvar/abrir o desenho (posição dos cartões) junto com a consulta
+- [x] **Apelido da tabela** (duplo clique no título abre "Edit Alias"; o título mostra `tabela ( apelido )`),
+      **menu de clique direito** no cartão (apelido, marcar/desmarcar campos, remover) e na relação (tipo de JOIN,
+      remover), rótulo do tipo na linha (LEFT/RIGHT/FULL), minimizar/maximizar a janela
+- [x] **Posição dos cartões lembrada**: ao dar Build, o desenho é guardado pelo texto do SELECT e volta igual ao
+      reabrir o builder a partir dele (últimas 100 consultas, no armazenamento local)
+- [ ] Cartão de tabela com muitas colunas: hoje cresce até mostrar todas (o canvas rola); falta limitar a altura
 
 ### Importação de dados
 - [x] **Assistente de importação em 7 etapas** (formato → arquivos → opções da origem → tabela de destino →

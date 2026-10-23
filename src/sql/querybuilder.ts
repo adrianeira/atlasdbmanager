@@ -223,3 +223,16 @@ export function foreignKeyJoins(added: QbTable, others: QbTable[], existing: QbJ
   }
   return out;
 }
+
+/** Posição dos cartões de uma consulta, guardada pelo texto do SELECT (sem espaços extras nem o `;` final). */
+export type QbLayout = Record<string, { x: number; y: number }>;
+
+export function layoutKey(sql: string): string {
+  const norm = sql.replace(/\s+/g, " ").replace(/\s*;\s*$/, "").trim();
+  let h = 5381;
+  for (let i = 0; i < norm.length; i++) h = ((h << 5) + h + norm.charCodeAt(i)) | 0;
+  return `${norm.length}:${(h >>> 0).toString(36)}`;
+}
+
+/** Identifica um cartão entre aberturas do builder (o `id` muda a cada vez). */
+export const layoutId = (t: Pick<QbTable, "schema" | "name" | "alias">) => `${t.schema}.${t.name}#${t.alias.trim()}`;
