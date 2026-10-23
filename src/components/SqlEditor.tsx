@@ -4,7 +4,7 @@ import { PostgreSQL, sql } from "@codemirror/lang-sql";
 import { bracketMatching, foldGutter, HighlightStyle, indentOnInput, syntaxHighlighting } from "@codemirror/language";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import {
-  drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, placeholder as cmPlaceholder,
+  drawSelection, EditorView, highlightActiveLineGutter, keymap, lineNumbers, placeholder as cmPlaceholder,
 } from "@codemirror/view";
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, snippet } from "@codemirror/autocomplete";
 import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
@@ -25,7 +25,6 @@ const atlasTheme = EditorView.theme({
   ".cm-content": { fontFamily: "var(--font-mono)", caretColor: "var(--c-text)" },
   ".cm-scroller": { fontFamily: "var(--font-mono)", lineHeight: "1.45" },
   ".cm-gutters": { backgroundColor: "var(--c-surface-alt)", color: "var(--c-text-disabled)", border: "none", borderRight: "1px solid var(--c-border)" },
-  ".cm-activeLine": { backgroundColor: "var(--editor-active-line)" },
   ".cm-activeLineGutter": { backgroundColor: "transparent", color: "var(--c-text)" },
   "&.cm-focused": { outline: "none" },
   ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": { backgroundColor: "var(--editor-selection) !important" },
@@ -84,7 +83,6 @@ export function SqlEditor({ value, readOnly, schema, defaultSchema, placeholder,
       indentOnInput(),
       bracketMatching(),
       closeBrackets(),
-      highlightActiveLine(),
       highlightSelectionMatches(),
       search({ top: true }),
       syntaxHighlighting(atlasHighlight),

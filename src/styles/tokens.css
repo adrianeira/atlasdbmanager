@@ -75,7 +75,6 @@
   --sql-number: #098658;
   --sql-comment: #6a737d;
   --sql-quoted: #1b1b1b;
-  --editor-active-line: #f5f9ff;
   --editor-selection: #cce4f7;
 
   color-scheme: light;
@@ -123,7 +122,6 @@
     --sql-number: #7ee2b8;
     --sql-comment: #8b949e;
     --sql-quoted: #e8e8e8;
-    --editor-active-line: #252b33;
     --editor-selection: #264f78;
     color-scheme: dark;
   }
@@ -170,7 +168,6 @@
   --sql-number: #7ee2b8;
   --sql-comment: #8b949e;
   --sql-quoted: #e8e8e8;
-  --editor-active-line: #252b33;
   --editor-selection: #264f78;
   color-scheme: dark;
 }
