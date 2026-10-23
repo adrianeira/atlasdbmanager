@@ -54,6 +54,12 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       dica no cabeçalho
 - [x] Edição de célula salva ao sair do campo quando passa na validação
 
+### Janelas e diálogos
+- [x] Cabeçalho único nos diálogos (assistentes, Opções, Histórico, Snippets, Localizar, Dump, Colunas, Filtro e
+      ordenação): fundo branco, sem borda inferior, ícone do aplicativo e título sem negrito
+      *(`.modal-header` em `src/styles/components.css`)*
+- [ ] Botão de fechar (X) no cabeçalho de todos os diálogos (hoje só Conexão e Mensagem têm)
+
 ### Importação de dados
 - [x] **Assistente de importação em 7 etapas** (formato → arquivos → opções da origem → tabela de destino →
       campos → modo → resumo com log e barra de progresso), vários arquivos/planilhas de uma vez (cada um
