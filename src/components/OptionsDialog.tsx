@@ -5,6 +5,11 @@ import { DEFAULT_OPTIONS, EDITOR_COLOR_KEYS, OPTION_LIMITS, sanitizeOptions, typ
 import { MessageDialog } from "./MessageDialog";
 import { SmallIcon } from "../icons";
 
+import { formatNumber, formatTemporal } from "../format";
+
+/** Valor de exemplo para mostrar como cada formato fica. */
+const SAMPLE = { date: "2026-10-24", time: "15:30:45.123", datetime: "2026-10-24 15:30:45.123" } as const;
+
 type Theme = "system" | "light" | "dark";
 
 /** O que a tela edita fora de `AppOptions`: tema, idioma e legendas da barra (ficam no layout). */
@@ -192,6 +197,18 @@ export function OptionsDialog({ options, appearance, onApply, onClose }: Props) 
           <>
             {check("limitRecords", "opt.limitRecords")}
             {row("opt.pageSize", num("pageSize"), limit("pageSize"))}
+            <div className="opt-section">{t("opt.displayFormat")}</div>
+            {([["displayDate", "opt.fmtDate", "dd/MM/yyyy", "date"], ["displayTime", "opt.fmtTime", "HH:mm:ss", "time"], ["displayDateTime", "opt.fmtDateTime", "dd/MM/yyyy HH:mm:ss", "datetime"]] as const).map(([key, label, example, kind]) => (
+              <div key={key} className="exp-row">
+                <label>{t(label)}</label>
+                <input className="field" value={opts[key]} placeholder={example} spellCheck={false} onChange={(e) => setOpts({ ...opts, [key]: e.target.value })} />
+                <span className="muted">{opts[key].trim() ? formatTemporal(SAMPLE[kind], kind, opts[key]) : t("opt.asServer")}</span>
+              </div>
+            ))}
+            <div className="muted exp-note">{t("opt.fmtNote")}</div>
+            {check("showThousands", "opt.thousands")}
+            {check("systemLocale", "opt.systemLocale")}
+            <div className="muted exp-note">{t("opt.sampleNumber")}: {formatNumber("1234567.89", opts.showThousands, opts.systemLocale)}</div>
             {row("opt.rowShading", (
               <select className="field" value={opts.rowShading} onChange={(e) => setOpts({ ...opts, rowShading: e.target.value as RowShading })}>
                 <option value="none">{t("opt.shadeNone")}</option>

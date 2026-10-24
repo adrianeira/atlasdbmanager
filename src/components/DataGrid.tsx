@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { copyToClipboard, readClipboard } from "../clipboard";
 import type { MenuEntry } from "../commands";
 import { useT } from "../i18n";
+import { formatNumber, formatTemporal } from "../format";
 import { useOptions } from "../options";
 import { quoteIdent, type CellValue } from "../model";
 import { DateTimePopup, type DateTimeKind } from "./DateTimePopup";
@@ -196,7 +197,13 @@ export function DataGrid({
   sqlTarget, onDeleteRow, onRefresh, findQuery, activeFind, highlightAll, onSaveAs, onSortColumn, onClearSort, onAddFilter, onActiveCell, onOpenCellEditor,
 }: Props) {
   const t = useT();
-  const { rowShading } = useOptions();
+  const { rowShading, displayDate, displayTime, displayDateTime, showThousands, systemLocale } = useOptions();
+  /** Texto da célula com os formatos de data/hora e de número das Opções. */
+  const shown = (v: string, c: GridColumn): string => {
+    const dk = dtKind(c.type);
+    if (dk) return formatTemporal(v, dk, dk === "date" ? displayDate : dk === "time" ? displayTime : displayDateTime);
+    return c.kind === "number" ? formatNumber(v, showThousands, systemLocale) : display(v, c.kind);
+  };
   /** Linhas sombreadas (Opções → Registros → Row Shading). */
   const shadeRow = (ri: number) => (rowShading === "every2" ? ri % 2 === 1 : rowShading === "every3" ? ri % 3 === 2 : false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -610,7 +617,7 @@ export function DataGrid({
                     ) : v === null ? (
                       <span className="dg-null">(Null)</span>
                     ) : (
-                      display(v, c.kind)
+                      shown(v, c)
                     )}
                     {/* Ícone discreto à direita em colunas de data/hora/timestamp (como na referência). */}
                     {!isEditing && dtKind(c.type) && (

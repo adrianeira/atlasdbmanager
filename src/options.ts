@@ -33,6 +33,12 @@ export interface AppOptions {
   /** Registros: abrir tabelas com "Limitar registros" ligado e o sombreamento das linhas. */
   limitRecords: boolean;
   rowShading: RowShading;
+  /** Formato de exibição de data, hora e data/hora (vazio = como vem do servidor) e separadores dos números. */
+  displayDate: string;
+  displayTime: string;
+  displayDateTime: string;
+  showThousands: boolean;
+  systemLocale: boolean;
   /** Geral: permitir abrir o mesmo objeto em mais de uma aba. */
   multipleForms: boolean;
 }
@@ -43,6 +49,7 @@ export const DEFAULT_OPTIONS: AppOptions = {
   codeCompletion: true, autoSelectFirst: true,
   editorFont: "", editorColors: NO_EDITOR_COLORS,
   limitRecords: true, rowShading: "every2",
+  displayDate: "", displayTime: "", displayDateTime: "", showThousands: false, systemLocale: false,
   multipleForms: false,
 };
 
@@ -84,8 +91,15 @@ export function sanitizeOptions(raw: Partial<Record<keyof AppOptions, unknown>> 
     limitRecords: bool(raw?.limitRecords, d.limitRecords),
     rowShading: raw?.rowShading === "none" || raw?.rowShading === "every2" || raw?.rowShading === "every3" ? raw.rowShading : d.rowShading,
     multipleForms: bool(raw?.multipleForms, d.multipleForms),
+    displayDate: pattern(raw?.displayDate),
+    displayTime: pattern(raw?.displayTime),
+    displayDateTime: pattern(raw?.displayDateTime),
+    showThousands: bool(raw?.showThousands, d.showThousands),
+    systemLocale: bool(raw?.systemLocale, d.systemLocale),
   };
 }
+
+const pattern = (v: unknown): string => (typeof v === "string" ? v.slice(0, 40) : "");
 
 function sanitizeColors(raw: unknown): EditorColors {
   const out = { ...NO_EDITOR_COLORS };
