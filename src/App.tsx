@@ -287,6 +287,20 @@ export default function App() {
   useEffect(() => {
     document.documentElement.style.setProperty("--editor-font-size", `${appOptions.editorFontSize}px`);
   }, [appOptions.editorFontSize]);
+  // Fonte e cores do editor (Opções → SQL Editor); vazio volta ao padrão do tema.
+  useEffect(() => {
+    const root = document.documentElement.style;
+    const set = (name: string, value: string) => (value ? root.setProperty(name, value) : root.removeProperty(name));
+    const c = appOptions.editorColors;
+    set("--editor-font", appOptions.editorFont ? `"${appOptions.editorFont}", var(--font-mono)` : "");
+    set("--editor-fg", c.common);
+    set("--editor-bg", c.background);
+    set("--sql-keyword", c.keyword);
+    set("--sql-type", c.keyword);
+    set("--sql-string", c.string);
+    set("--sql-number", c.number);
+    set("--sql-comment", c.comment);
+  }, [appOptions.editorFont, appOptions.editorColors]);
   const patchLayout = useCallback((p: Partial<Layout>) => setLayout((l) => ({ ...l, ...p })), []);
   /** Valor atual de "Mostrar itens ocultos", lido pelas funções que listam bancos e schemas (sempre o mais recente). */
   const showHiddenRef = useRef(layout.showHidden ?? false);

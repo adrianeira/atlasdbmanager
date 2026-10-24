@@ -297,6 +297,8 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       mais **History** e **Local Data** do Atlas; todas valem na hora, sem reiniciar
 - [x] Valores fora do limite são corrigidos ao sair do campo; **Restaurar padrões**; as opções ficam no banco local (`ui.options`)
       *(`src/components/OptionsDialog.tsx`, `src/options.ts`)*
+- [x] **SQL Editor → Font and Colors**: fonte do editor (lista de fontes comuns ou qualquer instalada) e cores de Common, Keyword, String,
+      Number, Comment e Background, com botão para voltar à cor do tema; valem na hora, também nos temas claro e escuro
 - [ ] Da referência ainda sem equivalente: Tabs (onde abrir a aba nova, o que abrir ao iniciar), cores e fonte do editor, formatos de
       data/hora e separador de milhar, "Auto begin transaction", fonte do grid, Auto Recovery (salvar consultas sozinho),
       File Locations, Connectivity (proxy), Advanced e confirmações ao fechar. As categorias AI e Environment (SQL*Plus, Mongo,

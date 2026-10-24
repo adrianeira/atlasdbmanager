@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { errorText, local, toAtlasError } from "../backend";
 import { useT, type Lang, type MessageKey } from "../i18n";
-import { DEFAULT_OPTIONS, OPTION_LIMITS, sanitizeOptions, type AppOptions, type RowShading } from "../options";
+import { DEFAULT_OPTIONS, EDITOR_COLOR_KEYS, OPTION_LIMITS, sanitizeOptions, type AppOptions, type EditorColorKey, type RowShading } from "../options";
 import { MessageDialog } from "./MessageDialog";
 import { SmallIcon } from "../icons";
 
@@ -32,6 +32,18 @@ const TABS: { id: Tab; label: MessageKey }[] = [
   { id: "history", label: "opt.history" },
   { id: "storage", label: "opt.storage" },
 ];
+
+/** A cor que o tema usa hoje para o elemento (mostrada no seletor enquanto não há cor própria). */
+function defaultColor(k: EditorColorKey): string {
+  const probe = document.createElement("span");
+  probe.style.display = "none";
+  document.body.appendChild(probe);
+  const css = { common: "var(--c-text)", keyword: "var(--sql-keyword)", string: "var(--sql-string)", number: "var(--sql-number)", comment: "var(--sql-comment)", background: "var(--c-surface)" }[k];
+  probe.style.color = css;
+  const rgb = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(getComputedStyle(probe).color);
+  probe.remove();
+  return rgb ? `#${[rgb[1], rgb[2], rgb[3]].map((n) => Number(n).toString(16).padStart(2, "0")).join("")}` : "#000000";
+}
 
 export function OptionsDialog({ options, appearance, onApply, onClose }: Props) {
   const t = useT();
@@ -149,7 +161,28 @@ export function OptionsDialog({ options, appearance, onApply, onClose }: Props) 
             {check("wordWrap", "opt.wordWrap")}
             {row("opt.tabWidth", num("tabWidth"), limit("tabWidth"))}
             {check("insertSpaces", "opt.insertSpaces")}
+            <div className="opt-section">{t("opt.fontColors")}</div>
+            {row("opt.editorFont", (
+              <>
+                <input className="field" list="opt-fonts" value={opts.editorFont} placeholder={t("opt.defaultFont")} spellCheck={false} onChange={(e) => setOpts({ ...opts, editorFont: e.target.value })} />
+                <datalist id="opt-fonts">{["Cascadia Mono", "Consolas", "Courier New", "JetBrains Mono", "Fira Code", "Source Code Pro", "Lucida Console", "Menlo", "Monaco", "DejaVu Sans Mono"].map((f) => <option key={f} value={f} />)}</datalist>
+              </>
+            ))}
             {row("opt.fontSize", num("editorFontSize"), `px (${limit("editorFontSize")})`)}
+            <div className="opt-colors">
+              {EDITOR_COLOR_KEYS.map((k: EditorColorKey) => (
+                <div key={k} className="opt-color">
+                  <label htmlFor={`opt-color-${k}`}>{t(`opt.color.${k}` as MessageKey)}</label>
+                  <input
+                    id={`opt-color-${k}`}
+                    type="color"
+                    value={opts.editorColors[k] || defaultColor(k)}
+                    onChange={(e) => setOpts({ ...opts, editorColors: { ...opts.editorColors, [k]: e.target.value } })}
+                  />
+                  <button type="button" className="btn" disabled={!opts.editorColors[k]} title={t("opt.colorReset")} onClick={() => setOpts({ ...opts, editorColors: { ...opts.editorColors, [k]: "" } })}>↺</button>
+                </div>
+              ))}
+            </div>
             {row("opt.maxRows", num("queryMaxRows"), limit("queryMaxRows"))}
             <div className="muted exp-note">{t("opt.maxRowsNote")}</div>
           </>

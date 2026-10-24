@@ -2635,3 +2635,9 @@ select.et-input {
 
 .mini-grid-row.is-selected { background: var(--c-selected); }
 .mini-grid.is-disabled { color: var(--c-text-disabled); }
+
+.opt-colors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 24px; max-width: 420px; }
+.opt-color { display: flex; align-items: center; gap: 8px; }
+.opt-color label { width: 100px; }
+.opt-color input[type=color] { width: 40px; height: 22px; padding: 0; border: 1px solid var(--c-border-strong); background: none; }
+.opt-color .btn { min-width: 0; padding: 0 6px; }
