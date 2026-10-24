@@ -29,8 +29,10 @@ import { refreshMatviewSql } from "./sql/view";
 import { dropFuncSql } from "./sql/func";
 import { dropSeqSql } from "./sql/sequence";
 import { dropExtSql } from "./sql/extension";
+import { dropServerStatements } from "./sql/foreignServer";
 import { ExtensionDesignerDoc, type ExtensionBackend } from "./documents/ExtensionDesignerDoc";
 import { ConsoleDoc } from "./documents/ConsoleDoc";
+import { ForeignServerDesignerDoc, type ForeignServerBackend } from "./documents/ForeignServerDesignerDoc";
 import { HistoryLogDoc } from "./documents/HistoryLogDoc";
 import { ServerMonitorDoc } from "./documents/ServerMonitorDoc";
 import { dropTypeSql } from "./sql/typedef";
@@ -194,7 +196,7 @@ function paramsFor(c: ConnectionMock): ConnectionParams {
 
 const CATEGORY_LABEL: Record<Category, MessageKey> = {
   table: "tb.table", view: "tb.view", matview: "cat.matview", function: "tb.function",
-  sequence: "cat.sequence", type: "cat.type", extension: "cat.extension", user: "tb.user", query: "tb.query",
+  sequence: "cat.sequence", type: "cat.type", extension: "cat.extension", foreignServer: "cat.foreignServer", user: "tb.user", query: "tb.query",
   backup: "tb.backup", automation: "tb.automation", model: "tb.model", bi: "tb.bi",
 };
 
@@ -205,7 +207,7 @@ const FOLDER_LABEL: Partial<Record<Category, MessageKey>> = {
 
 const COUNT_LABEL: Record<Category, MessageKey> = {
   table: "status.count.table", view: "status.count.view", matview: "status.count.matview", function: "status.count.function",
-  sequence: "status.count.sequence", type: "status.count.type", extension: "status.count.extension", user: "status.count.user", query: "status.count.query",
+  sequence: "status.count.sequence", type: "status.count.type", extension: "status.count.extension", foreignServer: "status.count.foreignServer", user: "status.count.user", query: "status.count.query",
   backup: "status.count.backup", automation: "status.count.automation", model: "status.count.model", bi: "status.count.bi",
 };
 
@@ -767,7 +769,7 @@ export default function App() {
     else void runDdl(d);
   };
   /** Pergunta da confirmação de exclusão, com o nome do objeto. */
-  const confirmDelete = (kind: "database" | "schema" | "table" | "view" | "matview" | "function" | "procedure" | "type" | "sequence" | "extension" | "role", name: string) =>
+  const confirmDelete = (kind: "database" | "schema" | "table" | "view" | "matview" | "function" | "procedure" | "type" | "sequence" | "extension" | "foreignServer" | "role", name: string) =>
     t("msg.confirmDelete", { kind: t(`kind.${kind}`), name });
   const askName = (title: string, label: string, initial: string, onSubmit: (value: string) => void) =>
     setDialog({ kind: "name", title, label, initial, onSubmit });
@@ -964,6 +966,12 @@ export default function App() {
     openTab({ kind: "extensionDesigner", title, windowTitle: title, icon: "extension", connectionId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name });
   };
 
+  const newForeignServer = () => {
+    if (!ctx.connection || !ctx.database || !ctx.schema) return;
+    const title = objectTitle(t("des.untitled"), "cat.foreignServer");
+    openTab({ kind: "foreignServerDesigner", title, windowTitle: title, icon: "foreignServer", connectionId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name });
+  };
+
   /**
    * Depois de instalar, atualizar ou remover uma extensão: a lista é do banco inteiro e vem junto com cada schema,
    * então relê o schema atual e marca os outros para serem relidos quando forem abertos.
@@ -1094,6 +1102,7 @@ export default function App() {
       if (cat === "sequence") return newSequence();
       if (cat === "type") return newType();
       if (cat === "extension") return newExtension();
+      if (cat === "foreignServer") return newForeignServer();
       if (cat === "user") return newRole();
       return openTab({ kind: "placeholder", title: `${t("act.new")} ${t(CATEGORY_LABEL[cat])}`, icon: cat, note: t("placeholder.designer") });
     }
@@ -1124,6 +1133,9 @@ export default function App() {
       } else if (cat === "sequence" && c.connection?.live) {
         const title = objectTitle(name, "cat.sequence", c);
         openTab({ ...base, kind: "sequenceDesigner", title, windowTitle: title, icon: "sequence" }, `${t("act.design")} - ${name}`);
+      } else if (cat === "foreignServer" && c.connection?.live) {
+        const title = objectTitle(name, "cat.foreignServer", c);
+        openTab({ ...base, kind: "foreignServerDesigner", title, windowTitle: title, icon: "foreignServer" }, `${t("act.design")} - ${name}`);
       } else if (cat === "extension" && c.connection?.live) {
         const title = objectTitle(name, "cat.extension", c);
         openTab({ ...base, kind: "extensionDesigner", title, windowTitle: title, icon: "extension" }, `${t("act.design")} - ${name}`);
@@ -1600,6 +1612,33 @@ export default function App() {
       );
     }
 
+    if (node.kind === "folder" && node.category === "foreignServer") {
+      items.push(
+        item("act.new", newForeignServer),
+        item("cmd.newQuery", () => newQuery()),
+        sep,
+        item("cmd.refresh", live ? () => refreshNode(node) : undefined),
+      );
+    }
+
+    if (node.kind === "object" && node.category === "foreignServer" && c.connection && c.database && c.schema && c.objectName) {
+      const name = c.objectName;
+      const scope = { connId: c.connection.id, database: c.database.name, schema: c.schema.name, refresh: "extensions" as const };
+      items.push(
+        item("act.design", () => openObjects("design", [name], "foreignServer", c)),
+        item("act.new", newForeignServer),
+        item("act.delete", live ? () => askDdl({
+          ...scope, title: t("act.delete"), message: confirmDelete("foreignServer", name), note: t("fsv.deleteNote"),
+          statements: dropServerStatements(name), danger: true, confirmText: prod ? name : undefined,
+        }) : undefined),
+        sep,
+        item("cmd.copyName", () => { void navigator.clipboard?.writeText(name).catch(() => undefined); }),
+        sep,
+        item("cmd.refresh", live ? () => refreshNode(node) : undefined),
+        item("cmd.objectInfo", () => patchLayout({ infoVisible: true })),
+      );
+    }
+
     if (node.kind === "folder" && node.category === "function") {
       items.push(
         item("act.newFunction", newFunction),
@@ -1741,7 +1780,7 @@ export default function App() {
     newRole: { id: "newRole", label: "cmd.newRole", run: ctx.connection?.live ? newRole : undefined },
     newTablespace: { id: "newTablespace", label: "cmd.newTablespace" },
     newCast: { id: "newCast", label: "cmd.newCast" },
-    newForeignServer: { id: "newForeignServer", label: "cmd.newForeignServer" },
+    newForeignServer: { id: "newForeignServer", label: "cmd.newForeignServer", run: ctx.connection?.live && ctx.schema && openConnections.has(ctx.connection.id) ? newForeignServer : undefined },
     newLanguage: { id: "newLanguage", label: "cmd.newLanguage" },
     newAggregate: { id: "newAggregate", label: "cmd.newAggregate" },
     newConversion: { id: "newConversion", label: "cmd.newConversion" },
@@ -2079,6 +2118,7 @@ export default function App() {
     : active.kind === "sequenceDesigner" ? "sequence"
     : active.kind === "typeDesigner" ? "type"
     : active.kind === "extensionDesigner" ? "extension"
+    : active.kind === "foreignServerDesigner" ? "foreignServer"
     : active.kind === "roleDesigner" ? "user"
     : active.objectKind === "matview" ? "matview"
     : active.kind === "viewDesigner" || (active.kind === "data" && active.objectKind === "view") ? "view"
@@ -2252,6 +2292,18 @@ export default function App() {
     });
   };
 
+  const foreignServerBackends = useRef<Record<string, ForeignServerBackend>>({});
+  const foreignServerBackendFor = (tab: DocTab, conn: ConnectionMock): ForeignServerBackend => {
+    const db = tab.database ?? "";
+    return (foreignServerBackends.current[tab.id] ??= {
+      loadDetail: (name) => pg.foreignServerDetail(conn.id, db, name),
+      loadWrappers: () => pg.foreignWrappers(conn.id, db),
+      apply: async (statements) => {
+        await pg.apply(conn.id, db, statements.map((sql) => ({ sql, params: [], expectOneRow: false })));
+      },
+    });
+  };
+
   const renderDoc = (tab: DocTab) => {
     const isActive = tab.id === activeTab;
     if (tab.kind === "query") {
@@ -2415,6 +2467,25 @@ export default function App() {
           onConnect={(id) => void connect(id)}
           active={isActive}
           onStatus={statusFor(tab.id)}
+        />
+      );
+    }
+    if (tab.kind === "foreignServerDesigner") {
+      const conn = connections.find((c) => c.id === tab.connectionId);
+      return (
+        <ForeignServerDesignerDoc
+          serverName={tab.object}
+          roles={conn?.roles.map((r) => r.name) ?? []}
+          active={isActive}
+          production={conn?.environment === "production"}
+          onStatus={statusFor(tab.id)}
+          onDirty={(dirty) => setTabDirty(tab.id, dirty)}
+          onSaved={(name) => {
+            const title = objectTitle(name, "cat.foreignServer", resolveNode(`schema:${seg(tab.connectionId ?? "")}/${seg(tab.database ?? "")}/${seg(tab.schema ?? "")}`, connections));
+            setTabs((ts) => ts.map((x) => (x.id === tab.id ? { ...x, object: name, title, windowTitle: title } : x)));
+            if (conn?.live && tab.database && tab.schema) reloadExtensions(conn.id, tab.database, tab.schema);
+          }}
+          backend={conn?.live ? foreignServerBackendFor(tab, conn) : undefined}
         />
       );
     }

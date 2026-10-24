@@ -5,10 +5,10 @@
  */
 
 export type Category =
-  | "table" | "view" | "matview" | "function" | "sequence" | "type" | "extension"
+  | "table" | "view" | "matview" | "function" | "sequence" | "type" | "extension" | "foreignServer"
   | "user" | "query" | "backup" | "automation" | "model" | "bi";
 
-export const OTHERS_CATEGORIES: Category[] = ["sequence", "type", "extension"];
+export const OTHERS_CATEGORIES: Category[] = ["sequence", "type", "extension", "foreignServer"];
 
 export type ProviderId = "postgresql" | "sqlserver" | "mysql" | "mariadb" | "sqlite";
 
@@ -67,6 +67,8 @@ export interface DbObject {
   /** Extensão: versão instalada e schema onde foi instalada. */
   version?: string;
   extSchema?: string;
+  /** Servidor estrangeiro: o wrapper de dados externos. */
+  wrapper?: string;
   args?: string;
   /** Função do servidor: `name` é a chave única "nome(args)" (há sobrecargas) e `fnName` o nome puro. */
   fnName?: string;

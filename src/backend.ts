@@ -75,6 +75,8 @@ export interface SchemaObjects {
   sequences: ObjectInfo[];
   /** Extensões do banco inteiro (a mesma lista em qualquer schema). */
   extensions: ExtensionInfo[];
+  /** Servidores estrangeiros do banco inteiro (a mesma lista em qualquer schema). */
+  foreignServers: ForeignServerInfo[];
 }
 
 /** Diagrama ER de um schema: tabelas com colunas (PK/FK marcadas) e chaves estrangeiras. */
@@ -98,6 +100,21 @@ export interface DiagramRelation {
   required: boolean;
 }
 export interface SchemaDiagram { tables: DiagramTable[]; relations: DiagramRelation[] }
+
+/** Servidor estrangeiro (`CREATE SERVER`). */
+export interface ForeignServerInfo { name: string; wrapper: string; owner: string; comment: string | null }
+export interface OptionPair { key: string; value: string }
+export interface UserMappingInfo { user: string; options: OptionPair[] }
+export interface ForeignServerDetail {
+  name: string;
+  wrapper: string;
+  serverType: string | null;
+  version: string | null;
+  owner: string;
+  options: OptionPair[];
+  mappings: UserMappingInfo[];
+  comment: string | null;
+}
 
 /** Extensão instalada, com o schema onde foi instalada. */
 export interface ExtensionInfo {
@@ -969,6 +986,8 @@ export const pg = {
     call<SchemaDiagram>("pg_schema_diagram", { sessionId, database, schema }),
   availableExtensions: (sessionId: string, database: string) =>
     call<AvailableExtension[]>("pg_available_extensions", { sessionId, database }),
+  foreignWrappers: (sessionId: string, database: string) => call<string[]>("pg_foreign_wrappers", { sessionId, database }),
+  foreignServerDetail: (sessionId: string, database: string, name: string) => call<ForeignServerDetail>("pg_foreign_server_detail", { sessionId, database, name }),
   extensionDetail: (sessionId: string, database: string, name: string) =>
     call<ExtensionDetail>("pg_extension_detail", { sessionId, database, name }),
   databaseDetail: (sessionId: string, name: string) => call<DatabaseDetail>("pg_database_detail", { sessionId, name }),

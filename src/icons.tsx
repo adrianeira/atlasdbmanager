@@ -521,6 +521,15 @@ const small: Record<string, ReactElement> = {
   ),
   type: <text x="8" y="12.5" textAnchor="middle" fontFamily="Segoe UI, sans-serif" fontWeight="700" fontSize="10" fill="#7a4fc4">T</text>,
   // Extensão: peça de quebra-cabeça (módulo que se encaixa no banco).
+  foreignServer: (
+    <>
+      <rect x="2.5" y="2" width="11" height="4.2" rx="1" fill="#e8f0fb" stroke="#2f7fd0" strokeWidth="1.1" />
+      <rect x="2.5" y="9.8" width="11" height="4.2" rx="1" fill="#e8f0fb" stroke="#2f7fd0" strokeWidth="1.1" />
+      <path d="M8 6.2v3.6" stroke="#2f7fd0" strokeWidth="1.1" strokeDasharray="1.4 1.2" />
+      <circle cx="4.8" cy="4.1" r=".7" fill="#2f7fd0" />
+      <circle cx="4.8" cy="11.9" r=".7" fill="#2f7fd0" />
+    </>
+  ),
   extension: (
     <path
       d="M2.5 6h3a1.8 1.8 0 1 1 3.6 0h3.4v3.4a1.8 1.8 0 1 1 0 3.6V14.5h-9z"

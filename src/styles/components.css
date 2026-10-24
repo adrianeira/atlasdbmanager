@@ -2572,3 +2572,16 @@ select.et-input {
 .con-line { display: flex; align-items: flex-start; gap: 0.5ch; }
 .con-prompt { flex: none; white-space: pre; }
 .con-input { flex: 1; min-width: 0; border: 0; outline: 0; resize: none; overflow: hidden; background: transparent; color: inherit; font: inherit; padding: 0; margin: 0; line-height: inherit; }
+
+/* ---------- Foreign Server ---------- */
+.fs-grid { display: flex; flex-direction: column; max-width: 720px; height: 100%; padding: 12px 16px; gap: 6px; }
+.fs-head { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 0 2px; color: var(--c-text-muted); }
+.fs-rows { flex: 1; min-height: 120px; overflow: auto; border: 1px solid var(--c-border); background: var(--c-surface); }
+.fs-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 2px; }
+.fs-row.is-sel { background: var(--c-selected); }
+.fs-tools { display: flex; gap: 6px; }
+.fs-mappings { display: grid; grid-template-columns: 240px 1fr; height: 100%; }
+.fs-users { display: flex; flex-direction: column; padding: 12px 8px 12px 16px; gap: 6px; border-right: 1px solid var(--c-border); }
+.fs-users .fs-row { grid-template-columns: 1fr; }
+.fs-users .fs-head { grid-template-columns: 1fr; }
+.fs-map-options { min-width: 0; }

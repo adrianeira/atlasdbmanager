@@ -447,6 +447,17 @@ colunas (`tabela.` e `schema.tabela.`), pelo prefixo em comum ou listando as op�
 Fora desta entrega: `\copy` de/para stdin e stdout, `\o` (saída para arquivo), `\ir`, variáveis especiais (`ON_ERROR_STOP`...),
 comandos `\` dentro de um arquivo do `\i` e o autocompletar dentro de subconsultas com alias.
 
+### Foreign Server
+Others → Foreign Server lista os servidores externos do banco (nome, wrapper, dono e comentário) e o designer cria e altera:
+nome (com `RENAME`), wrapper (escolhido entre os instalados no banco; não muda depois), tipo e versão, dono, **opções** (grade
+chave/valor), **mapeamentos de usuário** (um por usuário ou `PUBLIC`, cada um com as próprias opções; o valor de uma opção de
+senha aparece mascarado) e comentário, com a prévia do SQL (`CREATE SERVER`/`CREATE USER MAPPING` ou só o que mudou em
+`ALTER SERVER ... OPTIONS (ADD/SET/DROP)` e `ALTER USER MAPPING`). Excluir pelo menu de contexto remove antes os mapeamentos do
+servidor e continua recusando se houver tabela externa que o usa. Aparece em "Novo → Outros → Foreign Server...".
+Testado ao vivo no PG 9.6 pela tela (criar com opções, mapeamento e senha, reler, renomear, alterar opções, criar mapeamento e
+excluir com dois mapeamentos); no teste automatizado a parte do servidor só roda com superusuário (o usuário de teste não é).
+Fora desta entrega: privilégios do servidor (`GRANT USAGE ON FOREIGN SERVER`) e a lista de wrappers como objeto próprio.
+
 ## Limitações conhecidas
 - Exportar o resultado de uma consulta exige um único comando que devolva linhas.
 - Exportação de tabela sem filtro/ordenação usa a ordem natural do servidor.
@@ -516,7 +527,8 @@ comandos `\` dentro de um arquivo do `\i` e o autocompletar dentro de subconsult
 - [x] Sequence: designer, reiniciar, definir valor (ver "Sequências" em Entregues)
 - [ ] Event Trigger (gatilhos de evento do banco; os gatilhos de tabela já estão no designer)
 - [x] Extension: lista, instalar, atualizar, mover de schema e remover (ver "Extensões" em Entregues)
-- [ ] Foreign Server / Foreign Table
+- [x] Foreign Server (ver "Foreign Server" em Entregues)
+- [ ] Foreign Table
 - [ ] Publication / Subscription (replicação lógica)
 - [x] Role / User manager: atributos, senha e participações (ver "Usuários e papéis" em Entregues); o gerenciador de
       privilégios por objeto segue em aberto
