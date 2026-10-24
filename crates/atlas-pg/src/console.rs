@@ -331,8 +331,8 @@ async fn describe(s: &PgSession, name: &str, expanded: bool) -> Result<String, D
     Ok(out)
 }
 
-fn timing_line(ms: u64) -> String {
-    format!("Time: {ms}.000 ms\n")
+fn timing_line(ms: f64) -> String {
+    format!("Time: {ms:.3} ms\n")
 }
 
 fn flag(arg: &str, current: bool) -> bool {
@@ -471,7 +471,7 @@ pub async fn run(s: &PgSession, input: &str, options: ConsoleOptions) -> Console
         }
     }
     if options.timing {
-        out.text.push_str(&timing_line(started.elapsed().as_millis() as u64));
+        out.text.push_str(&timing_line(started.elapsed().as_secs_f64() * 1000.0));
     }
     out
 }

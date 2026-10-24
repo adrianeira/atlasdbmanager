@@ -2564,3 +2564,11 @@ select.et-input {
 .hl-no { flex: none; padding: 0 8px 0 4px; text-align: right; color: var(--c-text-disabled); user-select: none; }
 .hl-text { white-space: pre; padding-right: 12px; }
 .hl-body.is-wrap .hl-text { white-space: pre-wrap; word-break: break-word; min-width: 0; }
+
+/* ---------- Console ---------- */
+.con-doc { height: 100%; background: var(--c-surface); cursor: text; }
+.con-body { height: 100%; overflow: auto; padding: 4px 6px; font-family: var(--font-mono); font-size: 13px; line-height: 1.35; color: var(--c-text); }
+.con-out { margin: 0; font: inherit; white-space: pre; }
+.con-line { display: flex; align-items: flex-start; gap: 0.5ch; }
+.con-prompt { flex: none; white-space: pre; }
+.con-input { flex: 1; min-width: 0; border: 0; outline: 0; resize: none; overflow: hidden; background: transparent; color: inherit; font: inherit; padding: 0; margin: 0; line-height: inherit; }

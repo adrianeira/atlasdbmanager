@@ -440,6 +440,11 @@ export async function onSyncDeployProgress(id: string, cb: (done: number, total:
   });
 }
 
+/* ----- Console (aba) ----- */
+
+export interface ConsoleOptions { timing: boolean; expanded: boolean }
+export interface ConsoleOutput { text: string; switchDb: string | null; quit: boolean; options: ConsoleOptions }
+
 /* ----- History Log (aba) ----- */
 
 export interface SqlLogEntry {
@@ -924,6 +929,9 @@ export const pg = {
   syncScript: (compareId: string, selection: SyncSelection[]) => call<SyncScript>("datasync_script", { compareId, selection }),
   syncScriptFull: (compareId: string, selection: SyncSelection[]) => call<string>("datasync_script_full", { compareId, selection }),
   syncDeploy: (req: SyncDeployRequest) => call<SyncDeployCounts>("datasync_deploy", { req }),
+  consoleRun: (sessionId: string, database: string, input: string, options: ConsoleOptions) => call<ConsoleOutput>("console_run", { sessionId, database, input, options }),
+  consolePrompt: (sessionId: string, database: string) => call<string>("console_prompt", { sessionId, database }),
+  consoleIsComplete: (input: string) => call<boolean>("console_is_complete", { input }),
   sqlLogRead: (after: number) => call<SqlLogPage>("sqllog_read", { after }),
   sqlLogClear: () => call<void>("sqllog_clear"),
   sqlLogSetPaused: (paused: boolean) => call<void>("sqllog_set_paused", { paused }),

@@ -30,6 +30,7 @@ import { dropFuncSql } from "./sql/func";
 import { dropSeqSql } from "./sql/sequence";
 import { dropExtSql } from "./sql/extension";
 import { ExtensionDesignerDoc, type ExtensionBackend } from "./documents/ExtensionDesignerDoc";
+import { ConsoleDoc } from "./documents/ConsoleDoc";
 import { HistoryLogDoc } from "./documents/HistoryLogDoc";
 import { ServerMonitorDoc } from "./documents/ServerMonitorDoc";
 import { dropTypeSql } from "./sql/typedef";
@@ -699,6 +700,13 @@ export default function App() {
     return () => { alive = false; off?.(); };
   }, []);
 
+  /** Abre o console (estilo psql) da conexão; a mesma conexão e o mesmo banco reaproveitam a aba. */
+  const openConsole = (conn: ConnectionMock, dbName?: string) => {
+    const database = dbName ?? conn.initialDatabase ?? "postgres";
+    const title = `${conn.name} - ${t("con.title")}`;
+    openTab({ kind: "console", title, windowTitle: title, icon: "query", object: "console", connectionId: conn.id, database });
+  };
+
   /* ---------- Ações do menu da conexão ---------- */
   const duplicateConnection = (conn: ConnectionMock) => {
     const id = `c${Date.now().toString(36)}`;
@@ -1297,7 +1305,7 @@ export default function App() {
         item("cmd.newDatabase", isOpen && live ? () => setDialog({ kind: "newDatabase", connId: conn.id }) : undefined),
         item("cmd.newQuery", () => (isOpen ? newQuery() : newQuery(undefined, conn))),
         sep,
-        item("cmd.console"),
+        item("cmd.console", isOpen && conn.live ? () => openConsole(conn) : undefined),
         item("cmd.executeSqlFile", isOpen && live ? () => pickSqlFile(conn.id, conn.initialDatabase || "postgres") : undefined),
         sep,
         item(conn.starred ? "cmd.removeStar" : "cmd.addStar", () => updateConn(conn.id, (x) => ({ ...x, starred: !x.starred }))),
@@ -1355,7 +1363,7 @@ export default function App() {
         }) : undefined),
         sep,
         item("cmd.newQuery", () => newQuery()),
-        item("cmd.console"),
+        item("cmd.console", isOpen && live ? () => openConsole(conn, dbName) : undefined),
         item("cmd.executeSqlFile", isOpen && live ? () => pickSqlFile(conn.id, dbName) : undefined),
         dumpMenu({ kind: "database" }, dbName, conn.id, dbName),
         item("cmd.newBackup", live ? () => void openBackup(c, null) : undefined),
@@ -1867,7 +1875,10 @@ export default function App() {
         }).catch((e) => showError(t("dd.title"), e));
       },
     },
-    console: { id: "console", label: "cmd.console", shortcut: "F6" },
+    console: {
+      id: "console", label: "cmd.console", shortcut: "F6",
+      run: ctx.connection?.live && openConnections.has(ctx.connection.id) ? () => openConsole(ctx.connection!, ctx.database?.name) : undefined,
+    },
     historyLog: {
       id: "historyLog", label: "cmd.historyLog", shortcut: "Ctrl+L",
       run: () => openTab({ kind: "historyLog", title: t("hl.title"), windowTitle: t("hl.title"), icon: "history", object: "historylog" }),
@@ -2389,6 +2400,9 @@ export default function App() {
           backend={conn?.live ? sequenceBackendFor(tab, conn) : undefined}
         />
       );
+    }
+    if (tab.kind === "console" && tab.connectionId) {
+      return <ConsoleDoc sessionId={tab.connectionId} database={tab.database ?? "postgres"} active={isActive} onQuit={() => closeTab(tab.id)} />;
     }
     if (tab.kind === "historyLog") {
       return <HistoryLogDoc active={isActive} onStatus={statusFor(tab.id)} />;
