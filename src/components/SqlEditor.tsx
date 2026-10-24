@@ -55,6 +55,9 @@ export interface SqlEditorHandle {
   /** Seleciona o trecho final do documento (para executar só ele). */
   selectLast: (text: string) => void;
   focus: () => void;
+  /** Cursor e rolagem, para reconstruir o editor igual depois. */
+  getViewState: () => { anchor: number; head: number; scrollTop: number };
+  setViewState: (s: { anchor: number; head: number; scrollTop: number }) => void;
 }
 
 interface Props {
@@ -186,6 +189,12 @@ export function SqlEditor({ value, readOnly, schema, defaultSchema, placeholder,
         v.dispatch({ selection: { anchor: Math.max(0, end - text.length), head: end } });
       },
       focus: () => v.focus(),
+      getViewState: () => ({ anchor: v.state.selection.main.anchor, head: v.state.selection.main.head, scrollTop: v.scrollDOM.scrollTop }),
+      setViewState: (s) => {
+        const max = v.state.doc.length;
+        v.dispatch({ selection: { anchor: Math.min(s.anchor, max), head: Math.min(s.head, max) } });
+        window.requestAnimationFrame(() => { v.scrollDOM.scrollTop = s.scrollTop; });
+      },
     });
     return () => {
       stopZoom();

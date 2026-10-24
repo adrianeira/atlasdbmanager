@@ -16,6 +16,7 @@ import { mockRows, quoteIdent, type CellValue, type DbObject, type ForeignKeyDef
 import { columnType, selectSql } from "../sql/ddl";
 import { useOptions } from "../options";
 import { isDefaultView, prefKey, sanitizeView } from "../tableView";
+import type { DataSnapshot, SnapshotRef } from "../tabState";
 
 /** Acesso ao banco real; ausente = modo de demonstração com dados fictícios. */
 export interface TableDataBackend {
@@ -49,13 +50,17 @@ interface Props {
   onDirty?: (dirty: boolean) => void;
   /** Chave da tabela (conexão/banco/schema/nome): com ela a aba lembra ordenação, filtro, colunas e larguras entre aberturas. */
   viewKey?: string;
+  /** Estado guardado de uma tela anterior (página, linha, rolagem...) para reconstruir esta igual. */
+  initialState?: unknown;
+  /** Recebe uma função que devolve o estado atual da tela. */
+  stateRef?: SnapshotRef;
   /** Abre o assistente de exportação com o filtro, a ordenação e as colunas visíveis do grid. Só com banco real. */
   onExport?: (scope: { orderBy: OrderBy[]; filter: TableFilter | null; allColumns: string[]; visibleColumns: string[] }) => void;
 }
 
 const MAX_PAGE_SIZE = 1_000_000;
 
-export function TableDataDoc({ schema, table: tableProp, active, production, onStatus, backend, lookup, isView, onDirty, viewKey, onExport }: Props) {
+export function TableDataDoc({ schema, table: tableProp, active, production, onStatus, backend, lookup, isView, onDirty, viewKey, initialState, stateRef, onExport }: Props) {
   const t = useT();
   const { pageSize: DEFAULT_PAGE_SIZE, limitRecords, autoBeginTransaction } = useOptions();
   const [table, setTable] = useState<DbObject>(tableProp);
@@ -94,7 +99,9 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   const [newRows, setNewRows] = useState<Set<number>>(new Set());
   const [deleted, setDeleted] = useState<Set<number>>(new Set());
   const [activeRow, setActiveRow] = useState(0);
-  const [view, setView] = useState<"grid" | "form">("grid");
+  const restored = (initialState as DataSnapshot | undefined)?.kind === "data" ? (initialState as DataSnapshot) : undefined;
+  const [view, setView] = useState<"grid" | "form">(restored?.view ?? "grid");
+  const scrollTopRef = useRef(restored?.scrollTop ?? 0);
   const [refreshedAt, setRefreshedAt] = useState(() => new Date());
   /** Confirmação do Aplicar (há registros a excluir ou a conexão é de produção). */
   const [confirmApply, setConfirmApply] = useState(false);
@@ -119,8 +126,8 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   const [fkOpen, setFkOpen] = useState<{ row: number; fk: ForeignKeyDef; anchor: DOMRect } | null>(null);
 
   // Barra "Localizar dados" (Ctrl+F): filtra em todas as colunas das linhas carregadas.
-  const [findOpen, setFindOpen] = useState(false);
-  const [findQuery, setFindQuery] = useState("");
+  const [findOpen, setFindOpen] = useState(restored?.findOpen ?? false);
+  const [findQuery, setFindQuery] = useState(restored?.findQuery ?? "");
   const [findIndex, setFindIndex] = useState(0);
   const [highlightAll, setHighlightAll] = useState(true);
   const [replaceMode, setReplaceMode] = useState(false);
@@ -329,7 +336,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
         if (!saved) {
           setTable(obj);
           setViewLoaded(true);
-          return loadPage(0, obj, limit);
+          return loadPage(restored?.page ?? 0, obj, limit, restored?.activeRow);
         }
         const savedFilter = saved.filter.trim() ? { expr: saved.filter } : null;
         // As larguras entram junto com as colunas (o grid só as lê quando a estrutura muda).
@@ -342,7 +349,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
         setLimitOn(saved.limitOn);
         setPageSize(saved.pageSize);
         setSizeText(String(saved.pageSize));
-        const ok = await loadPage(0, obj, saved.limitOn ? saved.pageSize : null, undefined, saved.sort, savedFilter);
+        const ok = await loadPage(restored?.page ?? 0, obj, saved.limitOn ? saved.pageSize : null, restored?.activeRow, saved.sort, savedFilter);
         // O filtro lembrado pode não valer mais (coluna renomeada, tipo mudado): volta à visão padrão em vez de ficar com erro.
         if (!ok && alive && (saved.sort.length || savedFilter)) {
           setSort([]);
@@ -363,6 +370,9 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  if (stateRef) {
+    stateRef.current = () => ({ kind: "data", page, activeRow, scrollTop: scrollTopRef.current, view, findOpen, findQuery });
+  }
   const dirty = edited.size > 0 || newRows.size > 0 || deleted.size > 0;
   useEffect(() => onDirty?.(dirty || inTx), [dirty, inTx, onDirty]);
   // Fechar a aba (ou trocar de tabela) com transação aberta desfaz tudo.
@@ -735,6 +745,8 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
           <DataGrid
             columns={columns}
             onColumnWidth={(name, w) => setWidths((ws) => ({ ...ws, [name]: w }))}
+            onScrollTop={(top) => { scrollTopRef.current = top; }}
+            initialScrollTop={restored?.scrollTop}
             columnOrder={colOrder}
             onColumnOrder={setColOrder}
             rows={rows}

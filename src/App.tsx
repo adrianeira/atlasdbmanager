@@ -41,6 +41,7 @@ import { dropTablespaceStatement } from "./sql/tablespace";
 import { TasksDialog } from "./components/TasksDialog";
 import { liveLookupSource, makeTableBackend } from "./docBackends";
 import type { SavedTable } from "./tabWindow";
+import type { SnapshotRef } from "./tabState";
 import { viewKeyOf } from "./tableView";
 import { runTask } from "./taskRun";
 import { isDue, type ScheduledTask } from "./tasks";
@@ -1420,6 +1421,17 @@ export default function App() {
   const restoring = useRef(new Set<string>());
   /** Abas que estão em janelas próprias: contam na sessão (voltam como abas ao reabrir o app) e na posição de quando saíram. */
   const detachedRef = useRef(new Map<string, SavedTable>());
+  /** Cada aba de tabela ou consulta entrega aqui o estado atual da tela; e recebe o estado guardado quando é reconstruída. */
+  const stateRefs = useRef<Record<string, SnapshotRef>>({});
+  const stateRefFor = (id: string): SnapshotRef => (stateRefs.current[id] ??= { current: null });
+  const tabStates = useRef(new Map<string, unknown>());
+  /** Guarda o estado da tela da aba por pouco tempo e devolve o id para reconstruí-la (`undefined` se não deu). */
+  const stashState = async (tabId: string): Promise<string | undefined> => {
+    const snap = stateRefs.current[tabId]?.current?.();
+    if (!snap) return undefined;
+    const id = `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    try { await local.tabStateSave(id, snap); return id; } catch { return undefined; }
+  };
   /** Uma janela de aba destacada está sendo arrastada sobre a barra de abas. */
   const [dropHint, setDropHint] = useState(false);
   const dropHintTimer = useRef<number | null>(null);
@@ -1453,8 +1465,11 @@ export default function App() {
     restoring.current.add(key);
     for (const saved of mine) {
       pendingTables.current = pendingTables.current.filter((x) => x !== saved);
+      // Estado da tela guardado ao fechar o banco ou destacar a aba: lido (e apagado) antes de montar a aba.
+      const snap = saved.stateId ? await local.tabStateTake(saved.stateId).catch(() => null) : null;
       if (saved.kind === "query") {
         const id = `doc${++tabSeq.current}`;
+        if (snap) tabStates.current.set(id, snap);
         queryTexts.current.set(id, saved.sql ?? "");
         const tab: DocTab = { id, kind: "query", title: saved.title, windowTitle: saved.title, icon: "query", sql: saved.sql ?? "", connectionId: connId, database: saved.database, schema: saved.schema || undefined };
         const at = Math.min(Math.max(saved.pos ?? tabsRef.current.length, 1), tabsRef.current.length);
@@ -1479,6 +1494,7 @@ export default function App() {
       const taken = tabsRef.current.some((x) => x.kind === "data" && x.connectionId === connId && x.database === saved.database && x.schema === saved.schema && x.object === saved.object);
       if (taken) continue;
       const id = `doc${++tabSeq.current}`;
+      if (snap) tabStates.current.set(id, snap);
       const tab: DocTab = {
         id, kind: "data", connectionId: connId, database: saved.database, schema: saved.schema, object: saved.object,
         objectKind: saved.kind === "table" ? undefined : saved.kind, title: saved.title, windowTitle: saved.title,
@@ -1509,7 +1525,7 @@ export default function App() {
   }, [openDbKey]);
 
   /** Dois cliques numa aba de tabela ou de consulta: ela passa a uma janela própria (e volta pelo botão da janela). */
-  const detachTab = (tabId: string) => {
+  const detachTab = async (tabId: string) => {
     const x = tabsRef.current.find((tt) => tt.id === tabId);
     if (!x || (x.kind !== "data" && x.kind !== "query")) return;
     const info = (message: string) => setDialog({ kind: "info", title: t("tab.detach"), message });
@@ -1519,7 +1535,7 @@ export default function App() {
     if (x.kind === "data" && (!x.schema || !x.object)) return;
     if (x.kind === "data" && x.dirty) return info(t("tab.detachBusyData"));
     if (x.kind === "query" && txTabs.current.has(x.id)) return info(t("tab.detachBusyTx"));
-    const entry: SavedTable = { ...savedFromTab(x, tabsRef.current, activeTabRef.current, queryTexts.current), active: false };
+    const entry: SavedTable = { ...savedFromTab(x, tabsRef.current, activeTabRef.current, queryTexts.current), active: false, stateId: await stashState(x.id) };
     detachedRef.current.set(x.id, entry);
     void openTabWindow(x.id, x.title, { id: x.id, title: x.title, conn: { ...conn, databases: [] }, entry })
       .then(() => {
@@ -1575,9 +1591,9 @@ export default function App() {
   const parkTables = (connId: string, dbName: string | undefined, then: () => void) => {
     const mine = tabsRef.current.filter((x) => x.connectionId === connId && x.database && (!dbName || x.database === dbName)
       && ((x.kind === "data" && x.schema && x.object) || x.kind === "query"));
-    const run = () => {
+    const run = async () => {
       for (const x of mine) {
-        const entry = savedFromTab(x, tabsRef.current, activeTabRef.current, queryTexts.current);
+        const entry = { ...savedFromTab(x, tabsRef.current, activeTabRef.current, queryTexts.current), stateId: await stashState(x.id) };
         // Consultas sempre entram (podem ter o mesmo título); tabelas iguais não se repetem.
         pendingTables.current = [...pendingTables.current.filter((p) => x.kind === "query" || !(p.connectionId === connId && p.database === entry.database && p.schema === entry.schema && p.object === entry.object)), entry];
       }
@@ -1589,8 +1605,8 @@ export default function App() {
       then();
     };
     // Tabela com edições não gravadas ou consulta com transação aberta: pergunta (o texto da consulta fica guardado, não conta).
-    if (mine.some((x) => (x.kind === "query" ? txTabs.current.has(x.id) : x.dirty))) setDialog({ kind: "closeDbDirty", run });
-    else run();
+    if (mine.some((x) => (x.kind === "query" ? txTabs.current.has(x.id) : x.dirty))) setDialog({ kind: "closeDbDirty", run: () => void run() });
+    else void run();
   };
 
   // Ao iniciar: "Continue where you left off" reabre as consultas da sessão anterior.
@@ -2876,6 +2892,8 @@ export default function App() {
           openConnections={openConnections}
           initial={{ connectionId: tab.connectionId, database: tab.database, schema: tab.schema }}
           initialSql={tab.sql}
+          initialState={tabStates.current.get(tab.id)}
+          stateRef={stateRefFor(tab.id)}
           autoRun={tab.autoRun}
           active={isActive}
           onStatus={statusFor(tab.id)}
@@ -2923,6 +2941,8 @@ export default function App() {
           isView={tab.objectKind === "view" || tab.objectKind === "matview"}
           onDirty={(d) => setTabDirty(tab.id, d)}
           viewKey={isDesktop && conn?.live && tab.database ? viewKeyOf(conn.id, tab.database, tab.schema ?? "", tab.object ?? base.name) : undefined}
+          initialState={tabStates.current.get(tab.id)}
+          stateRef={stateRefFor(tab.id)}
           onExport={conn?.live && tab.database ? (scope) => {
             const table = tab.object ?? base.name;
             const sc = conn.databases.find((d) => d.name === tab.database)?.schemas.find((x) => x.name === tab.schema);

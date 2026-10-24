@@ -14,6 +14,8 @@ export interface SavedTable {
   active?: boolean;
   /** Posição na barra de abas (0 é Objects). */
   pos?: number;
+  /** Estado da tela guardado por pouco tempo (resultados, cursor, página...); lido (e apagado) quando a aba é reconstruída. */
+  stateId?: string;
 }
 
 /** O que a janela de uma aba destacada recebe ao abrir (em `window.__ATLAS_TAB__`). */

@@ -257,6 +257,8 @@ pub fn run() {
             local::snippet_delete,
             local::pref_get,
             local::pref_set,
+            local::tab_state_save,
+            local::tab_state_take,
         ])
         .run(tauri::generate_context!())
         .expect("falha ao iniciar o Atlas DB Manager");

@@ -157,6 +157,9 @@ interface Props {
   valueLabels?: Map<number, Map<string, string>>;
   /** O usuário terminou de ajustar a largura de uma coluna (arrastando a borda ou com duplo clique). */
   onColumnWidth?: (name: string, width: number) => void;
+  /** Rolagem vertical atual (para guardar) e a rolagem com que abrir (de uma tela anterior). */
+  onScrollTop?: (top: number) => void;
+  initialScrollTop?: number;
   /** Ordem de exibição das colunas, por nome (as que não aparecem vão para o fim); com `onColumnOrder` os cabeçalhos podem ser arrastados. */
   columnOrder?: string[];
   onColumnOrder?: (names: string[]) => void;
@@ -202,7 +205,7 @@ interface Props {
 }
 
 export function DataGrid({
-  columns, onColumnWidth, columnOrder, onColumnOrder, valueLabels, rows, readOnly, edited, deletedRows, newRows, activeRow, onActiveRow, onEdit, rowHeight = 23, simpleHeader, lookupCols, onLookup,
+  columns, onColumnWidth, onScrollTop, initialScrollTop, columnOrder, onColumnOrder, valueLabels, rows, readOnly, edited, deletedRows, newRows, activeRow, onActiveRow, onEdit, rowHeight = 23, simpleHeader, lookupCols, onLookup,
   sqlTarget, onDeleteRow, onRefresh, findQuery, activeFind, highlightAll, onSaveAs, onSortColumn, onClearSort, onResetLayout, onAddFilter, onActiveCell, onOpenCellEditor,
 }: Props) {
   const t = useT();
@@ -224,6 +227,14 @@ export function DataGrid({
   const [menu, setMenu] = useState<{ x: number; y: number; row: number; col: number } | null>(null);
   const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number; col: number } | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
+  // Rolagem de uma tela anterior: aplicada quando as linhas já chegaram, uma vez só.
+  const scrollRestored = useRef(false);
+  useEffect(() => {
+    if (scrollRestored.current || !initialScrollTop || !rows.length) return;
+    scrollRestored.current = true;
+    window.requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = initialScrollTop; });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows.length]);
   const [viewport, setViewport] = useState(400);
   const [activeCol, setActiveCol] = useState(0);
   const [editing, setEditing] = useState<{ row: number; col: number; value: string; isNull: boolean } | null>(null);
@@ -559,7 +570,7 @@ export function DataGrid({
       aria-rowcount={rows.length}
       aria-readonly={readOnly}
       onKeyDown={onKeyDown}
-      onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+      onScroll={(e) => { setScrollTop(e.currentTarget.scrollTop); onScrollTop?.(e.currentTarget.scrollTop); }}
     >
       <div className="dg-inner" style={{ width: totalWidth, height: headerHeight + rows.length * rowHeight }}>
         <div className="dg-header" style={{ height: headerHeight }} role="row">

@@ -1012,6 +1012,12 @@ export const local = {
   fileReadHex: (path: string) => call<string>("file_read_hex", { path }),
   /** Grava os bytes de um valor `\\x...` num arquivo; devolve quantos. */
   fileWriteHex: (path: string, hex: string) => call<number>("file_write_hex", { path, hex }),
+  /** Guarda o estado de uma tela por pouco tempo (para destacar, anexar ou fechar o banco sem perder o que está na tela) e o devolve uma vez só. */
+  tabStateSave: (id: string, state: unknown) => call<void>("tab_state_save", { id, json: JSON.stringify(state) }),
+  tabStateTake: async (id: string): Promise<unknown | null> => {
+    const text = await call<string | null>("tab_state_take", { id });
+    try { return text ? JSON.parse(text) : null; } catch { return null; }
+  },
   /** Grava as conexões num arquivo JSON (sem senhas); devolve quantas. */
   connectionsExport: (path: string, profiles: ProfileRecord[]) => call<number>("connections_export", { path, profiles }),
   /** Lê as conexões de um arquivo exportado. */

@@ -191,6 +191,48 @@ pub fn file_write_hex(path: String, hex: String) -> Result<usize, DatabaseError>
     Ok(bytes.len())
 }
 
+/// Pasta dos estados de tela guardados por pouco tempo (`tab-state/`), na pasta de dados do app.
+fn tab_state_dir(local: &Local) -> std::path::PathBuf {
+    local.data_dir().join("tab-state")
+}
+
+/// Um id de estado vira nome de arquivo: só caracteres seguros.
+fn tab_state_file(local: &Local, id: &str) -> Result<std::path::PathBuf, DatabaseError> {
+    if id.is_empty() || id.len() > 80 || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return Err(DatabaseError::new(ErrorKind::InvalidInput, "invalid state id"));
+    }
+    Ok(tab_state_dir(local).join(format!("{id}.json")))
+}
+
+/// Guarda o estado de uma tela (texto JSON) para reconstruí-la depois; estados com mais de um dia são apagados.
+#[tauri::command]
+pub fn tab_state_save(local: State<'_, Local>, id: String, json: String) -> Result<(), DatabaseError> {
+    let file = tab_state_file(&local, &id)?;
+    let dir = tab_state_dir(&local);
+    std::fs::create_dir_all(&dir).map_err(|e| DatabaseError::new(ErrorKind::Internal, format!("cannot create {}: {e}", dir.display())))?;
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        let day = std::time::Duration::from_secs(24 * 3600);
+        for e in entries.flatten() {
+            let old = e.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|age| age > day);
+            if old {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
+    std::fs::write(&file, json).map_err(|e| DatabaseError::new(ErrorKind::Internal, format!("cannot write {}: {e}", file.display())))
+}
+
+/// Lê o estado guardado de uma tela e o apaga (cada estado é usado uma vez); `None` se não existe mais.
+#[tauri::command]
+pub fn tab_state_take(local: State<'_, Local>, id: String) -> Result<Option<String>, DatabaseError> {
+    let file = tab_state_file(&local, &id)?;
+    let text = std::fs::read_to_string(&file).ok();
+    if text.is_some() {
+        let _ = std::fs::remove_file(&file);
+    }
+    Ok(text)
+}
+
 #[tauri::command]
 pub fn profile_delete(local: State<'_, Local>, id: String) -> Result<(), DatabaseError> {
     local.with(|s| atlas_local::delete_profile(s, &id))

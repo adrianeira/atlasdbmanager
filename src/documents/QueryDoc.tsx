@@ -1,4 +1,5 @@
 import { completionNamespace } from "../sqlCompletion";
+import type { QuerySnapshot, SnapshotRef } from "../tabState";
 import { ExplainView, type ExplainData } from "../components/ExplainView";
 import { SummaryView, type SummaryData } from "../components/SummaryView";
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
@@ -31,6 +32,10 @@ interface Props {
   openConnections: Set<string>;
   initial: QueryContext;
   initialSql?: string;
+  /** Estado guardado de uma tela anterior (resultados, cursor, abas fixadas...) para reconstruir esta igual. */
+  initialState?: unknown;
+  /** Recebe uma função que devolve o estado atual da tela (para guardá-lo antes de destacar, anexar ou fechar o banco). */
+  stateRef?: SnapshotRef;
   /** Executa o `initialSql` ao abrir (ex.: o resultado de uma busca). */
   autoRun?: boolean;
   active: boolean;
@@ -173,7 +178,7 @@ function mockExecute(sqlText: string, conn: ConnectionMock | undefined, database
 }
 
 export function QueryDoc({
-  connections, openConnections, initial, initialSql, autoRun, active, onStatus, onDirty, onTransaction, onText, onContext, registerActions, backend: backendProp, connecting, onOpenConnection, onLoadSchemas, onRefreshSchemas, onExport, onExecuted,
+  connections, openConnections, initial, initialSql, initialState, stateRef, autoRun, active, onStatus, onDirty, onTransaction, onText, onContext, registerActions, backend: backendProp, connecting, onOpenConnection, onLoadSchemas, onRefreshSchemas, onExport, onExecuted,
 }: Props) {
   const t = useT();
   const { queryMaxRows } = useOptions();
@@ -188,14 +193,19 @@ export function QueryDoc({
   const builder = useRef<{ selection: boolean; source: string } | null>(null);
   // Gerenciador de snippets; guarda a seleção do editor para oferecê-la como snippet novo.
   const [snippets, setSnippets] = useState<{ selection: string } | null>(null);
-  const [outcome, setOutcome] = useState<RunOutcome | null>(null);
+  const restored = useMemo(() => {
+    const s = initialState as QuerySnapshot | undefined;
+    return s?.kind === "query" ? s : undefined;
+  }, [initialState]);
+  const [outcome, setOutcome] = useState<RunOutcome | null>((restored?.outcome as RunOutcome | undefined) ?? null);
   /** Aba de resultados aberta: "m" Mensagem, "s" Resumo, "r0".."rN" resultados, "x" Explain, "p<n>" abas fixadas. */
-  const [resultTab, setResultTab] = useState("m");
+  const [resultTab, setResultTab] = useState(restored?.resultTab ?? "m");
   /** Resultados fixados (Pin): continuam ao rodar outra consulta. */
-  const [pins, setPins] = useState<{ id: string; label: string; grid?: ResultSet; explain?: ExplainData }[]>([]);
-  const pinSeq = useRef(0);
+  const [pins, setPins] = useState<{ id: string; label: string; grid?: ResultSet; explain?: ExplainData }[]>((restored?.pins as { id: string; label: string; grid?: ResultSet; explain?: ExplainData }[] | undefined) ?? []);
+  const viewRestored = useRef(false);
+  const pinSeq = useRef(restored?.pins?.length ?? 0);
   const [activeRow, setActiveRow] = useState(0);
-  const [split, setSplit] = useState(0.55);
+  const [split, setSplit] = useState(restored?.split ?? 0.55);
   /** Transação manual do editor: enquanto aberta, tudo roda nela até Commit ou Rollback. */
   const [txId, setTxId] = useState<string | null>(null);
   const [txBusy, setTxBusy] = useState(false);
@@ -203,7 +213,7 @@ export function QueryDoc({
   txRef.current = txId;
   /** Janela de parâmetros (`:nome`): o texto que vai rodar e os valores (lembrados por nome enquanto a aba existir). */
   const [paramsDlg, setParamsDlg] = useState<{ text: string; names: string[] } | null>(null);
-  const [paramValues, setParamValues] = useState<Record<string, ParamValue>>({});
+  const [paramValues, setParamValues] = useState<Record<string, ParamValue>>((restored?.params as Record<string, ParamValue> | undefined) ?? {});
   /** Resultados abaixo do editor (padrão) ou ao lado dele. */
   const [side, setSide] = useState(() => {
     try { return localStorage.getItem("atlas.queryLayout") === "side"; } catch { return false; }
@@ -444,6 +454,9 @@ export function QueryDoc({
   }, [active, run, stop, explain, beautify, minify, upper, lower, registerActions]);
 
   const pinned = pins.find((p) => p.id === resultTab);
+  if (stateRef) {
+    stateRef.current = () => ({ kind: "query", view: editor.current?.getViewState(), outcome: outcome ?? undefined, resultTab, pins, split, params: paramValues, activeRow });
+  }
   const current = outcome && /^r[0-9]+$/.test(resultTab) ? outcome.results[Number(resultTab.slice(1))] : pinned?.grid;
   /** O que o botão Pin fixa agora: o resultado ou o plano da aba aberta. */
   const pinnable = !!outcome && ((current !== undefined && !pinned) || (resultTab === "x" && !!outcome.explain));
@@ -642,7 +655,14 @@ export function QueryDoc({
             onChange={(text) => { onDirty(true); onText?.(text); }}
             onCursor={(line, col) => setCursor({ line, col })}
             onRun={run}
-            handleRef={(h) => { editor.current = h; }}
+            handleRef={(h) => {
+              editor.current = h;
+              // Cursor e rolagem do editor de uma tela anterior, uma vez só.
+              if (h && restored?.view && !viewRestored.current) {
+                viewRestored.current = true;
+                h.setViewState(restored.view);
+              }
+            }}
           />
         </div>
         {outcome && (

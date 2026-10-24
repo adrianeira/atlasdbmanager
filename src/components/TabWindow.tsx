@@ -10,6 +10,7 @@ import { local } from "../backend";
 import { schemaFromServer } from "../live";
 import type { ConnectionMock } from "../model";
 import { TAB_EVENT, type SavedTable, type TabEvent, type TabWindowParams } from "../tabWindow";
+import type { SnapshotRef, TabSnapshot } from "../tabState";
 import { viewKeyOf } from "../tableView";
 import { MessageDialog } from "./MessageDialog";
 import { ToolWindow } from "./ToolWindow";
@@ -38,6 +39,18 @@ function TabWindowBody({ params }: { params: TabWindowParams }) {
   const allow = useRef(false);
   const [dialog, setDialog] = useState<null | "close" | "busy">(null);
   const [cells, setCells] = useState<StatusCell[]>([]);
+  // Estado da tela da janela principal (resultados, cursor, página...): lido antes de montar a tela, e a tela entrega o atual ao anexar.
+  const stateRef: SnapshotRef = useRef(null);
+  const initial = useRef<TabSnapshot | null>(null);
+  const [ready, setReady] = useState(!params.entry.stateId);
+  useEffect(() => {
+    const id = params.entry.stateId;
+    if (!id) return;
+    entry.current = { ...entry.current, stateId: undefined };
+    void local.tabStateTake(id).then((s) => { initial.current = s as TabSnapshot | null; }).catch(() => undefined).finally(() => setReady(true));
+    // Uma vez ao abrir a janela.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /** Avisa a janela principal e fecha esta janela. */
   const finish = async (event: TabEvent) => {
@@ -49,7 +62,15 @@ function TabWindowBody({ params }: { params: TabWindowParams }) {
     // Edições não gravadas (ou transação aberta) não mudam de janela: gravar ou descartar primeiro.
     const busy = isQuery ? txOpen.current : dirty.current;
     if (busy) return setDialog("busy");
-    void finish({ type: "attach", id: params.id, entry: entry.current });
+    void (async () => {
+      // O estado da tela vai junto: a janela principal reconstrói a aba igual.
+      const snap = stateRef.current?.();
+      if (snap) {
+        const id = `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+        try { await local.tabStateSave(id, snap); entry.current = { ...entry.current, stateId: id }; } catch { /* volta sem o estado da tela */ }
+      }
+      await finish({ type: "attach", id: params.id, entry: entry.current });
+    })();
   };
 
   useEffect(() => {
@@ -111,10 +132,10 @@ function TabWindowBody({ params }: { params: TabWindowParams }) {
         <span className="tw-title" title={params.title}>{params.title}</span>
         <button type="button" className="btn" title={t("tab.attachHint")} onClick={attach}>{t("tab.attach")}</button>
       </div>
-      <div className="tw-doc">
-        {isQuery
-          ? <QueryPart params={params} entry={entry} onStatus={setCells} onDirty={(d) => { dirty.current = d; }} onTx={(o) => { txOpen.current = o; }} onChange={sendUpdate} />
-          : <DataPart params={params} onStatus={setCells} onDirty={(d) => { dirty.current = d; }} />}
+      <div className="tw-doc doc-host">
+        {!ready ? null : isQuery
+          ? <QueryPart params={params} entry={entry} initialState={initial.current} stateRef={stateRef} onStatus={setCells} onDirty={(d) => { dirty.current = d; }} onTx={(o) => { txOpen.current = o; }} onChange={sendUpdate} />
+          : <DataPart params={params} initialState={initial.current} stateRef={stateRef} onStatus={setCells} onDirty={(d) => { dirty.current = d; }} />}
       </div>
       <footer className="status-bar">
         {cells.map((c, i) => (
@@ -138,7 +159,7 @@ function TabWindowBody({ params }: { params: TabWindowParams }) {
   );
 }
 
-function DataPart({ params, onStatus, onDirty }: { params: TabWindowParams; onStatus: (c: StatusCell[]) => void; onDirty: (d: boolean) => void }) {
+function DataPart({ params, initialState, stateRef, onStatus, onDirty }: { params: TabWindowParams; initialState: TabSnapshot | null; stateRef: SnapshotRef; onStatus: (c: StatusCell[]) => void; onDirty: (d: boolean) => void }) {
   const e = params.entry;
   const view = e.kind === "view" || e.kind === "matview";
   const base = useMemo(() => ({ name: e.object }), [e.object]);
@@ -156,12 +177,14 @@ function DataPart({ params, onStatus, onDirty }: { params: TabWindowParams; onSt
       isView={view}
       onDirty={onDirty}
       viewKey={viewKeyOf(params.conn.id, e.database, e.schema, e.object)}
+      initialState={initialState ?? undefined}
+      stateRef={stateRef}
     />
   );
 }
 
-function QueryPart({ params, entry, onStatus, onDirty, onTx, onChange }: {
-  params: TabWindowParams; entry: React.MutableRefObject<SavedTable>;
+function QueryPart({ params, entry, initialState, stateRef, onStatus, onDirty, onTx, onChange }: {
+  params: TabWindowParams; entry: React.MutableRefObject<SavedTable>; initialState: TabSnapshot | null; stateRef: SnapshotRef;
   onStatus: (c: StatusCell[]) => void; onDirty: (d: boolean) => void; onTx: (open: boolean) => void; onChange: () => void;
 }) {
   const [conn, setConn] = useState<ConnectionMock>(() => ({ ...params.conn, databases: [], live: true }));
@@ -212,6 +235,8 @@ function QueryPart({ params, entry, onStatus, onDirty, onTx, onChange }: {
       openConnections={open}
       initial={ctxRef.current}
       initialSql={params.entry.sql}
+      initialState={initialState ?? undefined}
+      stateRef={stateRef}
       active
       onStatus={onStatus}
       onDirty={onDirty}
