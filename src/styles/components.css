@@ -1380,7 +1380,7 @@ textarea.field.remarks {
 .data-limit-size {
   width: 64px;
   height: 19px;
-  text-align: right;
+  text-align: center;
 }
 
 .form-view {
