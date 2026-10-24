@@ -4,6 +4,7 @@ import { useT } from "../i18n";
 import { PROVIDER_STYLE, ProviderIcon, ProviderTile, SmallIcon } from "../icons";
 import type { ConnectionMock, ProviderId } from "../model";
 import { errorText, isDesktop, pg, toAtlasError, type ConnectionParams, type SslMode } from "../backend";
+import { formatConnectionUri, parseConnectionUri } from "../connectionUri";
 
 /* ---------- Tipos de conexão ---------- */
 
@@ -244,6 +245,37 @@ export function ConnectionDialog({ editing, recentProviders, knownPassword = "",
         {!p.available && <span className="conn-soon">{t("conn.comingSoon")}</span>}
       </button>
     );
+  };
+
+  /** Diálogo "URI...": `forNew` vem do primeiro passo (a URI escolhe o tipo PostgreSQL e abre o formulário). */
+  const [uriDlg, setUriDlg] = useState<{ text: string; forNew: boolean; error: boolean } | null>(null);
+  const openUri = (forNew: boolean) => {
+    const text = forNew ? "" : formatConnectionUri({ host: form.host, port: form.port, user: form.user, database: form.initialDatabase, sslMode: form.useSsl ? form.sslMode : "disable" });
+    setUriDlg({ text, forNew, error: false });
+  };
+  const applyUri = () => {
+    if (!uriDlg) return;
+    const r = parseConnectionUri(uriDlg.text);
+    if (!r.ok) return setUriDlg({ ...uriDlg, error: true });
+    const f = r.fields;
+    const base = uriDlg.forNew ? defaultForm(PROVIDERS.find((x) => x.id === "postgresql")!) : form;
+    setForm({
+      ...base,
+      host: f.host || base.host,
+      port: f.port || base.port,
+      user: f.user || base.user,
+      password: f.password || base.password,
+      initialDatabase: f.database || base.initialDatabase,
+      // `allow` e `prefer` só tentam TLS; sem ele o Atlas conecta sem TLS, então valem como desligado.
+      useSsl: f.sslMode ? ["require", "verify-ca", "verify-full"].includes(f.sslMode) : base.useSsl,
+      sslMode: ["require", "verify-ca", "verify-full"].includes(f.sslMode) ? f.sslMode : base.sslMode,
+    });
+    if (uriDlg.forNew) {
+      setTest({ kind: "idle" });
+      setTab("general");
+      setStep("form");
+    }
+    setUriDlg(null);
   };
 
   const goForm = (p: ProviderOption) => {
@@ -544,7 +576,7 @@ export function ConnectionDialog({ editing, recentProviders, knownPassword = "",
         <div className="window-footer">
           {step === "type" ? (
             <>
-              <button type="button" className="btn" disabled title={t("notImplemented")}>{t("conn.newWithUri")}</button>
+              <button type="button" className="btn" onClick={() => openUri(true)}>{t("conn.newWithUri")}</button>
               <span className="spacer" />
               <button type="button" className="btn btn-primary" disabled={!picked.available} onClick={() => goForm(picked)}>{t("conn.next")}</button>
               <button type="button" className="btn" onClick={onClose}>{t("conn.cancel")}</button>
@@ -553,7 +585,7 @@ export function ConnectionDialog({ editing, recentProviders, knownPassword = "",
             <>
               <button type="button" className={`btn btn-icon${profilesOpen ? " is-active" : ""}`} title={t("conn.profiles")} onClick={() => setProfilesOpen((o) => !o)}><SmallIcon name="sidebar" /></button>
               <button type="button" className="btn btn-wide" onClick={runTest} disabled={test.kind === "running"}>{t("conn.test")}</button>
-              <button type="button" className="btn" disabled title={t("notImplemented")}>URI...</button>
+              <button type="button" className="btn" onClick={() => openUri(false)}>URI...</button>
               <span className="spacer" />
               {!editing && <button type="button" className="btn" onClick={() => setStep("type")}>{t("conn.back")}</button>}
               <button type="button" className="btn btn-primary" onClick={submit}>OK</button>
@@ -562,6 +594,33 @@ export function ConnectionDialog({ editing, recentProviders, knownPassword = "",
           )}
         </div>
       </div>
+      {uriDlg && (
+        <div className="modal-overlay" role="presentation">
+          <div className="modal conn-uri-dialog" role="dialog" aria-label={t("conn.uriTitle")}>
+            <div className="modal-header"><span className="modal-title">{t("conn.uriTitle")}</span><button type="button" className="modal-close" aria-label={t("tab.close")} onClick={() => setUriDlg(null)}><SmallIcon name="close" /></button></div>
+            <div className="modal-body">
+              <label htmlFor="conn-uri">URI:</label>
+              <input
+                id="conn-uri"
+                className="field"
+                value={uriDlg.text}
+                placeholder="postgresql://user@host:5432/database?sslmode=require"
+                spellCheck={false}
+                autoFocus
+                onChange={(e) => setUriDlg({ ...uriDlg, text: e.target.value, error: false })}
+                onKeyDown={(e) => { if (e.key === "Enter") applyUri(); if (e.key === "Escape") setUriDlg(null); }}
+              />
+              {uriDlg.error && <div className="form-note form-note-warn">{t("conn.uriInvalid")}</div>}
+              <div className="muted">{t("conn.uriNote")}</div>
+            </div>
+            <div className="modal-footer">
+              <span className="spacer" />
+              <button type="button" className="btn btn-primary" disabled={!uriDlg.text.trim()} onClick={applyUri}>OK</button>
+              <button type="button" className="btn" onClick={() => setUriDlg(null)}>{t("conn.cancel")}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
