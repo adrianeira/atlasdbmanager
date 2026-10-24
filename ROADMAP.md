@@ -646,6 +646,8 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 - [x] Query Builder visual (ver "Query Builder" em Entregues)
 - [ ] Pivot Table
 - [ ] Charts a partir de consulta
+- [x] A barra de botões dos documentos (dados da tabela, designers, consulta) **corta e rola** quando não cabe, em vez de desenhar os ícones dos botões
+      que sobram por cima do painel de informações; a roda do mouse rola a barra na horizontal *(`.object-toolbar` em `shell.css`)*
 - [x] Tema claro/escuro manual (só na tela Opções → General, como na referência; padrão: seguir o sistema). Tema, idioma e legendas da barra saíram do menu Exibir para não haver duas portas para a mesma coisa
 - [x] Tela de Preferências / Options (ver "Opções" em Entregues)
 - [ ] Atalhos de teclado configuráveis

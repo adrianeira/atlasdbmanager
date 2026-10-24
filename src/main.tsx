@@ -21,4 +21,11 @@ const generation = (window as { __ATLAS_DG__?: unknown }).__ATLAS_DG__;
 const dictionary = (window as { __ATLAS_DD__?: unknown }).__ATLAS_DD__;
 
 disableAutofill();
+// A barra de botões dos documentos rola na horizontal quando não cabe; a roda do mouse (vertical) também a rola.
+window.addEventListener("wheel", (e) => {
+  const bar = (e.target as Element | null)?.closest?.(".object-toolbar");
+  if (!bar || bar.scrollWidth <= bar.clientWidth || e.deltaX !== 0) return;
+  bar.scrollLeft += e.deltaY;
+  e.preventDefault();
+}, { passive: false });
 createRoot(document.getElementById("root")!).render(<StrictMode>{builder ? <QueryBuilderWindow /> : transfer ? <DataTransferWindow /> : sync ? <DataSyncWindow /> : structure ? <StructSyncWindow /> : generation ? <DataGenWindow /> : dictionary ? <DataDictionaryWindow /> : <App />}</StrictMode>);

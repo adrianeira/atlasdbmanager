@@ -485,9 +485,20 @@ input {
   padding: 0 4px;
   background: var(--c-surface-alt);
   border-bottom: 1px solid var(--c-border);
+  /* Quando os botões não cabem (painel de informações aberto, janela estreita) a barra corta e rola em vez de
+     desenhar os ícones por cima do painel ao lado. A roda do mouse rola na horizontal (ver `main.tsx`). */
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.object-toolbar::-webkit-scrollbar {
+  display: none;
 }
 
 .ot-button {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 4px;
