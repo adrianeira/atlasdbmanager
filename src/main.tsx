@@ -7,6 +7,7 @@ import { DataGenWindow } from "./components/transfer/DataGenWindow";
 import { DataSyncWindow } from "./components/transfer/DataSyncWindow";
 import { DataTransferWindow } from "./components/transfer/DataTransferWindow";
 import { StructSyncWindow } from "./components/transfer/StructSyncWindow";
+import { disableAutofill } from "./noAutofill";
 import "./styles/tokens.css";
 import "./styles/shell.css";
 import "./styles/components.css";
@@ -19,4 +20,5 @@ const structure = (window as { __ATLAS_SS__?: unknown }).__ATLAS_SS__;
 const generation = (window as { __ATLAS_DG__?: unknown }).__ATLAS_DG__;
 const dictionary = (window as { __ATLAS_DD__?: unknown }).__ATLAS_DD__;
 
+disableAutofill();
 createRoot(document.getElementById("root")!).render(<StrictMode>{builder ? <QueryBuilderWindow /> : transfer ? <DataTransferWindow /> : sync ? <DataSyncWindow /> : structure ? <StructSyncWindow /> : generation ? <DataGenWindow /> : dictionary ? <DataDictionaryWindow /> : <App />}</StrictMode>);

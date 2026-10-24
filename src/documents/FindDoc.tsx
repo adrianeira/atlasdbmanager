@@ -216,7 +216,7 @@ export function FindDoc({ conns, initial, onConnect, onOpen, active, onStatus }:
 
         <div className="fd-field fd-gap">
           <label htmlFor="fd-text">{t("fd.findWhat")}:</label>
-          <input id="fd-text" className="field" value={text} spellCheck={false} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") run(); }} autoFocus />
+          <input id="fd-text" className="field" value={text} spellCheck={false} autoComplete="off" onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") run(); }} autoFocus />
         </div>
         <div className="fd-field">
           <div className="fd-label-row">
