@@ -143,6 +143,23 @@ pub fn ssh_password_save(id: String, password: Option<Secret>, save: bool) -> Re
     }
 }
 
+/// Abre um endereço do projeto no navegador padrão. Só `https://github.com/...` (sem espaços nem aspas), para que um
+/// texto vindo de dentro da tela nunca vire um comando.
+#[tauri::command]
+pub fn open_external(url: String) -> Result<(), DatabaseError> {
+    let ok = url.starts_with("https://github.com/") && url.len() < 200 && url.bytes().all(|b| b.is_ascii_alphanumeric() || b"/-._~:?=&%#".contains(&b));
+    if !ok {
+        return Err(DatabaseError::new(ErrorKind::InvalidInput, "this address cannot be opened from here"));
+    }
+    #[cfg(windows)]
+    let status = std::process::Command::new("explorer").arg(&url).spawn();
+    #[cfg(target_os = "macos")]
+    let status = std::process::Command::new("open").arg(&url).spawn();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let status = std::process::Command::new("xdg-open").arg(&url).spawn();
+    status.map(|_| ()).map_err(|e| DatabaseError::new(ErrorKind::Internal, format!("cannot open the browser: {e}")))
+}
+
 /// Maior arquivo que dá para carregar numa célula (a célula guarda o conteúdo inteiro em hexadecimal).
 const MAX_BLOB_FILE: u64 = 64 * 1024 * 1024;
 

@@ -2033,7 +2033,7 @@ select.et-input {
 .result-export:disabled svg { opacity: 0.45; }
 
 /* Janela Sobre: logo ao lado do texto. */
-.about-box { display: flex; align-items: center; gap: 14px; }
+.about-box { display: flex; align-items: flex-start; gap: 16px; min-width: 360px; }
 .about-logo { flex: none; }
 
 /* Campo com lista de sugestões (seta própria, alinhada à borda do campo). */
@@ -2678,3 +2678,12 @@ select.et-input {
 .tp-row { display: flex; gap: 8px; padding: 1px 0; }
 .tp-row dt { flex: none; width: 150px; color: var(--c-text-muted); }
 .tp-row dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.about-text { min-width: 0; }
+.about-name { font-size: 16px; font-weight: 600; }
+.about-list { margin: 10px 0 0; display: grid; gap: 3px; }
+.about-list > div { display: flex; gap: 10px; }
+.about-list dt { flex: none; width: 70px; color: var(--c-text-muted); }
+.about-list dd { margin: 0; min-width: 0; }
+.about-link { color: var(--c-accent); text-decoration: none; }
+.about-link:hover { text-decoration: underline; }

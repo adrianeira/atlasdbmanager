@@ -237,6 +237,7 @@ pub fn run() {
             local::profile_save,
             local::profile_delete,
             local::ssh_password_save,
+            local::open_external,
             local::file_read_hex,
             local::file_write_hex,
             local::connections_export,

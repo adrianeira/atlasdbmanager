@@ -227,6 +227,12 @@ const COUNT_LABEL: Record<Category, MessageKey> = {
   backup: "status.count.backup", automation: "status.count.automation", model: "status.count.model", bi: "status.count.bi",
 };
 
+/** Dados de Ajuda → Sobre. A versão vem do `package.json` (via Vite); autor e repositório são fixos do projeto. */
+declare const __APP_VERSION__: string;
+const APP_VERSION = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "0.1.0";
+const APP_AUTHOR = "Adriano Alves";
+const APP_REPO = "https://github.com/adrianeira/atlasdbmanager";
+
 const OBJECTS_TAB: DocTab = { id: "objects", kind: "objects", title: "" };
 
 interface RecentItem { label: string; tab: Omit<DocTab, "id"> }
@@ -3260,7 +3266,17 @@ export default function App() {
           message={(
             <div className="about-box">
               <img className="about-logo" src="/logo.png" alt="Atlas DB Manager" width={72} height={72} draggable={false} />
-              <div>{t("msg.about")}</div>
+              <div className="about-text">
+                <div className="about-name">Atlas DB Manager</div>
+                <div className="muted">{t("about.tagline")}</div>
+                <dl className="about-list">
+                  <div><dt>{t("about.version")}</dt><dd>{APP_VERSION} <span className="muted">({t("about.stage")})</span></dd></div>
+                  <div><dt>{t("about.author")}</dt><dd>{APP_AUTHOR}</dd></div>
+                  <div><dt>{t("about.license")}</dt><dd>MIT</dd></div>
+                  <div><dt>GitHub</dt><dd><a href={APP_REPO} className="about-link" onClick={(e) => { e.preventDefault(); void local.openExternal(APP_REPO).catch((err) => showError(t("cmd.about"), err)); }}>{APP_REPO.replace("https://", "")}</a></dd></div>
+                  <div><dt>{t("about.built")}</dt><dd>Rust, Tauri, React</dd></div>
+                </dl>
+              </div>
             </div>
           )}
           onOk={() => setDialog(null)}
