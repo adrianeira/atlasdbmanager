@@ -1,6 +1,7 @@
 //! Comandos IPC chamados pela interface (`invoke("pg_...")`).
 //! Erros voltam tipados (`DatabaseError`); nenhum comando registra parâmetros em log.
 
+use crate::export::Exports;
 use crate::local::Local;
 use crate::sessions::Sessions;
 use atlas_core::{
@@ -8,6 +9,8 @@ use atlas_core::{
     TypeDetail, QueryOutcome, RoleInfo, SchemaDiagram, SchemaInfo, SchemaObjects, ServerInfo, TableDetail, TableFilter, ViewDetail,
 };
 use serde::Serialize;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use tauri::State;
 
 /// Limite de linhas por result set no editor (o resto é descartado e sinalizado como truncado).
@@ -105,7 +108,7 @@ pub async fn pg_view_detail(
     atlas_pg::view_detail(&s, &schema, &view).await
 }
 
-/// "Localizar no banco/schema": nomes, colunas, definições e comentários.
+/// "Find in Database/Schema", Look In = Structure: nomes e corpos de tabelas, campos, chaves, índices, gatilhos, views e funções.
 #[tauri::command]
 pub async fn pg_find(
     sessions: State<'_, Sessions>,
@@ -115,6 +118,23 @@ pub async fn pg_find(
 ) -> Result<atlas_pg::FindResult, DatabaseError> {
     let s = sessions.get(&session_id, Some(&database)).await?;
     atlas_pg::find(&s, &options).await
+}
+
+/// "Find in Database/Schema", Look In = Data: quantas linhas de cada tabela têm o texto. Roda numa conexão própria,
+/// que o botão Parar (`pg_export_cancel` com o mesmo `find_id`) interrompe.
+#[tauri::command]
+pub async fn pg_find_data(
+    sessions: State<'_, Sessions>,
+    exports: State<'_, Exports>,
+    session_id: String,
+    database: String,
+    find_id: String,
+    options: atlas_pg::FindOptions,
+) -> Result<atlas_pg::FindDataResult, DatabaseError> {
+    let s = Arc::new(sessions.dedicated(&session_id, &database).await?);
+    let (cancel, _registered) = exports.register(&find_id, s.clone());
+    let cancelled = || cancel.load(Ordering::Relaxed);
+    atlas_pg::find_data(&s, &options, &cancelled).await
 }
 
 /// Tabelas (com colunas) e chaves estrangeiras de um schema, para o diagrama ER.

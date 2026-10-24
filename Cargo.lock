@@ -206,6 +206,7 @@ dependencies = [
  "log",
  "native-tls",
  "postgres-native-tls",
+ "regex",
  "serde",
  "tokio",
  "tokio-postgres",

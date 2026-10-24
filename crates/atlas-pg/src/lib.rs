@@ -32,7 +32,7 @@ pub use monitor::{ProcessRow as MonitorProcess, Snapshot as MonitorSnapshot, end
 pub use structsync::{Op as StructOp, ObjectDiff as StructObject, Part as StructPart, StructComparison, StructSelection, StructSpec, compare as compare_structure, script as structure_script};
 pub use transfer::{FieldMap, Hooks as TransferHooks, TableOverride, TransferSpec, TransferStats, rewrite_schema, run as run_transfer};
 pub use import::{Feed, Hooks as ImportHooks, ImportMode, ImportSpec, ImportStats, TargetColumn, run as run_import};
-pub use find::{FindHit, FindOptions, FindResult, find};
+pub use find::{DataMatch, FindDataResult, FindMatch, FindMode, FindObject, FindOptions, FindResult, find, find_data};
 pub use meta::{
     available_extensions, database_detail, extension_detail, foreign_server_detail, foreign_table_detail, foreign_wrappers, function_detail, schema_diagram, list_databases, list_objects, list_roles, list_schemas, matview_detail, role_detail,
     schema_detail, sequence_detail, table_detail, type_detail, view_detail,

@@ -679,103 +679,132 @@ async fn triggers_are_described_in_full() {
 }
 
 #[tokio::test]
-async fn find_searches_names_columns_definitions_and_comments() {
-    use atlas_pg::FindOptions;
+async fn find_searches_structure_and_data() {
+    use atlas_pg::{FindMode, FindOptions};
     let p = require_server!();
     let s = atlas_pg::connect(&p, None).await.expect("connect");
+    let v = s.server.version_num;
     let ns = format!("atlas_fd_{}", std::process::id());
     let other = format!("{ns}_b");
     atlas_pg::execute(
         &s,
         &format!(
             "DROP SCHEMA IF EXISTS {ns} CASCADE; DROP SCHEMA IF EXISTS {other} CASCADE; CREATE SCHEMA {ns}; CREATE SCHEMA {other}; \
-             CREATE TABLE {ns}.clientes(id integer, cod_Zeta text, nome text); \
-             CREATE VIEW {ns}.v_vendas AS SELECT id FROM {ns}.clientes WHERE nome LIKE 'zeta%'; \
-             CREATE FUNCTION {ns}.calcula() RETURNS integer LANGUAGE sql AS $$ SELECT count(*)::integer FROM {ns}.clientes /* ZETA */ $$; \
-             CREATE TYPE {ns}.tipo_zeta AS ENUM ('a'); \
-             CREATE SEQUENCE {ns}.seq_zeta; \
-             COMMENT ON TABLE {ns}.clientes IS 'cadastro de zeta'; \
-             COMMENT ON COLUMN {ns}.clientes.nome IS 'nome do ZETA'; \
-             CREATE TABLE {other}.zeta_outro(id integer)"
+             CREATE TABLE {ns}.zeta_pai(id integer PRIMARY KEY, cod_zeta text, nome text); \
+             CREATE TABLE {ns}.zeta_filho(id integer PRIMARY KEY, pai_id integer, CONSTRAINT zeta_filho_pai_fkey FOREIGN KEY (pai_id) REFERENCES {ns}.zeta_pai(id)); \
+             CREATE INDEX idx_zeta_nome ON {ns}.zeta_pai(nome); \
+             CREATE FUNCTION {ns}.trg_zeta() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$; \
+             CREATE TRIGGER trigger_zeta BEFORE INSERT ON {ns}.zeta_pai FOR EACH ROW EXECUTE PROCEDURE {ns}.trg_zeta(); \
+             CREATE VIEW {ns}.v_vendas AS SELECT id FROM {ns}.zeta_pai WHERE nome LIKE 'zeta%'; \
+             CREATE FUNCTION {ns}.calcula(p_zeta integer) RETURNS integer LANGUAGE sql AS $$ SELECT count(*)::integer FROM {ns}.zeta_pai WHERE id = p_zeta $$; \
+             CREATE TABLE {other}.zeta_outro(id integer, texto text); \
+             INSERT INTO {ns}.zeta_pai VALUES (1, 'A1', 'Zeta Um'), (2, 'B2', 'dois'), (3, 'C3', 'zeta tres'); \
+             INSERT INTO {other}.zeta_outro VALUES (1, 'nada'), (2, 'ZETA')"
         ),
         1,
     )
     .await
     .unwrap();
 
-    let opts = |text: &str| FindOptions {
+    let opts = |text: &str, mode: FindMode, ci: bool| FindOptions {
         text: text.into(),
         schema: Some(ns.clone()),
-        match_case: false,
-        regex: false,
-        names: true,
-        columns: true,
-        definitions: true,
-        comments: true,
+        mode,
+        case_insensitive: ci,
+        tables: true,
+        views: true,
+        matviews: true,
+        functions: true,
+        indexes: true,
+        triggers: true,
     };
-    let run = |o: FindOptions| {
+    let find = |o: FindOptions| {
         let s = &s;
         async move { atlas_pg::find(s, &o).await.unwrap() }
     };
-    // Tudo que contém "zeta" no schema: nomes (tipo, sequência), coluna, definição de view e função, 2 comentários.
-    let all = run(opts("zeta")).await;
-    let summary: Vec<(String, String, String)> =
-        all.hits.iter().map(|h| (h.kind.clone(), h.name.clone(), format!("{}{}", h.matched_in, h.column.as_deref().map(|c| format!(":{c}")).unwrap_or_default()))).collect();
+    let summary = |r: &atlas_pg::FindResult| -> Vec<(String, String, String)> {
+        r.objects.iter().flat_map(|o| o.matches.iter().map(move |m| (o.kind.clone(), o.name.clone(), m.what.clone()))).collect()
+    };
+
+    let all = find(opts("zeta", FindMode::Contains, true)).await;
+    let sum = summary(&all);
     for want in [
-        ("type", "tipo_zeta", "name"),
-        ("sequence", "seq_zeta", "name"),
-        ("table", "clientes", "column:cod_zeta"),
-        ("view", "v_vendas", "definition"),
-        ("function", "calcula", "definition"),
-        ("table", "clientes", "comment"),
-        ("table", "clientes", "comment:nome"),
+        ("table", "zeta_pai", "tableName"),
+        ("table", "zeta_pai", "fieldName"),
+        ("table", "zeta_pai", "indexName"),
+        ("table", "zeta_pai", "triggerName"),
+        ("table", "zeta_filho", "tableName"),
+        ("table", "zeta_filho", "foreignKeyName"),
+        ("view", "v_vendas", "viewBody"),
+        ("function", "calcula", "functionBody"),
+        ("function", "trg_zeta", "functionName"),
     ] {
-        assert!(summary.iter().any(|(k, n, m)| (k.as_str(), n.as_str(), m.as_str()) == want), "{want:?} em {summary:?}");
+        assert!(sum.iter().any(|(k, n, w)| (k.as_str(), n.as_str(), w.as_str()) == want), "{want:?} em {sum:?}");
     }
-    // O outro schema só entra sem o filtro.
-    assert!(all.hits.iter().all(|h| h.schema == ns));
-    let mut everywhere = opts("zeta_outro");
+    // A chave primária (e o índice dela) não entram; o outro schema também não.
+    let idx: Vec<&str> = all.objects.iter().filter(|o| o.name == "zeta_pai").flat_map(|o| &o.matches).filter(|m| m.what == "indexName").map(|m| m.text.as_str()).collect();
+    assert_eq!(idx, ["idx_zeta_nome"], "o índice da chave primária não conta");
+    assert!(all.objects.iter().all(|o| o.schema == ns));
+    assert_eq!(all.occurrences, all.objects.iter().map(|o| o.matches.len()).sum::<usize>());
+    // Ordem: tabelas, views, funções; dentro da tabela, nome antes dos campos.
+    let kinds: Vec<&str> = all.objects.iter().map(|o| o.kind.as_str()).collect();
+    assert!(kinds.windows(2).all(|w| w[0] <= w[1] || (w[0] == "table" && w[1] != "table") || (w[0] == "view" && w[1] == "function")), "{kinds:?}");
+    let pai = all.objects.iter().find(|o| o.name == "zeta_pai").unwrap();
+    assert_eq!(pai.matches[0].what, "tableName");
+    // O corpo da função aparece uma vez por ocorrência, com o destaque no trecho.
+    let calc: Vec<_> = all.objects.iter().find(|o| o.name == "calcula").unwrap().matches.iter().filter(|m| m.what == "functionBody").collect();
+    assert!(calc.len() >= 2);
+    for m in &calc {
+        let [a, b] = m.ranges[0];
+        assert_eq!(m.text.chars().skip(a).take(b - a).collect::<String>().to_lowercase(), "zeta");
+    }
+    // Sem o filtro de schema o outro schema entra.
+    let mut everywhere = opts("zeta_outro", FindMode::Contains, true);
     everywhere.schema = None;
-    assert!(run(everywhere).await.hits.iter().any(|h| h.schema == other && h.name == "zeta_outro"));
+    assert!(find(everywhere).await.objects.iter().any(|o| o.schema == other && o.name == "zeta_outro"));
 
-    // O trecho da definição mostra o contexto.
-    let f = all.hits.iter().find(|h| h.kind == "function" && h.matched_in == "definition").unwrap();
-    assert!(f.snippet.as_deref().unwrap().contains("ZETA"), "{:?}", f.snippet);
-    assert_eq!(f.identity.as_deref(), Some(""));
+    // Modos e maiúsculas.
+    assert!(find(opts("ZETA", FindMode::Contains, false)).await.objects.iter().all(|o| o.kind != "table"), "diferencia maiúsculas");
+    let whole = find(opts("zeta", FindMode::Whole, true)).await;
+    assert!(!summary(&whole).iter().any(|(_, n, w)| n == "zeta_pai" && w == "tableName"), "zeta_pai não é a palavra zeta (o _ é parte dela)");
+    let prefix = find(opts("zeta_f", FindMode::Prefix, true)).await;
+    assert!(summary(&prefix).iter().any(|(_, n, _)| n == "zeta_filho"));
+    let regex = find(opts("^zeta_(pai|filho)$", FindMode::Regex, true)).await;
+    assert_eq!(regex.objects.iter().filter(|o| o.kind == "table").count(), 2);
+    assert!(atlas_pg::find(&s, &opts("(", FindMode::Regex, false)).await.is_err());
 
-    // Só nomes / diferenciar maiúsculas / regex.
-    let mut only_names = opts("zeta");
-    only_names.columns = false;
-    only_names.definitions = false;
-    only_names.comments = false;
-    assert!(run(only_names).await.hits.iter().all(|h| h.matched_in == "name"));
-    let mut case = opts("ZETA");
-    case.match_case = true;
-    case.names = false;
-    case.columns = false;
-    let hits = run(case).await.hits;
-    assert!(hits.iter().any(|h| h.matched_in == "definition") && hits.iter().all(|h| h.name != "tipo_zeta"), "{hits:?}");
-    let mut regex = opts("^(seq|tipo)_zeta$");
-    regex.regex = true;
-    regex.columns = false;
-    regex.definitions = false;
-    regex.comments = false;
-    let hits = run(regex).await.hits;
-    assert_eq!(hits.len(), 2, "{hits:?}");
-
-    // Curingas do LIKE valem como texto; regex inválida volta como erro do servidor.
-    assert!(run(opts("z%a")).await.hits.is_empty());
-    let mut bad = opts("(");
-    bad.regex = true;
-    assert!(atlas_pg::find(&s, &bad).await.is_err());
-    // Cada categoria sozinha também funciona (antes os literais sem tipo quebravam a ordenação num servidor 9.6).
-    for only in ["names", "columns", "definitions", "comments"] {
-        let mut o = opts("zeta");
-        (o.names, o.columns, o.definitions, o.comments) = (only == "names", only == "columns", only == "definitions", only == "comments");
-        assert!(!run(o).await.hits.is_empty(), "só {only}");
+    // Cada categoria sozinha; sem texto ou sem categoria: nada.
+    for only in ["tables", "views", "functions", "indexes", "triggers"] {
+        let mut o = opts("zeta", FindMode::Contains, true);
+        (o.tables, o.views, o.matviews, o.functions, o.indexes, o.triggers) = (only == "tables", only == "views", false, only == "functions", only == "indexes", only == "triggers");
+        assert!(!find(o).await.objects.is_empty(), "só {only}");
     }
-    // Sem texto ou sem nenhuma categoria marcada: nada.
-    assert!(run(opts("")).await.hits.is_empty());
+    assert!(find(opts("", FindMode::Contains, true)).await.objects.is_empty());
+    let _ = v;
+
+    // Dados: conta as linhas com o texto, tabela a tabela.
+    let never = || false;
+    let data = |o: FindOptions| {
+        let s = &s;
+        async move { atlas_pg::find_data(s, &o, &never).await.unwrap() }
+    };
+    let r = data(opts("zeta", FindMode::Contains, true)).await;
+    let counts: Vec<(&str, i64)> = r.tables.iter().map(|t| (t.table.as_str(), t.count)).collect();
+    assert_eq!(counts, [("zeta_pai", 2)], "{counts:?}");
+    assert_eq!((r.scanned, r.total, r.cancelled), (2, 2, false));
+    assert!(data(opts("zeta", FindMode::Contains, false)).await.tables.iter().any(|t| t.table == "zeta_pai" && t.count == 1), "só 'zeta tres' tem minúscula");
+    assert!(data(opts("A1", FindMode::Whole, false)).await.tables.iter().any(|t| t.count == 1));
+    assert!(data(opts("Ze", FindMode::Prefix, false)).await.tables.iter().any(|t| t.count == 1));
+    assert!(data(opts("z%um", FindMode::Contains, true)).await.tables.iter().any(|t| t.count == 1), "curinga do LIKE");
+    assert!(data(opts("^b[0-9]$", FindMode::Regex, true)).await.tables.iter().any(|t| t.count == 1));
+    let mut both = opts("zeta", FindMode::Contains, true);
+    both.schema = None;
+    assert!(data(both).await.tables.iter().any(|t| t.schema == other && t.table == "zeta_outro" && t.count == 1));
+    // Parar: a bandeira interrompe antes da primeira tabela.
+    let stop = || true;
+    let r = atlas_pg::find_data(&s, &opts("zeta", FindMode::Contains, true), &stop).await.unwrap();
+    assert!(r.cancelled && r.tables.is_empty());
+
     atlas_pg::execute(&s, &format!("DROP SCHEMA {ns} CASCADE; DROP SCHEMA {other} CASCADE"), 1).await.unwrap();
 }
 
