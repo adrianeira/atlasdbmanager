@@ -85,3 +85,10 @@ pub async fn console_prompt(sessions: State<'_, Sessions>, session_id: String, d
 pub fn console_is_complete(input: String) -> bool {
     atlas_pg::console_is_complete(&input)
 }
+
+/// Tab no console: a palavra antes do cursor e as opções para completá-la.
+#[tauri::command]
+pub async fn console_complete(sessions: State<'_, Sessions>, session_id: String, database: String, text: String) -> Result<atlas_pg::ConsoleCompletion, DatabaseError> {
+    let s = sessions.get(&session_id, Some(&database)).await?;
+    Ok(atlas_pg::console_complete(&s, &text).await)
+}

@@ -386,6 +386,166 @@ async fn describe(s: &PgSession, name: &str, expanded: bool, plus: bool) -> Resu
     Ok(out)
 }
 
+// ---------------------------------------------------------------- autocompletar (Tab)
+
+/// O que a tecla Tab completa: onde a palavra começa, as opções e o que acrescentar quando só há uma.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Completion {
+    /// Posição (em caracteres) onde a palavra a completar começa.
+    pub start: usize,
+    pub candidates: Vec<String>,
+    /// Texto que vai depois da opção única: espaço (comando ou palavra-chave), ponto (schema) ou nada.
+    pub append: String,
+}
+
+const META_COMMANDS: &[&str] = &[
+    "\\?", "\\c", "\\conninfo", "\\copy", "\\d", "\\d+", "\\df", "\\di", "\\dm", "\\dn", "\\dn+", "\\ds", "\\dt", "\\dt+", "\\du", "\\dv", "\\echo", "\\g", "\\gx", "\\i", "\\l", "\\l+",
+    "\\q", "\\set", "\\timing", "\\unset", "\\watch", "\\x",
+];
+
+const KEYWORDS: &[&str] = &[
+    "ABORT", "ADD", "ALL", "ALTER", "ANALYZE", "AND", "AS", "ASC", "BEGIN", "BETWEEN", "BY", "CASCADE", "CASE", "CHECK", "COLUMN", "COMMENT", "COMMIT", "CONSTRAINT", "COPY", "CREATE", "CROSS", "DATABASE",
+    "DEFAULT", "DELETE", "DESC", "DISTINCT", "DROP", "ELSE", "END", "EXCEPT", "EXISTS", "EXPLAIN", "FALSE", "FETCH", "FOREIGN", "FROM", "FULL", "FUNCTION", "GRANT", "GROUP", "HAVING", "ILIKE", "IN",
+    "INDEX", "INNER", "INSERT", "INTERSECT", "INTO", "IS", "JOIN", "KEY", "LEFT", "LIKE", "LIMIT", "MATERIALIZED", "NOT", "NULL", "OFFSET", "ON", "OR", "ORDER", "OUTER", "OVER", "PARTITION", "PRIMARY",
+    "REFERENCES", "REFRESH", "REPLACE", "RETURNING", "REVOKE", "RIGHT", "ROLLBACK", "SCHEMA", "SELECT", "SEQUENCE", "SET", "SHOW", "TABLE", "THEN", "TRIGGER", "TRUE", "TRUNCATE", "UNION", "UNIQUE",
+    "UPDATE", "USING", "VACUUM", "VALUES", "VIEW", "WHEN", "WHERE", "WITH",
+];
+
+/// Escapa `%`, `_` e `\` para usar como prefixo num `LIKE`.
+fn like_prefix(prefix: &str) -> String {
+    let escaped: String = prefix.chars().flat_map(|c| if matches!(c, '%' | '_' | '\\') { vec!['\\', c] } else { vec![c] }).collect();
+    format!("{escaped}%")
+}
+
+/// O nome com aspas só quando precisa (maiúsculas, espaços, ponto...).
+fn ident(name: &str) -> String {
+    let simple = name.chars().next().is_some_and(|c| c.is_ascii_lowercase() || c == '_') && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '$');
+    if simple { name.to_string() } else { format!("\"{}\"", name.replace('"', "\"\"")) }
+}
+
+async fn names(s: &PgSession, sql: &str) -> Vec<String> {
+    match query(s, sql).await {
+        Ok(rs) => rs.rows.into_iter().filter_map(|r| r.into_iter().next().flatten()).collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// Completa a última palavra de `text` (o que está antes do cursor).
+pub async fn complete(s: &PgSession, text: &str) -> Completion {
+    let chars: Vec<char> = text.chars().collect();
+    let is_word = |c: char| c.is_alphanumeric() || matches!(c, '_' | '$' | '.' | '"' | '\\' | '+');
+    let mut start = chars.len();
+    while start > 0 && is_word(chars[start - 1]) {
+        start -= 1;
+    }
+    let token: String = chars[start..].iter().collect();
+    let head: String = chars[..start].iter().collect();
+    let first = text.trim_start();
+    let mut out = Completion { start, ..Default::default() };
+    let limit = 200;
+
+    // Comando com `\`: o nome do comando ou o argumento dele.
+    if first.starts_with('\\') {
+        if head.trim().is_empty() {
+            out.candidates = META_COMMANDS.iter().filter(|m| m.starts_with(token.as_str())).map(|m| m.to_string()).collect();
+            out.append = " ".into();
+            return out;
+        }
+        let (name, _) = split_meta(first);
+        let like = like_prefix(&token);
+        match name.trim_end_matches('+') {
+            "d" | "dt" | "dv" | "dm" | "di" | "ds" => {
+                out.candidates = names(
+                    s,
+                    &format!(
+                        "SELECT c.relname::text FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+                          WHERE c.relkind IN ('r','p','v','m','i','S','f') AND pg_catalog.pg_table_is_visible(c.oid) AND n.nspname NOT IN ('pg_catalog', 'information_schema') \
+                            AND c.relname LIKE {} ORDER BY 1 LIMIT {limit}",
+                        quote(&like)
+                    ),
+                )
+                .await;
+            }
+            "c" | "connect" => {
+                out.candidates = names(s, &format!("SELECT datname::text FROM pg_catalog.pg_database WHERE datallowconn AND datname LIKE {} ORDER BY 1 LIMIT {limit}", quote(&like))).await;
+            }
+            _ => {}
+        }
+        return out;
+    }
+
+    // `qualificador.parcial`: colunas da tabela ou relações do schema.
+    if let Some((qualifier, partial)) = token.rsplit_once('.') {
+        out.start = start + qualifier.chars().count() + 1;
+        let like = like_prefix(partial.trim_start_matches('"'));
+        let plain = qualifier.replace('"', "");
+        let mut found = names(
+            s,
+            &format!(
+                "SELECT a.attname::text FROM pg_catalog.pg_attribute a WHERE a.attrelid = pg_catalog.to_regclass({})::oid AND a.attnum > 0 AND NOT a.attisdropped \
+                    AND a.attname LIKE {} ORDER BY a.attnum LIMIT {limit}",
+                quote(qualifier),
+                quote(&like)
+            ),
+        )
+        .await;
+        if found.is_empty() {
+            found = names(
+                s,
+                &format!(
+                    "SELECT c.relname::text FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+                      WHERE n.nspname = {} AND c.relkind IN ('r','p','v','m','S','f') AND c.relname LIKE {} ORDER BY 1 LIMIT {limit}",
+                    quote(&plain),
+                    quote(&like)
+                ),
+            )
+            .await;
+        }
+        out.candidates = found.iter().map(|n| ident(n)).collect();
+        return out;
+    }
+
+    // Palavra solta: palavras-chave, schemas, relações visíveis e funções.
+    let typed = token.trim_start_matches('"');
+    let upper = typed.chars().any(|c| c.is_uppercase());
+    let mut candidates: Vec<String> = KEYWORDS
+        .iter()
+        .filter(|k| k.to_ascii_lowercase().starts_with(&typed.to_ascii_lowercase()))
+        .map(|k| if upper { k.to_string() } else { k.to_ascii_lowercase() })
+        .collect();
+    let like = quote(&like_prefix(typed));
+    let schemas = names(s, &format!("SELECT nspname::text FROM pg_catalog.pg_namespace WHERE nspname !~ '^pg_' AND nspname <> 'information_schema' AND nspname LIKE {like} ORDER BY 1 LIMIT {limit}")).await;
+    let relations = names(
+        s,
+        &format!(
+            "SELECT c.relname::text FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+              WHERE c.relkind IN ('r','p','v','m','S','f') AND pg_catalog.pg_table_is_visible(c.oid) AND n.nspname NOT IN ('pg_catalog', 'information_schema') \
+                AND c.relname LIKE {like} ORDER BY 1 LIMIT {limit}"
+        ),
+    )
+    .await;
+    let functions = names(
+        s,
+        &format!(
+            "SELECT DISTINCT p.proname::text FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace \
+              WHERE pg_catalog.pg_function_is_visible(p.oid) AND n.nspname NOT IN ('pg_catalog', 'information_schema') AND p.proname LIKE {like} ORDER BY 1 LIMIT {limit}"
+        ),
+    )
+    .await;
+    // Só uma palavra-chave (ou só um schema) completa com o complemento; misturado, nada é acrescentado.
+    let only_keywords = relations.is_empty() && schemas.is_empty() && functions.is_empty();
+    let only_schema = candidates.is_empty() && relations.is_empty() && functions.is_empty() && schemas.len() == 1;
+    candidates.extend(schemas.iter().map(|n| ident(n)));
+    candidates.extend(relations.iter().map(|n| ident(n)));
+    candidates.extend(functions.iter().map(|n| ident(n)));
+    candidates.dedup();
+    candidates.truncate(limit);
+    out.append = if only_keywords { " ".into() } else if only_schema { ".".into() } else { String::new() };
+    out.candidates = candidates;
+    out
+}
+
 /// Troca `:nome`, `:'nome'` (como texto) e `:"nome"` (como identificador) pelas variáveis do console, fora de aspas, `$tag$` e
 /// comentários. `::` (cast) e nomes sem variável ficam como estão.
 pub fn interpolate(sql: &str, vars: &BTreeMap<String, String>) -> String {

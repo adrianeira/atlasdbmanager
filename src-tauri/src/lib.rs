@@ -193,6 +193,7 @@ pub fn run() {
             monitor::console_run,
             monitor::console_prompt,
             monitor::console_is_complete,
+            monitor::console_complete,
             dictionary::dict_cancel,
             dictionary::dict_defaults,
             dictionary::dict_preview,

@@ -2084,3 +2084,76 @@ async fn console_runs_sql_and_backslash_commands_like_psql() {
 
     atlas_pg::execute(&s, &format!("DROP SCHEMA {ns} CASCADE"), 1).await.unwrap();
 }
+
+#[tokio::test]
+async fn console_completes_commands_keywords_schemas_tables_and_columns() {
+    use atlas_pg::console_complete;
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    let ns = format!("atlas_cc_{}", std::process::id());
+    // Restos de uma rodada que falhou no meio não podem aparecer como opção.
+    for row in s.client.query("SELECT nspname::text FROM pg_namespace WHERE nspname LIKE 'atlas_cc_%'", &[]).await.unwrap() {
+        let old: String = row.get(0);
+        atlas_pg::execute(&s, &format!("DROP SCHEMA {old} CASCADE"), 1).await.unwrap();
+    }
+    atlas_pg::execute(
+        &s,
+        &format!(
+            "CREATE SCHEMA {ns}; SET search_path TO {ns}; \
+             CREATE TABLE clientes(id serial PRIMARY KEY, nome text, cidade text); \
+             CREATE TABLE \"Pedidos Novos\"(id int, valor numeric); \
+             CREATE VIEW v_clientes AS SELECT id FROM clientes; \
+             CREATE FUNCTION calcula_total(x int) RETURNS int LANGUAGE sql AS 'SELECT x';"
+        ),
+        1,
+    )
+    .await
+    .expect("ddl");
+
+    // Comandos com barra e o argumento do \d.
+    let c = console_complete(&s, "\\dt").await;
+    assert_eq!(c.start, 0);
+    assert_eq!(c.candidates, vec!["\\dt", "\\dt+"]);
+    let c = console_complete(&s, "\\wa").await;
+    assert_eq!((c.candidates.as_slice(), c.append.as_str()), (["\\watch".to_string()].as_slice(), " "));
+    let c = console_complete(&s, "\\d cli").await;
+    assert_eq!(c.start, 3);
+    assert!(c.candidates.contains(&"clientes".to_string()) && c.candidates.iter().all(|n| n.starts_with("cli")), "{c:?}");
+    let c = console_complete(&s, "\\c ").await;
+    assert!(c.candidates.contains(&s.server.current_database), "{c:?}");
+
+    // Palavra solta: palavra-chave (no mesmo caso de quem digitou), relações visíveis e funções.
+    let c = console_complete(&s, "SELECT * FR").await;
+    assert_eq!((c.start, c.candidates.as_slice(), c.append.as_str()), (9, ["FROM".to_string()].as_slice(), " "));
+    let c = console_complete(&s, "select * fr").await;
+    assert_eq!(c.candidates, vec!["from"]);
+    let c = console_complete(&s, "SELECT * FROM cli").await;
+    assert_eq!(c.candidates, vec!["clientes", "clientes_id_seq"]);
+    let c = console_complete(&s, "SELECT * FROM v_").await;
+    assert_eq!(c.candidates, vec!["v_clientes"]);
+    let c = console_complete(&s, "SELECT calc").await;
+    assert_eq!(c.candidates, vec!["calcula_total"]);
+    // Nomes que precisam de aspas saem com aspas.
+    let c = console_complete(&s, "SELECT * FROM Ped").await;
+    assert_eq!(c.candidates, vec!["\"Pedidos Novos\""], "{c:?}");
+    let c = console_complete(&s, "SELECT * FROM \"Ped").await;
+    assert_eq!(c.candidates, vec!["\"Pedidos Novos\""], "{c:?}");
+
+    // Schema: completa com o ponto; depois do ponto vêm as relações do schema.
+    let c = console_complete(&s, &format!("SELECT * FROM {}", &ns[..ns.len() - 3])).await;
+    assert_eq!((c.candidates.as_slice(), c.append.as_str()), ([ns.clone()].as_slice(), "."), "{c:?}");
+    let c = console_complete(&s, &format!("SELECT * FROM {ns}.cl")).await;
+    assert_eq!(c.candidates, vec!["clientes", "clientes_id_seq"]);
+    assert_eq!(c.start, "SELECT * FROM ".len() + ns.len() + 1);
+
+    // Tabela + ponto: as colunas, na ordem da tabela.
+    let c = console_complete(&s, "SELECT clientes.").await;
+    assert_eq!(c.candidates, vec!["id", "nome", "cidade"]);
+    let c = console_complete(&s, "SELECT clientes.ci").await;
+    assert_eq!(c.candidates, vec!["cidade"]);
+    let c = console_complete(&s, &format!("SELECT {ns}.clientes.n")).await;
+    assert_eq!(c.candidates, vec!["nome"]);
+    assert!(console_complete(&s, "SELECT nao_existe.").await.candidates.is_empty());
+
+    atlas_pg::execute(&s, &format!("DROP SCHEMA {ns} CASCADE"), 1).await.unwrap();
+}
