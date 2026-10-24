@@ -38,6 +38,9 @@ import { FindDoc } from "./documents/FindDoc";
 import { ForeignTableDesignerDoc, type ForeignTableBackend } from "./documents/ForeignTableDesignerDoc";
 import { TablespaceDesignerDoc, type TablespaceBackend } from "./documents/TablespaceDesignerDoc";
 import { dropTablespaceStatement } from "./sql/tablespace";
+import { TasksDialog } from "./components/TasksDialog";
+import { runTask } from "./taskRun";
+import { isDue, type ScheduledTask } from "./tasks";
 import { HistoryLogDoc } from "./documents/HistoryLogDoc";
 import { ServerMonitorDoc } from "./documents/ServerMonitorDoc";
 import { dropTypeSql } from "./sql/typedef";
@@ -271,6 +274,7 @@ type Dialog =
   | { kind: "password"; connId: string; retry?: string }
   | { kind: "error"; title: string; message: string }
   | { kind: "info"; title: string; message: string }
+  | { kind: "tasks" }
   | { kind: "newDatabase"; connId: string; busy?: boolean; error?: string }
   | ({ kind: "ddl"; busy?: boolean; error?: string } & DdlRequest)
   | { kind: "name"; title: string; label: string; initial: string; onSubmit: (value: string) => void }
@@ -1326,6 +1330,56 @@ export default function App() {
     setActiveTab(tabs[(idx + dir + tabs.length) % tabs.length].id);
   };
 
+  /* ---------- Tarefas agendadas (backup e exportação) ---------- */
+  const [tasks, setTasks] = useState<ScheduledTask[]>([]);
+  const tasksRef = useRef(tasks);
+  tasksRef.current = tasks;
+  const [tasksLoaded, setTasksLoaded] = useState(!isDesktop);
+  const [runningTasks, setRunningTasks] = useState<Set<string>>(new Set());
+  const runningRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (!isDesktop) return;
+    void local.getPref<ScheduledTask[]>("tasks.v1")
+      .then((v) => { if (Array.isArray(v)) setTasks(v.filter((x) => x && typeof x.id === "string" && x.job && x.schedule)); })
+      .catch(() => undefined)
+      .finally(() => setTasksLoaded(true));
+  }, []);
+  useEffect(() => {
+    if (isDesktop && tasksLoaded) void local.setPref("tasks.v1", tasks).catch(() => undefined);
+  }, [tasks, tasksLoaded]);
+
+  /** Roda a tarefa agora: abre a conexão se preciso, grava o resultado na própria tarefa e mostra o erro (se houver). */
+  const executeTask = async (id: string) => {
+    const task = tasksRef.current.find((x) => x.id === id);
+    if (!task || runningRef.current.has(id)) return;
+    runningRef.current.add(id);
+    setRunningTasks(new Set(runningRef.current));
+    let status: "ok" | "error" = "ok";
+    let message: string;
+    try {
+      message = await runTask(task, queryBackend.ensureOpen);
+    } catch (e) {
+      status = "error";
+      message = errorText(toAtlasError(e));
+      showError(`${t("tk.title")}: ${task.name}`, message);
+    } finally {
+      runningRef.current.delete(id);
+      setRunningTasks(new Set(runningRef.current));
+    }
+    setTasks((list) => list.map((x) => (x.id === id ? { ...x, lastRunMs: Date.now(), lastStatus: status, lastMessage: message } : x)));
+  };
+  // A cada 20 segundos: o que venceu roda (uma vez por vencimento; tarefa atrasada roda já e a contagem segue da última execução).
+  useEffect(() => {
+    if (!isDesktop || !tasksLoaded) return;
+    const id = window.setInterval(() => {
+      const now = Date.now();
+      for (const task of tasksRef.current) if (!runningRef.current.has(task.id) && isDue(task, now)) void executeTask(task.id);
+    }, 20_000);
+    return () => window.clearInterval(id);
+    // As funções chamadas leem o estado por refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasksLoaded]);
+
   /* ---------- Sessão: consultas abertas (Opções → Tabs e Auto Recovery) ---------- */
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
@@ -2237,6 +2291,7 @@ export default function App() {
       id: "console", label: "cmd.console", shortcut: "F6",
       run: ctx.connection?.live && openConnections.has(ctx.connection.id) ? () => openConsole(ctx.connection!, ctx.database?.name) : undefined,
     },
+    scheduledTasks: { id: "scheduledTasks", label: "cmd.scheduledTasks", run: isDesktop ? () => setDialog({ kind: "tasks" }) : undefined },
     historyLog: {
       id: "historyLog", label: "cmd.historyLog", shortcut: "Ctrl+L",
       run: () => openTab({ kind: "historyLog", title: t("hl.title"), windowTitle: t("hl.title"), icon: "history", object: "historylog" }),
@@ -2325,7 +2380,7 @@ export default function App() {
   const tableMenu: MenuDef = { label: "menu.table", items: entries("addRecord", "deleteRecord", "-", "applyChanges", "discardChanges", "-", "refreshData") };
   const tailMenus: MenuDef[] = [
     { label: "menu.favorites", items: entries("addFavorite", "manageFavorites") },
-    { label: "menu.tools", items: entries("dataTransfer", "dataGen", "dataDictionary", "dataSync", "structureSync", "-", "console", sub("mon.title", "monitorPostgres"), "-", "findInDatabase", "-", "historyLog", "-", "options") },
+    { label: "menu.tools", items: entries("dataTransfer", "dataGen", "dataDictionary", "dataSync", "structureSync", "-", "console", sub("mon.title", "monitorPostgres"), "-", "findInDatabase", "-", "scheduledTasks", "historyLog", "-", "options") },
     { label: "menu.window", items: entries("nextTab", "previousTab", "-", "closeTab", "closeAllTabs") },
     { label: "menu.help", items: entries("documentation", "-", "about") },
   ];
@@ -3249,6 +3304,16 @@ export default function App() {
           error={dialog.error}
           onOk={() => void runDdl(dialog)}
           onCancel={() => setDialog(null)}
+        />
+      )}
+      {dialog?.kind === "tasks" && (
+        <TasksDialog
+          tasks={tasks}
+          conns={connections.filter((c) => c.live).map((c) => ({ id: c.id, name: c.name }))}
+          running={runningTasks}
+          onChange={setTasks}
+          onRun={(id) => void executeTask(id)}
+          onClose={() => setDialog(null)}
         />
       )}
       {dialog?.kind === "info" && (

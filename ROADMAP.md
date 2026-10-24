@@ -599,7 +599,12 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 - [x] Import Wizard em etapas: TXT, CSV, JSON, XML, Excel e DBF (ver "Importação de dados"); Access/ODBC/Paradox pendentes
 - [x] Export Wizard de tabelas/views em etapas, com várias tabelas e perfis (ver "Exportação de dados")
 - [ ] Formatos que faltam: Access (`.accdb`) e Markdown *(**deixados de fora por enquanto**, por decisão: o `.accdb` depende do driver do Windows e o Markdown não aparece em nenhuma captura da referência)*
-- [ ] Exportação agendada (a estrutura junto com os dados já sai pelo Dump SQL)
+- [x] **Tarefas agendadas** (Ferramentas → Tarefas agendadas): **backup** (banco ou schema) e **exportação** de uma tabela (qualquer formato do assistente) que o Atlas roda
+      sozinho **enquanto está aberto**: todo dia num horário, a cada N minutos/horas/dias ou uma vez; nome do arquivo com a data (`%Y%m%d...`), pasta escolhida,
+      Executar agora, ativar/desativar, próxima e última execução com o resultado e erro mostrado em diálogo; tarefa vencida com o app fechado roda uma
+      vez ao abrir; guardadas nas preferências locais. Testado de verdade: o agendador disparou sozinho uma exportação CSV, e um backup rodou pelo
+      Executar agora e gerou o arquivo com o comentário *(`src/tasks.ts`, `taskRun.ts`, `TasksDialog.tsx`)*. Não há captura da referência (lá isso é a Automação):
+      o desenho é próprio; não roda com o app fechado
 - [x] Dump SQL completo (ver "Dump SQL" em Entregues)
 - [x] Data Transfer entre conexões e bancos (ver "Data Transfer" em Entregues)
 - [x] Data Synchronization entre conexões e bancos (ver "Data Synchronization" em Entregues)
@@ -621,7 +626,7 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
   individualmente (o `pg_dump` não permite), total de registros exato (usa a estimativa das tabelas), objetos globais
   (roles) no backup do banco e teste automatizado contra um servidor (só foi verificado que compila)
       *(`src-tauri/src/backup.rs`, `src/components/BackupDialog.tsx`, `RestoreDialog.tsx`)*
-- [ ] Backup agendado
+- [x] Backup agendado (ver "Tarefas agendadas" em Exportar)
 
 ## 9. Automação *(fora de prioridade neste ciclo)*
 - [ ] Batch jobs (encadear consultas, backups, transferências)

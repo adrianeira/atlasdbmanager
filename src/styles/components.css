@@ -2687,3 +2687,24 @@ select.et-input {
 .about-list dd { margin: 0; min-width: 0; }
 .about-link { color: var(--c-accent); text-decoration: none; }
 .about-link:hover { text-decoration: underline; }
+
+/* Tarefas agendadas. */
+.tk-dialog { width: min(980px, 96vw); }
+.tk-toolbar { display: flex; gap: 2px; padding: 4px 8px; border-bottom: 1px solid var(--c-border); background: var(--c-surface-alt); }
+.tk-list { min-height: 220px; max-height: 50vh; overflow: auto; background: var(--c-surface); }
+.tk-cols { display: grid; grid-template-columns: 1.1fr 90px 1.6fr 1.1fr 130px 1.3fr; align-items: center; }
+.tk-head { position: sticky; top: 0; z-index: 1; height: 24px; background: var(--c-surface); border-bottom: 1px solid var(--c-border); color: var(--c-text-muted); }
+.tk-head span, .tk-row-item span { padding: 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tk-row-item { height: 24px; cursor: default; }
+.tk-row-item.is-selected { background: var(--c-selected); }
+.tk-row-item.is-off { color: var(--c-text-disabled); }
+.tk-bad { color: #c62828; }
+.tk-msg { padding: 4px 10px; border-top: 1px solid var(--c-border); font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
+.tk-msg.is-bad { color: #c62828; }
+.tk-note { padding: 6px 10px; }
+.tk-form { width: min(560px, 94vw); }
+.tk-grid { display: grid; grid-template-columns: 130px 1fr; gap: 8px 10px; align-items: center; }
+.tk-row { display: flex; gap: 6px; align-items: center; }
+.tk-row .field { min-width: 0; }
+.tk-row .field:first-child:not(select):not(.tk-num) { flex: 1; }
+.tk-num { width: 70px; }
