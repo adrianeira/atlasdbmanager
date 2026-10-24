@@ -122,6 +122,8 @@ export interface ConnectionMock {
   customDbs?: { name: string; autoOpen: boolean }[];
   /** Observações da conexão (aba Remarks). */
   remarks?: string;
+  /** Grupo (pasta) da árvore em que a conexão fica; ausente = fora de grupo. */
+  group?: string;
   /** Túnel SSH (aba SSH); a senha fica no cofre, nunca aqui. */
   ssh?: { host: string; port: number; user: string; auth: "password" | "publickey"; keyPath: string; savePassword: boolean };
 }
@@ -312,7 +314,7 @@ export function mockRows(table: DbObject): CellValue[][] {
 
 /* ---------- Árvore de navegação ---------- */
 
-export type NodeKind = "root" | "connection" | "database" | "schema" | "folder" | "object" | "column";
+export type NodeKind = "root" | "group" | "connection" | "database" | "schema" | "folder" | "object" | "column";
 
 export interface TreeNode {
   id: string;
@@ -407,6 +409,8 @@ export interface TreeState {
   filterOptions?: FilterOptions;
   /** Mostrar só conexões com estrela (botão ★ da busca). */
   starredOnly?: boolean;
+  /** Grupos de conexões, na ordem em que aparecem (os vazios também). */
+  groups?: string[];
 }
 
 export function functionLabel(o: DbObject): string {
@@ -426,7 +430,28 @@ export function buildVisibleTree(
 
   out.push({ id: "root", kind: "root", label: rootLabel, depth: 0, expandable: false });
 
-  for (const conn of connections) {
+  // Grupos primeiro (cada um com as suas conexões), depois as conexões fora de grupo.
+  const groups = state.groups ?? [];
+  const grouped = new Set<string>();
+  const filtering = state.filter.trim() !== "" || !!state.starredOnly;
+  const list: ({ conn: ConnectionMock } | { folder: string })[] = [];
+  for (const g of groups) {
+    const members = connections.filter((c) => c.group === g);
+    for (const c of members) grouped.add(c.id);
+    // Com busca ou filtro de estrela, grupos sem nenhuma conexão visível somem.
+    if (filtering && !members.some((c) => (!state.starredOnly || c.starred) && (state.openConnections.has(c.id) || matches(c.name)))) continue;
+    list.push({ folder: g });
+    if (filtering || state.expanded.has(`group:${seg(g)}`)) list.push(...members.map((conn) => ({ conn })));
+  }
+  for (const c of connections) if (!grouped.has(c.id)) list.push({ conn: c });
+  const shifted = new Set(connections.filter((c) => grouped.has(c.id)).map((c) => `conn:${seg(c.id)}`));
+
+  for (const entry of list) {
+    if ("folder" in entry) {
+      out.push({ id: `group:${seg(entry.folder)}`, kind: "group", label: entry.folder, depth: 0, expandable: true });
+      continue;
+    }
+    const conn = entry.conn;
     const connId = `conn:${seg(conn.id)}`;
     const isOpen = state.openConnections.has(conn.id);
     if (state.starredOnly && !conn.starred) continue;
@@ -472,6 +497,15 @@ export function buildVisibleTree(
         }
       }
     }
+  }
+  // As conexões de um grupo (e tudo o que há abaixo delas) ficam um nível adiante.
+  let inside = false;
+  for (const n of out) {
+    if (n.kind === "root") continue;
+    if (n.kind === "group") inside = false;
+    else if (n.kind === "connection") inside = shifted.has(n.id);
+    else if (!inside) continue;
+    if (n.kind !== "group" && inside) n.depth += 1;
   }
   return out;
 }

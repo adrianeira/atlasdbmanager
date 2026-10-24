@@ -508,7 +508,9 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 - [ ] HTTP tunnel *(não implementado: na referência ele só funciona com um script PHP instalado no servidor web, com protocolo próprio do fornecedor;
       sem esse servidor não há como conectar, então não há aba HTTP no diálogo para não prometer o que não funciona)*
 - [ ] Autenticação Kerberos/GSSAPI
-- [ ] Grupos (pastas) de conexão na árvore
+- [x] **Grupos (pastas) de conexão na árvore**: Novo grupo (menu da raiz ou do grupo), Renomear, Excluir (as conexões voltam para fora de
+      grupo), **Mover para o grupo** no menu da conexão (e novo grupo na hora) e Nova conexão já dentro do grupo; grupos vazios e o grupo de
+      cada conexão ficam guardados; a busca e o filtro de estrela mostram só os grupos que têm conexão visível. Ainda sem arrastar e soltar
 - [ ] Novos provedores: MySQL, MariaDB, SQL Server, Oracle, SQLite, MongoDB, Redis,
       Snowflake etc. (hoje: só PostgreSQL; Firebird planejado)
 

@@ -157,6 +157,7 @@ function toRecord(c: ConnectionMock, sortOrder: number): ProfileRecord {
   if (c.customDbs) options.customDbs = c.customDbs;
   if (c.remarks) options.remarks = c.remarks;
   if (c.ssh) options.ssh = c.ssh;
+  if (c.group) options.group = c.group;
   return {
     id: c.id, name: c.name, provider: c.provider, host: c.host, port: c.port, initialDatabase: c.initialDatabase,
     user: c.user, environment: c.environment ?? "development", options, sortOrder, hasPassword: !!c.hasPassword,
@@ -176,6 +177,7 @@ function fromRecord(r: ProfileRecord): ConnectionMock {
     hasPassword: r.hasPassword,
     customDbs: Array.isArray(o.customDbs) ? (o.customDbs as { name: string; autoOpen: boolean }[]).filter((d) => d && typeof d.name === "string").map((d) => ({ name: d.name, autoOpen: d.autoOpen === true })) : undefined,
     remarks: typeof o.remarks === "string" ? o.remarks : undefined,
+    group: typeof o.group === "string" && o.group ? o.group : undefined,
     ssh: o.ssh && typeof o.ssh === "object" && typeof (o.ssh as { host?: unknown }).host === "string" ? (o.ssh as NonNullable<ConnectionMock["ssh"]>) : undefined,
   };
 }
@@ -253,7 +255,7 @@ interface DdlRequest {
 }
 
 type Dialog =
-  | { kind: "connection"; editing?: ConnectionMock }
+  | { kind: "connection"; editing?: ConnectionMock; group?: string }
   | { kind: "deleteConnection"; conn: ConnectionMock }
   | { kind: "closeDirty"; tabId: string }
   | { kind: "password"; connId: string; retry?: string }
@@ -345,6 +347,8 @@ export default function App() {
         const conns = records.map(fromRecord);
         persistedProfiles.current = new Map(conns.map((c, i) => [c.id, profileKey(toRecord(c, i))]));
         setConnections(conns);
+        const savedGroups = await local.getPref<string[]>("conn.groups");
+        if (Array.isArray(savedGroups)) setGroups(savedGroups.filter((g) => typeof g === "string" && g));
         const savedLayout = await local.getPref<Partial<Layout>>("layout");
         if (savedLayout) setLayout((l) => ({ ...l, ...savedLayout }));
       } catch (e) {
@@ -390,6 +394,13 @@ export default function App() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [openConnections, setOpenConnections] = useState<Set<string>>(new Set());
   const [openDatabases, setOpenDatabases] = useState<Set<string>>(new Set());
+  /** Grupos (pastas) de conexões da árvore, na ordem de criação; os vazios também ficam guardados (preferência `conn.groups`). */
+  const [groups, setGroups] = useState<string[]>([]);
+  const allGroups = useMemo(() => {
+    const all = [...groups];
+    for (const c of connections) if (c.group && !all.includes(c.group)) all.push(c.group);
+    return all;
+  }, [groups, connections]);
   const [connecting, setConnecting] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState("");
   const [category, setCategory] = useState<Category>("table");
@@ -419,8 +430,8 @@ export default function App() {
     }
   }, [filterOptions]);
   const nodes = useMemo(
-    () => buildVisibleTree(connections, { expanded, openConnections, openDatabases, filter, filterOptions, starredOnly }, (c) => t(FOLDER_LABEL[c] ?? CATEGORY_LABEL[c]), t("nav.myConnections")),
-    [connections, expanded, openConnections, openDatabases, filter, filterOptions, starredOnly, t],
+    () => buildVisibleTree(connections, { expanded, openConnections, openDatabases, filter, filterOptions, starredOnly, groups: allGroups }, (c) => t(FOLDER_LABEL[c] ?? CATEGORY_LABEL[c]), t("nav.myConnections")),
+    [connections, expanded, openConnections, openDatabases, filter, filterOptions, starredOnly, allGroups, t],
   );
 
   const add = (set: Set<string>, id: string) => new Set(set).add(id);
@@ -1301,7 +1312,7 @@ export default function App() {
   };
 
   /* ---------- Conexões: salvar/excluir ---------- */
-  const saveConnection = (form: ConnectionForm, version: number | null, editing?: ConnectionMock) => {
+  const saveConnection = (form: ConnectionForm, version: number | null, editing?: ConnectionMock, group?: string) => {
     const base = {
       name: form.name, provider: form.provider, host: form.host, port: Number(form.port) || 0, user: form.user,
       initialDatabase: form.initialDatabase, environment: form.environment,
@@ -1326,7 +1337,7 @@ export default function App() {
       if (editing) {
         setConnections((list) => list.map((c) => (c.id === id ? { ...c, ...base, hasPassword } : c)));
       } else {
-        const conn = { ...profileToConnection({ id, ...base }), hasPassword };
+        const conn = { ...profileToConnection({ id, ...base }), hasPassword, group };
         if (version) {
           conn.serverVersionNum = version;
           conn.serverVersion = `${Math.floor(version / 10000)}.${version % 100}`;
@@ -1340,7 +1351,7 @@ export default function App() {
     if (!isDesktop) return apply();
 
     const current = connections.find((c) => c.id === id);
-    const record = toRecord({ ...(current ?? profileToConnection({ id, ...base })), ...base, hasPassword }, current ? connections.indexOf(current) : connections.length);
+    const record = toRecord({ ...(current ?? profileToConnection({ id, ...base })), ...base, hasPassword, ...(current ? {} : { group }) }, current ? connections.indexOf(current) : connections.length);
     // Marca como persistido antes de atualizar o estado, para a sincronização não regravar sem a senha.
     persistedProfiles.current.set(id, profileKey(record));
     void local
@@ -1353,6 +1364,57 @@ export default function App() {
         showError(t("cmd.editConnection"), e);
       });
   };
+
+  /* ---------- Grupos de conexões ---------- */
+  const groupError = (title: string, message: string) => setDialog({ kind: "error", title, message });
+  const groupNameProblem = (name: string, except?: string): string | null => {
+    if (!name) return t("grp.empty");
+    if (allGroups.some((g) => g.toLowerCase() === name.toLowerCase() && g !== except)) return t("grp.exists", { name });
+    return null;
+  };
+  const newGroup = (then?: (name: string) => void) =>
+    askName(t("cmd.newGroup"), t("grp.name"), "", (value) => {
+      setDialog(null);
+      const name = value.trim();
+      const problem = groupNameProblem(name);
+      if (problem) return groupError(t("cmd.newGroup"), problem);
+      setGroups([...allGroups, name]);
+      setExpanded((s) => add(s, `group:${seg(name)}`));
+      then?.(name);
+    });
+  const renameGroup = (old: string) =>
+    askName(t("cmd.renameGroup"), t("grp.name"), old, (value) => {
+      setDialog(null);
+      const name = value.trim();
+      if (name === old) return;
+      const problem = groupNameProblem(name, old);
+      if (problem) return groupError(t("cmd.renameGroup"), problem);
+      setGroups(allGroups.map((g) => (g === old ? name : g)));
+      setConnections((list) => list.map((c) => (c.group === old ? { ...c, group: name } : c)));
+      setExpanded((s) => (s.has(`group:${seg(old)}`) ? add(remove(s, `group:${seg(old)}`), `group:${seg(name)}`) : s));
+    });
+  /** Apagar o grupo não apaga as conexões: elas voltam para fora de grupo. */
+  const deleteGroup = (name: string) => {
+    setGroups(allGroups.filter((g) => g !== name));
+    setConnections((list) => list.map((c) => (c.group === name ? { ...c, group: undefined } : c)));
+  };
+  const moveToGroup = (connId: string, group: string | null) => {
+    updateConn(connId, (c) => ({ ...c, group: group ?? undefined }));
+    if (group) setExpanded((s) => add(s, `group:${seg(group)}`));
+  };
+  const moveToGroupMenu = (conn: ConnectionMock): MenuEntry => ({
+    kind: "sub", label: "cmd.moveToGroup",
+    items: [
+      { kind: "item", text: t("grp.none"), checked: !conn.group, run: () => moveToGroup(conn.id, null) },
+      ...allGroups.map((g): MenuEntry => ({ kind: "item", text: g, checked: conn.group === g, run: () => moveToGroup(conn.id, g) })),
+      { kind: "sep" },
+      { kind: "item", text: t("cmd.newGroup"), run: () => newGroup((name) => moveToGroup(conn.id, name)) },
+    ],
+  });
+  useEffect(() => {
+    if (!isDesktop || !profilesLoaded) return;
+    void local.setPref("conn.groups", allGroups).catch(() => undefined);
+  }, [allGroups, profilesLoaded]);
 
   /** Arquivo → Exportar conexões: todas as conexões salvas, sem as senhas. */
   const exportConnections = async () => {
@@ -1393,7 +1455,17 @@ export default function App() {
     const items: MenuEntry[] = [];
     const item = (text: MessageKey, run?: () => void): MenuEntry => ({ kind: "item", text: t(text), run });
     const sep: MenuEntry = { kind: "sep" };
-    if (node.kind === "root") items.push(item("cmd.newConnection", () => setDialog({ kind: "connection" })));
+    if (node.kind === "root") items.push(item("cmd.newConnection", () => setDialog({ kind: "connection" })), item("cmd.newGroup", () => newGroup()));
+    if (node.kind === "group") {
+      const name = node.label;
+      items.push(
+        item("cmd.newConnection", () => setDialog({ kind: "connection", group: name })),
+        item("cmd.newGroup", () => newGroup()),
+        sep,
+        item("cmd.renameGroup", () => renameGroup(name)),
+        item("cmd.deleteGroup", () => deleteGroup(name)),
+      );
+    }
     if (node.kind === "connection" && c.connection) {
       const conn = c.connection;
       const isOpen = openConnections.has(conn.id);
@@ -1411,6 +1483,7 @@ export default function App() {
         item("cmd.newConnection", () => setDialog({ kind: "connection" })),
         item("cmd.deleteConnection", () => setDialog({ kind: "deleteConnection", conn })),
         item("cmd.duplicateConnection", () => duplicateConnection(conn)),
+        moveToGroupMenu(conn),
         sep,
         item("cmd.newDatabase", isOpen && live ? () => setDialog({ kind: "newDatabase", connId: conn.id }) : undefined),
         item("cmd.newQuery", () => (isOpen ? newQuery() : newQuery(undefined, conn))),
@@ -2920,7 +2993,7 @@ export default function App() {
           editing={dialog.editing}
           knownPassword={dialog.editing ? sessionPasswords.get(dialog.editing.id) : undefined}
           recentProviders={recentProviders}
-          onSave={(form, version) => saveConnection(form, version, dialog.editing)}
+          onSave={(form, version) => saveConnection(form, version, dialog.editing, dialog.group)}
           onClose={() => setDialog(null)}
         />
       )}

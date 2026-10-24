@@ -122,6 +122,8 @@ export function NavigationPane(p: Props) {
     switch (n.kind) {
       case "root":
         return <SmallIcon name="myConnections" />;
+      case "group":
+        return <SmallIcon name="connGroup" />;
       case "connection":
         return <ProviderIcon provider={n.provider ?? "postgresql"} open={p.openConnections.has(connIdOf(n.id))} />;
       case "database":
