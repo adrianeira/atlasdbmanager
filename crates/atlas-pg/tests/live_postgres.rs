@@ -1965,3 +1965,65 @@ async fn history_log_records_statements_errors_and_masks_passwords() {
     atlas_pg::history_set_paused(false);
     assert!(atlas_pg::history_read(last).0.iter().all(|e| e.text != "SELECT 2 AS dois"));
 }
+
+#[tokio::test]
+async fn console_runs_sql_and_backslash_commands_like_psql() {
+    use atlas_pg::{ConsoleOptions, console_is_complete, console_run};
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    let ns = format!("atlas_cn_{}", std::process::id());
+    let opts = ConsoleOptions::default();
+    let run = |input: &'static str| {
+        let s = &s;
+        async move { console_run(s, input, opts).await }
+    };
+    let setup = format!(
+        "CREATE SCHEMA {ns}; SET search_path TO {ns}; \
+         CREATE TABLE clients(id serial PRIMARY KEY, name varchar(30) NOT NULL, nota text DEFAULT 'x'); \
+         CREATE UNIQUE INDEX clients_name_key ON clients(name); \
+         CREATE TABLE orders(id int PRIMARY KEY, client_id int REFERENCES clients(id), amount numeric CHECK (amount > 0)); \
+         INSERT INTO clients(name) VALUES ('Ana'), ('Bruno');"
+    );
+    assert!(console_is_complete(&setup));
+    let out = console_run(&s, &setup, opts).await;
+    assert!(out.text.contains("CREATE SCHEMA") && out.text.contains("SET\n") && out.text.contains("CREATE TABLE") && out.text.contains("CREATE INDEX") && out.text.contains("INSERT 0 2"), "{}", out.text);
+
+    let out = run("SELECT id, name FROM clients ORDER BY id;").await;
+    assert_eq!(out.text, " id | name\n----+-------\n  1 | Ana\n  2 | Bruno\n(2 rows)\n\n");
+    let out = run("UPDATE clients SET nota = 'y' WHERE id = 1;").await;
+    assert_eq!(out.text, "UPDATE 1\n\n");
+
+    // Erro: posição e dica, como no psql; o console continua utilizável.
+    let out = run("SELECT\n  nao_existe FROM clients;").await;
+    assert!(out.text.starts_with("ERROR:  ") && out.text.contains("nao_existe") && out.text.contains("\nLINE 2:   nao_existe FROM clients;\n"), "{}", out.text);
+    assert!(out.text.contains('^'));
+
+    let out = run("\\dt").await;
+    assert!(out.text.contains("List of relations") && out.text.contains(&ns) && out.text.contains("clients") && out.text.contains("orders") && out.text.contains("(2 rows)"), "{}", out.text);
+    let out = run("\\d clients").await;
+    assert!(out.text.contains(&format!("Table \"{ns}.clients\"")), "{}", out.text);
+    assert!(out.text.contains("Indexes:") && out.text.contains("\"clients_pkey\" PRIMARY KEY, btree (id)") && out.text.contains("\"clients_name_key\" UNIQUE, btree (name)"), "{}", out.text);
+    assert!(out.text.contains("Referenced by:") && out.text.contains("TABLE \"orders\" CONSTRAINT \"orders_client_id_fkey\" FOREIGN KEY (client_id) REFERENCES clients(id)"), "{}", out.text);
+    assert!(out.text.contains("not null") && out.text.contains("nextval("), "{}", out.text);
+    let out = run("\\d orders").await;
+    assert!(out.text.contains("Check constraints:") && out.text.contains("CHECK (amount > 0::numeric)") && out.text.contains("Foreign-key constraints:"), "{}", out.text);
+    assert_eq!(run("\\d nada_disso").await.text, "Did not find any relation named \"nada_disso\".\n");
+    let out = run("\\l").await;
+    assert!(out.text.starts_with("                                 List of databases") || out.text.contains("List of databases"), "{}", out.text);
+    assert!(out.text.contains(&s.server.current_database));
+    assert!(run("\\foo").await.text.starts_with("invalid command \\foo"));
+    assert!(run("\\q").await.quit);
+    assert_eq!(run("\\c outro_banco").await.switch_db.as_deref(), Some("outro_banco"));
+
+    // \timing e \x são lembrados nas opções devolvidas.
+    let out = run("\\timing").await;
+    assert!(out.options.timing && out.text == "Timing is on.\n");
+    let timed = console_run(&s, "SELECT 1;", out.options).await;
+    assert!(timed.text.contains("Time: "), "{}", timed.text);
+    let x = console_run(&s, "\\x", opts).await;
+    assert!(x.options.expanded);
+    let rec = console_run(&s, "SELECT 1 AS a, 'b' AS bb;", x.options).await;
+    assert!(rec.text.starts_with("-[ RECORD 1 ]+"), "{}", rec.text);
+
+    atlas_pg::execute(&s, &format!("DROP SCHEMA {ns} CASCADE"), 1).await.unwrap();
+}
