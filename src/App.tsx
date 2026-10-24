@@ -290,6 +290,18 @@ type Dialog =
   | { kind: "deleteBackup"; connId: string; database: string; schema: string; names: string[]; files: { path: string; metaPath: string }[] }
   | { kind: "about" };
 
+/** Tabela, view ou view materializada aberta na sessão anterior. */
+interface SavedTable {
+  connectionId: string;
+  database: string;
+  schema: string;
+  object: string;
+  kind: "table" | "view" | "matview";
+  title: string;
+  /** Era a aba aberta ao fechar. */
+  active?: boolean;
+}
+
 export default function App() {
   const [layout, setLayout] = useState<Layout>(() => readJson(LAYOUT_KEY, DEFAULT_LAYOUT));
   const t = useMemo(() => makeTranslator(layout.lang), [layout.lang]);
@@ -1392,25 +1404,85 @@ export default function App() {
   /** Só depois de decidir o que reabrir é que a sessão passa a ser gravada (senão a aba Objects sozinha apagaria a anterior). */
   const sessionReady = useRef(false);
   const lastSession = useRef("");
+  /** Tabelas, views e views materializadas da sessão anterior que esperam a conexão abrir (continuam gravadas enquanto esperam). */
+  const pendingTables = useRef<SavedTable[]>([]);
+  const restoring = useRef(new Set<string>());
   const saveSession = useCallback(() => {
     if (!isDesktop || !sessionReady.current) return;
     const queries = tabsRef.current.filter((x) => x.kind === "query");
     const list = queries.map((x) => ({ title: x.title, connectionId: x.connectionId, database: x.database, schema: x.schema, sql: queryTexts.current.get(x.id) ?? x.sql ?? "" }));
     const active = Math.max(0, queries.findIndex((x) => x.id === activeTabRef.current));
-    const json = JSON.stringify({ tabs: list, active });
+    const openTables = tabsRef.current.filter((x) => x.kind === "data" && x.connectionId && x.database && x.schema && x.object);
+    const tables: SavedTable[] = [
+      ...openTables.map((x) => ({ connectionId: x.connectionId!, database: x.database!, schema: x.schema!, object: x.object!, kind: (x.objectKind === "view" || x.objectKind === "matview" ? x.objectKind : "table") as SavedTable["kind"], title: x.title, active: x.id === activeTabRef.current })),
+      ...pendingTables.current,
+    ];
+    const activeTable = tables.findIndex((x) => x.active);
+    const state = { tabs: list, active, tables, activeTable };
+    const json = JSON.stringify(state);
     if (json === lastSession.current) return;
     lastSession.current = json;
-    void local.setPref("session.tabs", { tabs: list, active }).catch(() => undefined);
+    void local.setPref("session.tabs", state).catch(() => undefined);
   }, []);
+
+  /** Abre de volta as tabelas esperando uma conexão que acabou de abrir (lendo o banco e o schema se preciso). */
+  const restoreTables = async (connId: string) => {
+    if (restoring.current.has(connId)) return;
+    const mine = pendingTables.current.filter((x) => x.connectionId === connId);
+    if (!mine.length) return;
+    // A lista de bancos pode ainda não ter chegado (conexão recém-aberta): as tabelas ficam esperando e voltam a ser tentadas quando ela chegar.
+    if (!connectionsRef.current.find((c) => c.id === connId)?.databases.length) return;
+    restoring.current.add(connId);
+    pendingTables.current = pendingTables.current.filter((x) => x.connectionId !== connId);
+    for (const saved of mine) {
+      // O estado novo só chega às refs depois de renderizar: espera o schema aparecer (e depois ficar lido) antes de olhar.
+      const schemaNow = () => connectionsRef.current.find((c) => c.id === connId)?.databases.find((d) => d.name === saved.database)?.schemas.find((s) => s.name === saved.schema);
+      const until = async (done: () => boolean) => { for (let i = 0; i < 40 && !done(); i++) await new Promise((r) => setTimeout(r, 50)); };
+      try {
+        await loadDatabase(connId, saved.database);
+        await until(() => !!schemaNow());
+        await loadSchema(connId, saved.database, saved.schema);
+        await until(() => !!schemaNow()?.loaded);
+      } catch { continue; }
+      const sc = schemaNow();
+      const list = saved.kind === "view" ? sc?.objects.view : saved.kind === "matview" ? sc?.objects.matview : sc?.objects.table;
+      // Objeto que não existe mais: a aba simplesmente não volta.
+      if (!list?.some((o) => o.name === saved.object)) continue;
+      const taken = tabsRef.current.some((x) => x.kind === "data" && x.connectionId === connId && x.database === saved.database && x.schema === saved.schema && x.object === saved.object);
+      if (taken) continue;
+      const id = `doc${++tabSeq.current}`;
+      const tab: DocTab = {
+        id, kind: "data", connectionId: connId, database: saved.database, schema: saved.schema, object: saved.object,
+        objectKind: saved.kind === "table" ? undefined : saved.kind, title: saved.title, windowTitle: saved.title,
+        icon: saved.kind === "view" ? "view" : saved.kind === "matview" ? "matview" : "table",
+      };
+      tabsRef.current = [...tabsRef.current, tab];
+      setTabs((ts) => [...ts, tab]);
+      if (saved.active) setActiveTab(id);
+    }
+    restoring.current.delete(connId);
+  };
+  // Conexão que ficou aberta: reabre as tabelas que estavam abertas nela.
+  const liveKey = connections.filter((c) => c.live && c.databases.length).map((c) => c.id).join("|");
+  useEffect(() => {
+    for (const id of liveKey.split("|").filter(Boolean)) void restoreTables(id);
+    // `restoreTables` lê o estado atual por refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveKey]);
 
   // Ao iniciar: "Continue where you left off" reabre as consultas da sessão anterior.
   useEffect(() => {
     if (!isDesktop || !profilesLoaded || !optionsLoaded || sessionReady.current) return;
     const done = () => { sessionReady.current = true; };
     if (appOptions.startup !== "continue") return done();
-    void local.getPref<{ tabs?: { title: string; connectionId?: string; database?: string; schema?: string; sql: string }[]; active?: number }>("session.tabs")
+    void local.getPref<{ tabs?: { title: string; connectionId?: string; database?: string; schema?: string; sql: string }[]; active?: number; tables?: SavedTable[]; activeTable?: number }>("session.tabs")
       .then((saved) => {
         const known = new Set(connectionsRef.current.map((c) => c.id));
+        pendingTables.current = (Array.isArray(saved?.tables) ? saved.tables : [])
+          .filter((x) => x && known.has(x.connectionId) && typeof x.database === "string" && typeof x.schema === "string" && typeof x.object === "string" && typeof x.title === "string")
+          .map((x, i) => ({ ...x, kind: x.kind === "view" || x.kind === "matview" ? x.kind : "table", active: i === saved?.activeTable }));
+        // Conexões que já estão abertas (raro: a abertura acontece depois do início) recuperam as tabelas já.
+        for (const c of connectionsRef.current) if (c.live) void restoreTables(c.id);
         const restored: DocTab[] = (saved?.tabs ?? []).filter((x) => x && typeof x.sql === "string").map((x) => {
           const keep = !!x.connectionId && known.has(x.connectionId);
           const id = `doc${++tabSeq.current}`;

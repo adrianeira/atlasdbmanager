@@ -306,6 +306,7 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [x] **Tabs → On Startup** (abrir só a aba Objects, ou **continuar de onde parou**: reabre as consultas com o texto, a conexão, o banco e o
       schema) e **Auto Recovery** (guardar o texto das consultas abertas a cada N segundos, 30 por padrão); a lista de abas também é
       gravada a cada mudança e ao fechar *(`session.tabs` nas preferências locais)*
+- [x] **Continuar de onde parou também reabre tabelas, views e views materializadas**: ficam gravadas junto com as consultas e voltam (na mesma aba que estava ativa) assim que a conexão delas abre, lendo o banco e o schema se preciso; objeto que não existe mais não volta
 - [ ] Da referência sem equivalente no Atlas: Tabs → "Open new tab in" (o Atlas tem uma só janela de abas), Connectivity (proxy: na referência vale
       só para ativação, atualizador, nuvem e IA, que o Atlas não tem), File Locations (o Atlas guarda tudo numa pasta só, mostrada em "Local Data"),
       Environment (SQL*Plus, Mongo, OCI) e AI. Advanced (log de diagnóstico, várias instâncias, registrar "Abrir com" e protocolo URI) também fica de fora: são integrações com o Windows que não dá para testar aqui e não têm função no Atlas
