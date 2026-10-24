@@ -2484,16 +2484,16 @@ select.et-input {
 .dd-tabs { flex: none; display: flex; justify-content: center; gap: 24px; padding: 10px 0 4px; }
 .dd-tab { border: 0; border-bottom: 2px solid transparent; background: none; color: var(--c-text-muted); padding: 2px 4px 4px; font: inherit; cursor: default; }
 .dd-tab.is-active { color: var(--c-text); border-bottom-color: var(--c-accent); }
-.dd-layout-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 540px 1fr; }
+.dd-layout-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(220px, 40%) minmax(0, 1fr); }
 .dd-preview-pane { min-height: 0; display: flex; flex-direction: column; background: var(--c-surface-alt); }
 .dd-preview-scroll { flex: 1; min-height: 0; overflow: auto; background: #e6e6e6; padding: 4px 0; display: flex; justify-content: center; align-items: flex-start; }
 .dd-page { flex: none; background: #fff; box-shadow: 0 0 2px rgba(0, 0, 0, 0.25); }
 .dd-page svg { width: 100%; height: 100%; display: block; }
 .dd-zoom { flex: none; display: flex; align-items: center; gap: 12px; padding: 14px 24px; }
 .dd-zoom-dd { width: 140px; }
-.dd-form-pane { min-height: 0; overflow: auto; padding: 18px 28px; }
+.dd-form-pane { min-height: 0; min-width: 0; overflow: auto; padding: 18px 24px; }
 .dd-form { display: flex; flex-direction: column; gap: 10px; max-width: 640px; }
-.dd-field { display: grid; grid-template-columns: 170px 1fr; align-items: center; gap: 10px; }
+.dd-field { display: grid; grid-template-columns: minmax(90px, 170px) minmax(0, 1fr); align-items: center; gap: 10px; }
 .dd-field.is-top { align-items: start; }
 .dd-area { min-height: 140px; resize: vertical; font-family: var(--font-mono); font-size: 12px; }
 .dd-intro { min-height: 190px; }
@@ -2502,16 +2502,17 @@ select.et-input {
 .dd-label { margin-top: 6px; }
 .dd-radios { display: flex; flex-direction: column; gap: 6px; }
 .dd-radios label { display: flex; align-items: center; gap: 6px; }
-.dd-font-row { display: flex; gap: 6px; }
+.dd-font-row { display: flex; gap: 6px; max-width: 260px; }
+.dd-font-row .dd-dd:first-child { flex: 1; max-width: none; }
 .dd-dd { min-width: 180px; }
 .dd-size { min-width: 64px; width: 64px; }
-.dd-left-footer { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
-.dd-left-footer .check-row { flex: none; width: 220px; margin: 0; }
-.dd-left-footer .field { width: 200px; flex: none; }
+.dd-left-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 10px; }
+.dd-left-footer .check-row { flex: none; margin: 0; }
+.dd-left-footer .field { flex: 1 1 150px; min-width: 0; max-width: 260px; }
 .dd-form .check-row { margin: 0; align-items: center; }
 .dd-form-pane { overflow-x: hidden; }
-.dd-dd { min-width: 0; width: 195px; }
-.dd-size { width: 54px; }
+.dd-dd { min-width: 0; width: 100%; max-width: 195px; }
+.dd-size { width: 54px; flex: none; }
 .dd-restore { display: flex; flex-direction: column; gap: 6px; margin-top: 18px; align-items: flex-start; }
 .dd-link { border: 0; background: none; color: var(--c-accent); padding: 0; font: inherit; cursor: default; }
 .dd-link:hover { text-decoration: underline; }
