@@ -39,6 +39,8 @@ const atlasTheme = EditorView.theme({
   ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": { backgroundColor: "var(--editor-selection) !important" },
   ".cm-tooltip": { border: "1px solid var(--c-border-strong)", backgroundColor: "var(--c-surface)" },
   ".cm-tooltip-autocomplete > ul > li[aria-selected]": { backgroundColor: "var(--c-selected)", color: "var(--c-text)" },
+  // O CodeMirror sublinha a parte digitada em cada sugestão; sem sublinhado.
+  ".cm-completionMatchedText": { textDecoration: "none" },
 });
 
 export interface SqlEditorHandle {
