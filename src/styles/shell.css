@@ -425,6 +425,7 @@ input {
   border-left-color: transparent;
 }
 
+.tab-bar.is-drop-target { box-shadow: inset 0 0 0 2px #1e88e5; }
 .tab.is-drop-before { box-shadow: inset 3px 0 0 #1e88e5; }
 .tab.is-drop-after { box-shadow: inset -3px 0 0 #1e88e5; }
 

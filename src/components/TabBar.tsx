@@ -36,14 +36,16 @@ interface Props {
   onReorder?: (id: string, targetId: string, after: boolean) => void;
   /** Dois cliques na aba: abre numa janela própria. */
   onDetach?: (id: string) => void;
+  /** Uma janela de aba destacada está sendo arrastada sobre a barra: destaca onde ela voltaria. */
+  dropHint?: boolean;
 }
 
-export function TabBar({ tabs, activeId, onActivate, onClose, onReorder, onDetach }: Props) {
+export function TabBar({ tabs, activeId, onActivate, onClose, onReorder, onDetach, dropHint }: Props) {
   const t = useT();
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropAt, setDropAt] = useState<{ id: string; after: boolean } | null>(null);
   return (
-    <div className="tab-bar" role="tablist">
+    <div className={`tab-bar${dropHint ? " is-drop-target" : ""}`} role="tablist">
       {tabs.map((tab) => {
         const active = tab.id === activeId;
         const closable = tab.kind !== "objects";

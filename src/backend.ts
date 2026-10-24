@@ -5,7 +5,7 @@
  */
 import { TAB_EVENT, type TabEvent } from "./tabWindow";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { desktopDir, homeDir, sep } from "@tauri-apps/api/path";
 import { open, save } from "@tauri-apps/plugin-dialog";
 
@@ -643,6 +643,9 @@ export const openTabWindow = (id: string, title: string, params: unknown) => cal
 export async function onTabWindow(cb: (e: TabEvent) => void): Promise<() => void> {
   return listen<TabEvent>(TAB_EVENT, (e) => cb(e.payload));
 }
+
+/** Envia um aviso entre a janela principal e as janelas de abas destacadas. */
+export const emitTabEvent = (e: TabEvent) => emit(TAB_EVENT, e);
 
 /** Abre (ou traz para a frente) a janela do Data Generation. */
 export const openDataGen = (title: string, params: DataTransferParams) => call<void>("open_data_gen", { req: { title, params: { ...params, title } } });

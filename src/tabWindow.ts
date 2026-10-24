@@ -30,6 +30,10 @@ export interface TabWindowParams {
 export type TabEvent =
   | { type: "attach"; id: string; entry: SavedTable }
   | { type: "closed"; id: string }
-  | { type: "update"; id: string; entry: SavedTable };
+  | { type: "update"; id: string; entry: SavedTable }
+  /** A janela da aba está sendo arrastada: onde está o cursor (pixels da tela). */
+  | { type: "probe"; id: string; x: number; y: number }
+  /** Resposta da janela principal: o cursor está sobre a barra de abas. */
+  | { type: "probe-hit"; id: string; hit: boolean };
 
 export const TAB_EVENT = "tab-window";

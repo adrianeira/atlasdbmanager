@@ -1,5 +1,5 @@
-import { emit } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { emit, listen } from "@tauri-apps/api/event";
+import { cursorPosition, getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { pg } from "../backend";
 import { liveLookupSource, makeTableBackend } from "../docBackends";
@@ -53,15 +53,48 @@ function TabWindowBody({ params }: { params: TabWindowParams }) {
   };
 
   useEffect(() => {
+    let cancelled = false;
     let off: (() => void) | undefined;
     void getCurrentWindow().onCloseRequested((e) => {
       if (allow.current) return;
       e.preventDefault();
       if (dirty.current || txOpen.current) setDialog("close");
       else void finish({ type: "closed", id: params.id });
-    }).then((u) => { off = u; });
-    return () => off?.();
+    }).then((u) => { if (cancelled) u(); else off = u; });
+    return () => { cancelled = true; off?.(); };
     // `finish` só usa refs e o id.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Arrastar a janela até a barra de abas da janela principal e soltar devolve a aba (como num navegador).
+  // O cursor só conta depois de ter estado fora da barra: logo ao abrir, o cursor ainda está sobre ela.
+  const overBar = useRef(false);
+  const armed = useRef(false);
+  const attachRef = useRef(attach);
+  attachRef.current = attach;
+  useEffect(() => {
+    let cancelled = false;
+    let offMove: (() => void) | undefined;
+    let offHit: (() => void) | undefined;
+    let idle: number | null = null;
+    let last = 0;
+    void getCurrentWindow().onMoved(() => {
+      const now = Date.now();
+      if (now - last > 60) {
+        last = now;
+        void cursorPosition().then((c) => emit(TAB_EVENT, { type: "probe", id: params.id, x: c.x, y: c.y } satisfies TabEvent)).catch(() => undefined);
+      }
+      if (idle) window.clearTimeout(idle);
+      // Parou de mover (soltou) com o cursor sobre a barra: anexa.
+      idle = window.setTimeout(() => { if (armed.current && overBar.current) attachRef.current(); }, 450);
+    }).then((u) => { if (cancelled) u(); else offMove = u; });
+    void listen<TabEvent>(TAB_EVENT, (e) => {
+      if (e.payload.type !== "probe-hit" || e.payload.id !== params.id) return;
+      overBar.current = e.payload.hit;
+      if (!e.payload.hit) armed.current = true;
+    }).then((u) => { if (cancelled) u(); else offHit = u; });
+    return () => { cancelled = true; offMove?.(); offHit?.(); if (idle) window.clearTimeout(idle); };
+    // `params.id` não muda.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

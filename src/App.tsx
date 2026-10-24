@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  appReady, chooseExportPath, chooseOpenFile, errorText, isDesktop, local, onOpenScript, onSessionOpened, onTabWindow, openDataDictionary, openDataGen, openDataSync, openDataTransfer, openStructSync, openTabWindow, pg, toAtlasError, type OpenScriptRequest,
+  appReady, chooseExportPath, chooseOpenFile, errorText, isDesktop, local, onOpenScript, emitTabEvent, onSessionOpened, onTabWindow, openDataDictionary, openDataGen, openDataSync, openDataTransfer, openStructSync, openTabWindow, pg, toAtlasError, type OpenScriptRequest,
   type ConnectionParams, type DatabaseDetail, type DumpScope, type ProfileRecord, type SchemaDetail,
 } from "./backend";
 import { entries, matchesShortcut, sub, type CommandMap, type MenuDef, type MenuEntry } from "./commands";
@@ -1420,6 +1420,9 @@ export default function App() {
   const restoring = useRef(new Set<string>());
   /** Abas que estão em janelas próprias: contam na sessão (voltam como abas ao reabrir o app) e na posição de quando saíram. */
   const detachedRef = useRef(new Map<string, SavedTable>());
+  /** Uma janela de aba destacada está sendo arrastada sobre a barra de abas. */
+  const [dropHint, setDropHint] = useState(false);
+  const dropHintTimer = useRef<number | null>(null);
   const saveSession = useCallback(() => {
     if (!isDesktop || !sessionReady.current) return;
     // Consultas ligadas a um banco se comportam como as tabelas (voltam quando o banco é aberto); as sem banco voltam ao iniciar.
@@ -1488,6 +1491,8 @@ export default function App() {
       if (saved.active) setActiveTab(id);
     }
     restoring.current.delete(key);
+    // Entradas que chegaram enquanto este trecho rodava (ele ignora chamadas simultâneas) são tratadas agora.
+    if (pendingTables.current.some((x) => x.connectionId === connId && x.database === dbName)) void restoreTables(connId, dbName);
   };
   // O usuário abriu um banco: voltam as tabelas que estavam abertas nele (abrir só a conexão não traz nada).
   const openDbKey = [...openDatabases].join("|");
@@ -1526,19 +1531,39 @@ export default function App() {
   // Avisos das janelas das abas destacadas: anexar de volta, fechar sem anexar, ou a última versão (para a sessão).
   useEffect(() => {
     if (!isDesktop) return;
+    // Em desenvolvimento o efeito roda duas vezes: sem `cancelled`, o primeiro aviso ficaria registrado e cada evento valeria duas vezes.
+    let cancelled = false;
     let off: (() => void) | undefined;
     void onTabWindow((e) => {
+      if (e.type === "probe-hit") return;
+      if (e.type === "probe") {
+        // A janela de uma aba está sendo arrastada: o cursor (pixels da tela) está sobre a barra de abas desta janela?
+        void (async () => {
+          const bar = document.querySelector(".tab-bar")?.getBoundingClientRect();
+          const origin = await getCurrentWindow().innerPosition();
+          const k = window.devicePixelRatio;
+          const hit = !!bar && e.x >= origin.x + bar.left * k && e.x <= origin.x + bar.right * k && e.y >= origin.y + bar.top * k && e.y <= origin.y + bar.bottom * k;
+          setDropHint(hit);
+          if (dropHintTimer.current) window.clearTimeout(dropHintTimer.current);
+          dropHintTimer.current = window.setTimeout(() => setDropHint(false), 900);
+          void emitTabEvent({ type: "probe-hit", id: e.id, hit });
+        })().catch(() => undefined);
+        return;
+      }
+      setDropHint(false);
       if (e.type === "update") {
         if (detachedRef.current.has(e.id)) detachedRef.current.set(e.id, e.entry);
         return;
       }
       detachedRef.current.delete(e.id);
+      // Fechada sem anexar: a aba deixa de contar na sessão (anexar já muda as abas, o que grava sozinho).
+      if (e.type === "closed") window.setTimeout(saveSession, 100);
       if (e.type === "attach") {
         pendingTables.current = [...pendingTables.current, { ...e.entry, active: true }];
         void restoreTables(e.entry.connectionId, e.entry.database);
       }
-    }).then((u) => { off = u; });
-    return () => off?.();
+    }).then((u) => { if (cancelled) u(); else off = u; });
+    return () => { cancelled = true; off?.(); };
     // `restoreTables` lê o estado atual por refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -3210,7 +3235,7 @@ export default function App() {
             </>
           )}
           <main className="center">
-            <TabBar tabs={tabsForBar} activeId={activeTab} onActivate={setActiveTab} onClose={closeTab} onReorder={reorderTab} onDetach={detachTab} />
+            <TabBar tabs={tabsForBar} activeId={activeTab} onActivate={setActiveTab} onClose={closeTab} onReorder={reorderTab} onDetach={detachTab} dropHint={dropHint} />
             <div className="tab-content">
               <div className={`doc-host${activeTab === "objects" ? "" : " is-hidden"}`}>
                 <ObjectsView
