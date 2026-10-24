@@ -259,7 +259,7 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [x] **Aba "Find in Database/Schema"** (Tools → Find in Database..., e o menu do banco e do schema na árvore, que já abrem com o
       escopo marcado), no desenho da referência: painel à esquerda com **Conexão, Banco e Schema** (schema vazio = o banco todo),
       **Find what**, **Look In** (Data ou Structure), **Search Mode** (Contains, Whole Word, Prefix, Regular Expression),
-      **Case Insensitive** e **Include Objects** (Tables, Views, Functions, Queries, Indexes, Triggers, Materialized Views);
+      **Case Insensitive** (marcado por padrão; desmarcado diferencia maiúsculas) e **Include Objects** (Tables, Views, Functions, Queries, Indexes, Triggers, Materialized Views);
       resultado à direita e barra de status "Found N objects with M occurrences"
 - [x] **Structure**: árvore por objeto, "client_notes (3)", com o que casou em cada um (Table Name, Field Name, Foreign Key Name,
       Index Name, Trigger Name, View Body, Function Name, Function Body...) e o trecho achado em vermelho; o corpo de views e

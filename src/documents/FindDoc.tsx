@@ -60,7 +60,7 @@ export function FindDoc({ conns, initial, onConnect, onOpen, active, onStatus }:
   const [text, setText] = useState("");
   const [lookIn, setLookIn] = useState<LookIn>("structure");
   const [mode, setMode] = useState<FindMode>("contains");
-  const [caseInsensitive, setCaseInsensitive] = useState(false);
+  const [caseInsensitive, setCaseInsensitive] = useState(true);
   const [inc, setInc] = useState({ tables: true, views: true, functions: true, indexes: true, triggers: true, matviews: true });
   const [structure, setStructure] = useState<FindResult | null>(null);
   const [data, setData] = useState<FindDataResult | null>(null);
