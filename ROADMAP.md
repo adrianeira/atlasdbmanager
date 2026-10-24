@@ -439,8 +439,13 @@ etiquetas (`INSERT 0 1`, `CREATE TABLE`...), erros com `LINE n:` e o cursor, `DE
 índices, checks, chaves estrangeiras, "Referenced by" e gatilhos), `\timing` e `\x` (saída expandida). Setas para cima e para baixo
 percorrem o histórico e Ctrl+C descarta o que está sendo digitado. Tudo o que o console executa aparece no History Log.
 Testado ao vivo em 9.6 e 18 (SQL, etiquetas, erro, `\dt`, `\d`, `\l`, `\c`, `\timing`, `\x`) e na tela.
-Fora desta entrega: `\copy`, `\i` (rodar arquivo), `\set` e variáveis, `\g`, `\watch`, autocompletar com Tab e o `\d+` com
-tamanhos e descrições.
+Também tem: `\g` e `\gx` (terminam o comando no lugar do `;`), `\watch [segundos]` (repete o último comando até o Ctrl+C), `\i arquivo`,
+`\copy` de e para arquivo local (`tabela [(colunas)]` ou `(consulta)`, com as opções do `COPY`, e a contagem do servidor), variáveis
+(`\set`, `\unset`, `\echo` e `:nome`, `:'nome'`, `:"nome"` fora de aspas, comentários e `$$`), as variantes com `+` (`\d+`, `\dt+`, `\l+`,
+`\dn+`, `\du+`) e o Tab: completa comandos com barra, palavras-chave (no caso de quem digitou), schemas, tabelas, views, funções e
+colunas (`tabela.` e `schema.tabela.`), pelo prefixo em comum ou listando as opções.
+Fora desta entrega: `\copy` de/para stdin e stdout, `\o` (saída para arquivo), `\ir`, variáveis especiais (`ON_ERROR_STOP`...),
+comandos `\` dentro de um arquivo do `\i` e o autocompletar dentro de subconsultas com alias.
 
 ## Limitações conhecidas
 - Exportar o resultado de uma consulta exige um único comando que devolva linhas.

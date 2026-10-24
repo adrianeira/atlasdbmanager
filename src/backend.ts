@@ -442,8 +442,9 @@ export async function onSyncDeployProgress(id: string, cb: (done: number, total:
 
 /* ----- Console (aba) ----- */
 
-export interface ConsoleOptions { timing: boolean; expanded: boolean }
-export interface ConsoleOutput { text: string; switchDb: string | null; quit: boolean; options: ConsoleOptions }
+export interface ConsoleOptions { timing: boolean; expanded: boolean; vars: Record<string, string> }
+export interface ConsoleOutput { text: string; switchDb: string | null; quit: boolean; watch: number | null; options: ConsoleOptions }
+export interface ConsoleCompletion { start: number; candidates: string[]; append: string }
 
 /* ----- History Log (aba) ----- */
 
@@ -931,6 +932,7 @@ export const pg = {
   syncDeploy: (req: SyncDeployRequest) => call<SyncDeployCounts>("datasync_deploy", { req }),
   consoleRun: (sessionId: string, database: string, input: string, options: ConsoleOptions) => call<ConsoleOutput>("console_run", { sessionId, database, input, options }),
   consolePrompt: (sessionId: string, database: string) => call<string>("console_prompt", { sessionId, database }),
+  consoleComplete: (sessionId: string, database: string, text: string) => call<ConsoleCompletion>("console_complete", { sessionId, database, text }),
   consoleIsComplete: (input: string) => call<boolean>("console_is_complete", { input }),
   sqlLogRead: (after: number) => call<SqlLogPage>("sqllog_read", { after }),
   sqlLogClear: () => call<void>("sqllog_clear"),
