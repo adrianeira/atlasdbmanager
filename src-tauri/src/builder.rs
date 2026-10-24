@@ -60,6 +60,7 @@ pub async fn open_query_builder(app: AppHandle, args: State<'_, WebviewArgs>, re
         .center()
         .initialization_script(&init)
         .background_color(backdrop(&app))
+        .disable_drag_drop_handler()
         .additional_browser_args(&args.0);
     builder = show_when_loaded(builder);
     // Janela "filha": fica à frente da principal e some junto com ela, mas a principal continua utilizável.
@@ -102,6 +103,7 @@ fn open_tool(app: &AppHandle, args: &WebviewArgs, label: &str, global: &str, req
         .center()
         .initialization_script(&init)
         .background_color(backdrop(app))
+        .disable_drag_drop_handler()
         .additional_browser_args(&args.0);
     show_when_loaded(builder).build().map_err(|e| e.to_string())?;
     Ok(())

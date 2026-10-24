@@ -134,6 +134,8 @@ pub fn run() {
                 .min_inner_size(1024.0, 650.0)
                 .center()
                 .visible(false)
+                // Sem isso o WebView2 do Windows toma os arrastes para si (soltar arquivos) e o arrastar de abas e colunas não funciona.
+                .disable_drag_drop_handler()
                 .additional_browser_args(&args)
                 .build()?;
 
