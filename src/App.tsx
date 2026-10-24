@@ -301,6 +301,8 @@ interface SavedTable {
   title: string;
   /** Era a aba aberta ao fechar. */
   active?: boolean;
+  /** Posição na barra de abas (0 é Objects). */
+  pos?: number;
 }
 
 export default function App() {
@@ -1318,6 +1320,19 @@ export default function App() {
     toggle(node);
   };
 
+  /** Arrastar uma aba: ela passa para antes (ou depois) da aba alvo. A aba Objects continua sendo a primeira. */
+  const reorderTab = (id: string, targetId: string, after: boolean) => {
+    setTabs((ts) => {
+      const moving = ts.find((x) => x.id === id);
+      if (!moving || id === "objects" || id === targetId) return ts;
+      const rest = ts.filter((x) => x.id !== id);
+      const at = rest.findIndex((x) => x.id === targetId);
+      if (at < 0) return ts;
+      rest.splice(Math.max(1, at + (after ? 1 : 0)), 0, moving);
+      return rest;
+    });
+  };
+
   const doCloseTab = (id: string) => {
     if (id === "objects") return;
     setTabs((ts) => {
@@ -1415,7 +1430,7 @@ export default function App() {
     const active = Math.max(0, queries.findIndex((x) => x.id === activeTabRef.current));
     const openTables = tabsRef.current.filter((x) => x.kind === "data" && x.connectionId && x.database && x.schema && x.object);
     const tables: SavedTable[] = [
-      ...openTables.map((x) => ({ connectionId: x.connectionId!, database: x.database!, schema: x.schema!, object: x.object!, kind: (x.objectKind === "view" || x.objectKind === "matview" ? x.objectKind : "table") as SavedTable["kind"], title: x.title, active: x.id === activeTabRef.current })),
+      ...openTables.map((x) => ({ connectionId: x.connectionId!, database: x.database!, schema: x.schema!, object: x.object!, kind: (x.objectKind === "view" || x.objectKind === "matview" ? x.objectKind : "table") as SavedTable["kind"], title: x.title, active: x.id === activeTabRef.current, pos: tabsRef.current.indexOf(x) })),
       ...pendingTables.current,
     ];
     const activeTable = tables.findIndex((x) => x.active);
@@ -1457,8 +1472,10 @@ export default function App() {
         objectKind: saved.kind === "table" ? undefined : saved.kind, title: saved.title, windowTitle: saved.title,
         icon: saved.kind === "view" ? "view" : saved.kind === "matview" ? "matview" : "table",
       };
-      tabsRef.current = [...tabsRef.current, tab];
-      setTabs((ts) => [...ts, tab]);
+      // Volta na posição em que estava na barra (limitada ao que existe agora).
+      const at = Math.min(Math.max(saved.pos ?? tabsRef.current.length, 1), tabsRef.current.length);
+      tabsRef.current = [...tabsRef.current.slice(0, at), tab, ...tabsRef.current.slice(at)];
+      setTabs((ts) => { const i = Math.min(at, ts.length); return [...ts.slice(0, i), tab, ...ts.slice(i)]; });
       if (saved.active) setActiveTab(id);
     }
     restoring.current.delete(key);
@@ -1487,7 +1504,7 @@ export default function App() {
       for (const x of mine) {
         const entry: SavedTable = {
           connectionId: connId, database: x.database!, schema: x.schema!, object: x.object!,
-          kind: (x.objectKind === "view" || x.objectKind === "matview" ? x.objectKind : "table") as SavedTable["kind"], title: x.title, active: x.id === activeTabRef.current,
+          kind: (x.objectKind === "view" || x.objectKind === "matview" ? x.objectKind : "table") as SavedTable["kind"], title: x.title, active: x.id === activeTabRef.current, pos: tabsRef.current.indexOf(x),
         };
         pendingTables.current = [...pendingTables.current.filter((p) => !(p.connectionId === connId && p.database === entry.database && p.schema === entry.schema && p.object === entry.object)), entry];
       }
@@ -3187,7 +3204,7 @@ export default function App() {
             </>
           )}
           <main className="center">
-            <TabBar tabs={tabsForBar} activeId={activeTab} onActivate={setActiveTab} onClose={closeTab} />
+            <TabBar tabs={tabsForBar} activeId={activeTab} onActivate={setActiveTab} onClose={closeTab} onReorder={reorderTab} />
             <div className="tab-content">
               <div className={`doc-host${activeTab === "objects" ? "" : " is-hidden"}`}>
                 <ObjectsView

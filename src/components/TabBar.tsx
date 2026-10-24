@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useT } from "../i18n";
 import { SmallIcon, type SmallIconName } from "../icons";
 
@@ -31,10 +32,14 @@ interface Props {
   activeId: string;
   onActivate: (id: string) => void;
   onClose: (id: string) => void;
+  /** Arrastou a aba `id` para antes (ou depois) da aba `targetId`. */
+  onReorder?: (id: string, targetId: string, after: boolean) => void;
 }
 
-export function TabBar({ tabs, activeId, onActivate, onClose }: Props) {
+export function TabBar({ tabs, activeId, onActivate, onClose, onReorder }: Props) {
   const t = useT();
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropAt, setDropAt] = useState<{ id: string; after: boolean } | null>(null);
   return (
     <div className="tab-bar" role="tablist">
       {tabs.map((tab) => {
@@ -46,8 +51,29 @@ export function TabBar({ tabs, activeId, onActivate, onClose }: Props) {
             role="tab"
             aria-selected={active}
             tabIndex={active ? 0 : -1}
-            className={`tab${active ? " is-active" : ""}`}
+            className={`tab${active ? " is-active" : ""}${dropAt?.id === tab.id && dragId !== tab.id ? (dropAt.after ? " is-drop-after" : " is-drop-before") : ""}`}
             title={tab.title}
+            draggable={!!onReorder && closable}
+            onDragStart={(e) => {
+              setDragId(tab.id);
+              e.dataTransfer.effectAllowed = "move";
+              e.dataTransfer.setData("text/plain", tab.title);
+            }}
+            onDragOver={(e) => {
+              if (!dragId) return;
+              e.preventDefault();
+              const r = e.currentTarget.getBoundingClientRect();
+              // Nada entra antes da aba Objects, que é sempre a primeira.
+              const after = !closable || e.clientX > r.left + r.width / 2;
+              if (dropAt?.id !== tab.id || dropAt.after !== after) setDropAt({ id: tab.id, after });
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (dragId && dropAt && dragId !== dropAt.id) onReorder?.(dragId, dropAt.id, dropAt.after);
+              setDragId(null);
+              setDropAt(null);
+            }}
+            onDragEnd={() => { setDragId(null); setDropAt(null); }}
             onMouseDown={(e) => {
               if (e.button === 1 && closable) {
                 e.preventDefault();

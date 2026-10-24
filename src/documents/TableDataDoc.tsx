@@ -68,6 +68,8 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   const [columnsOpen, setColumnsOpen] = useState(false);
   /** Larguras ajustadas pelo usuário, por nome de coluna. */
   const [widths, setWidths] = useState<Record<string, number>>({});
+  /** Ordem das colunas depois de arrastar os cabeçalhos (vazia = a da tabela). */
+  const [colOrder, setColOrder] = useState<string[]>([]);
 
   const columns: GridColumn[] = useMemo(
     () => cols.map((c) => ({
@@ -301,11 +303,11 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   useEffect(() => {
     if (!viewKey || !backend || !viewLoaded) return;
     const timer = window.setTimeout(() => {
-      const state = { sort, filter: filter?.expr ?? "", hidden: [...hiddenCols], widths, limitOn, pageSize };
+      const state = { sort, filter: filter?.expr ?? "", hidden: [...hiddenCols], order: colOrder, widths, limitOn, pageSize };
       void local.setPref(prefKey(viewKey), isDefaultView(state, { limitOn: limitRecords, pageSize: DEFAULT_PAGE_SIZE }) ? null : state).catch(() => undefined);
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [viewKey, backend, viewLoaded, sort, filter, hiddenCols, widths, limitOn, pageSize, limitRecords, DEFAULT_PAGE_SIZE]);
+  }, [viewKey, backend, viewLoaded, sort, filter, hiddenCols, colOrder, widths, limitOn, pageSize, limitRecords, DEFAULT_PAGE_SIZE]);
 
   // Conexão real: lê a estrutura (colunas/PK) e a primeira página.
   useEffect(() => {
@@ -336,6 +338,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
         setSort(saved.sort);
         setFilter(savedFilter);
         setHiddenCols(new Set(saved.hidden));
+        setColOrder(saved.order);
         setLimitOn(saved.limitOn);
         setPageSize(saved.pageSize);
         setSizeText(String(saved.pageSize));
@@ -610,7 +613,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
       orderBy: sort.length ? sort : keyCols.map(({ c }) => ({ column: c.name, descending: false })),
       filter,
       allColumns: cols.map((c) => c.name),
-      visibleColumns: cols.filter((c) => !hiddenCols.has(c.name)).map((c) => c.name),
+      visibleColumns: [...cols].sort((a, b) => (colOrder.indexOf(a.name) + 1 || 1e9) - (colOrder.indexOf(b.name) + 1 || 1e9)).filter((c) => !hiddenCols.has(c.name)).map((c) => c.name),
     });
 
   const sortByColumn = (col: number, descending: boolean) => {
@@ -725,6 +728,8 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
           <DataGrid
             columns={columns}
             onColumnWidth={(name, w) => setWidths((ws) => ({ ...ws, [name]: w }))}
+            columnOrder={colOrder}
+            onColumnOrder={setColOrder}
             rows={rows}
             readOnly={readOnly}
             edited={edited}

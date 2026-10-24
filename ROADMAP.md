@@ -714,5 +714,7 @@ Hoje o menu Exibir tem só Lista, Detalhe e Ícones (`viewMode` em `src/App.tsx`
       *(`pg_table_profile`, `TableProfileDialog.tsx`)*. O item "Show Table Profiles" do menu Exibir não aparece em nenhuma captura, então não foi feito à parte
 - [x] **A tabela lembra a visão**: ao abrir de novo (inclusive depois de fechar o app), volta com a ordenação, o filtro, as colunas escondidas, as larguras ajustadas e o "Limitar registros"/registros por página que o usuário deixou, por conexão, banco, schema e tabela. Um filtro ou ordenação que não vale mais
       (coluna renomeada ou apagada) é descartado e a tabela abre normal; o botão Filter & Sort fica marcado enquanto há filtro ou ordenação *(`src/tableView.ts`, preferência `tv:<chave>`)*
-- [ ] Perfis nomeados da visão da tabela (provável conteúdo do menu `Table Profile ▾`): salvar, aplicar, renomear e excluir; e **reordenar colunas** (o Atlas só mostra/esconde e ajusta a largura). Falta a captura do menu
+- [x] **Reordenar colunas** arrastando o cabeçalho (barra azul mostra onde cai); a ordem entra na visão lembrada da tabela e na exportação
+- [x] **Reordenar abas** arrastando na barra (Objects fica sempre primeira); a posição é gravada e a tabela volta no lugar ao reabrir o banco
+- [ ] Perfis nomeados da visão da tabela (provável conteúdo do menu `Table Profile ▾`): salvar, aplicar, renomear e excluir. Falta a captura do menu
 - [ ] Na referência o botão **Table Profile** tem uma seta (`Table Profile ▾`) que abre um menu; o conteúdo dele não aparece em nenhuma captura, então o Atlas abre a janela direto

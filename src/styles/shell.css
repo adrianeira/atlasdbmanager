@@ -425,6 +425,9 @@ input {
   border-left-color: transparent;
 }
 
+.tab.is-drop-before { box-shadow: inset 3px 0 0 #1e88e5; }
+.tab.is-drop-after { box-shadow: inset -3px 0 0 #1e88e5; }
+
 .tab-title {
   overflow: hidden;
   text-overflow: ellipsis;

@@ -157,6 +157,9 @@ interface Props {
   valueLabels?: Map<number, Map<string, string>>;
   /** O usuário terminou de ajustar a largura de uma coluna (arrastando a borda ou com duplo clique). */
   onColumnWidth?: (name: string, width: number) => void;
+  /** Ordem de exibição das colunas, por nome (as que não aparecem vão para o fim); com `onColumnOrder` os cabeçalhos podem ser arrastados. */
+  columnOrder?: string[];
+  onColumnOrder?: (names: string[]) => void;
   rows: CellValue[][];
   readOnly?: boolean;
   /** Chaves "linha:coluna" de células alteradas e ainda não aplicadas. */
@@ -197,7 +200,7 @@ interface Props {
 }
 
 export function DataGrid({
-  columns, onColumnWidth, valueLabels, rows, readOnly, edited, deletedRows, newRows, activeRow, onActiveRow, onEdit, rowHeight = 23, simpleHeader, lookupCols, onLookup,
+  columns, onColumnWidth, columnOrder, onColumnOrder, valueLabels, rows, readOnly, edited, deletedRows, newRows, activeRow, onActiveRow, onEdit, rowHeight = 23, simpleHeader, lookupCols, onLookup,
   sqlTarget, onDeleteRow, onRefresh, findQuery, activeFind, highlightAll, onSaveAs, onSortColumn, onClearSort, onAddFilter, onActiveCell, onOpenCellEditor,
 }: Props) {
   const t = useT();
@@ -227,7 +230,22 @@ export function DataGrid({
 
   // Índices reais (em `columns`/`rows`) das colunas visíveis, na ordem — "Columns" da toolbar
   // só afeta exibição/navegação; edição, FK e cópia continuam indexadas pela coluna real.
-  const visible = useMemo(() => columns.map((_, i) => i).filter((i) => !columns[i]?.hidden), [columns]);
+  /** Todas as colunas na ordem de exibição (índices); as ocultas ficam fora de `visible`. */
+  const ordered = useMemo(() => {
+    const rank = new Map((columnOrder ?? []).map((n, i) => [n, i]));
+    return columns.map((_, i) => i).sort((a, b) => (rank.get(columns[a].name) ?? 1e9 + a) - (rank.get(columns[b].name) ?? 1e9 + b));
+  }, [columns, columnOrder]);
+  const visible = useMemo(() => ordered.filter((i) => !columns[i]?.hidden), [ordered, columns]);
+  /** Cabeçalho sendo arrastado e onde ele cairia (antes ou depois da coluna alvo). */
+  const [dragCol, setDragCol] = useState<number | null>(null);
+  const [dropAt, setDropAt] = useState<{ col: number; after: boolean } | null>(null);
+  const dropColumn = () => {
+    if (dragCol === null || !dropAt || dragCol === dropAt.col || !onColumnOrder) return;
+    const names = ordered.filter((i) => i !== dragCol).map((i) => columns[i].name);
+    const at = names.indexOf(columns[dropAt.col].name) + (dropAt.after ? 1 : 0);
+    names.splice(at, 0, columns[dragCol].name);
+    onColumnOrder(names);
+  };
 
   // Larguras/posição só são reiniciadas quando a ESTRUTURA muda de verdade (nome/tipo), não a
   // cada mostrar/ocultar coluna — senão o diálogo "Columns" resetaria larguras ajustadas manualmente.
@@ -546,8 +564,23 @@ export function DataGrid({
             return (
             <div
               key={c.name + i}
-              className={`dg-th${i === activeCol && rows.length ? " is-active-col" : ""}`}
+              className={`dg-th${i === activeCol && rows.length ? " is-active-col" : ""}${dropAt?.col === i && dragCol !== i ? (dropAt.after ? " is-drop-after" : " is-drop-before") : ""}`}
               style={{ width: widths[i] }}
+              draggable={!!onColumnOrder}
+              onDragStart={(e) => {
+                setDragCol(i);
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData("text/plain", c.name);
+              }}
+              onDragOver={(e) => {
+                if (dragCol === null) return;
+                e.preventDefault();
+                const r = e.currentTarget.getBoundingClientRect();
+                const after = e.clientX > r.left + r.width / 2;
+                if (dropAt?.col !== i || dropAt.after !== after) setDropAt({ col: i, after });
+              }}
+              onDrop={(e) => { e.preventDefault(); dropColumn(); setDragCol(null); setDropAt(null); }}
+              onDragEnd={() => { setDragCol(null); setDropAt(null); }}
               role="columnheader"
               title={`${c.type ? `${c.name} (${c.type})` : c.name}${c.comment ? `\n${c.comment}` : ""}`}
               onMouseDown={() => setActiveCol(i)}

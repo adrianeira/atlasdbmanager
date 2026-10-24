@@ -905,6 +905,8 @@ textarea.field.remarks {
   opacity: 0;
   pointer-events: none;
 }
+.dg-th.is-drop-before { box-shadow: inset 3px 0 0 #1e88e5; }
+.dg-th.is-drop-after { box-shadow: inset -3px 0 0 #1e88e5; }
 .dg-th:hover .dg-th-menu {
   opacity: 1;
   pointer-events: auto;

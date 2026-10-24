@@ -6,6 +6,8 @@ export interface TableViewState {
   filter: string;
   /** Colunas escondidas pelo botão Columns. */
   hidden: string[];
+  /** Ordem das colunas depois de arrastar os cabeçalhos (vazia = a da tabela). */
+  order: string[];
   /** Largura de cada coluna que o usuário ajustou, em px. */
   widths: Record<string, number>;
   /** "Limitar registros" ligado e quantos por página. */
@@ -31,6 +33,7 @@ export function sanitizeView(raw: unknown, columns: string[], fallback: { limitO
   const hidden = Array.isArray(r.hidden) ? r.hidden.filter((c): c is string => typeof c === "string" && known.has(c)) : [];
   // Nunca esconde todas as colunas: a tabela pareceria vazia.
   const visible = columns.filter((c) => !hidden.includes(c)).length;
+  const order = Array.isArray(r.order) ? [...new Set(r.order.filter((c): c is string => typeof c === "string" && known.has(c)))] : [];
   const widths: Record<string, number> = {};
   if (r.widths && typeof r.widths === "object") {
     for (const [name, w] of Object.entries(r.widths as Record<string, unknown>)) {
@@ -42,6 +45,7 @@ export function sanitizeView(raw: unknown, columns: string[], fallback: { limitO
     sort,
     filter: typeof r.filter === "string" ? r.filter.slice(0, 4000) : "",
     hidden: visible > 0 ? hidden : [],
+    order,
     widths,
     limitOn: typeof r.limitOn === "boolean" ? r.limitOn : fallback.limitOn,
     pageSize: size,
@@ -50,4 +54,4 @@ export function sanitizeView(raw: unknown, columns: string[], fallback: { limitO
 
 /** `true` se a visão é a padrão (nada para lembrar). */
 export const isDefaultView = (v: TableViewState, fallback: { limitOn: boolean; pageSize: number }): boolean =>
-  !v.sort.length && !v.filter.trim() && !v.hidden.length && !Object.keys(v.widths).length && v.limitOn === fallback.limitOn && v.pageSize === fallback.pageSize;
+  !v.sort.length && !v.filter.trim() && !v.hidden.length && !v.order.length && !Object.keys(v.widths).length && v.limitOn === fallback.limitOn && v.pageSize === fallback.pageSize;
