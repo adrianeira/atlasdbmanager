@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  appReady, errorText, isDesktop, local, onOpenScript, openDataDictionary, openDataGen, openDataSync, openDataTransfer, openStructSync, pg, toAtlasError, type OpenScriptRequest,
+  appReady, chooseExportPath, chooseOpenFile, errorText, isDesktop, local, onOpenScript, openDataDictionary, openDataGen, openDataSync, openDataTransfer, openStructSync, pg, toAtlasError, type OpenScriptRequest,
   type ConnectionParams, type DatabaseDetail, type DumpScope, type ProfileRecord, type SchemaDetail,
 } from "./backend";
 import { entries, matchesShortcut, sub, type CommandMap, type MenuDef, type MenuEntry } from "./commands";
@@ -1313,6 +1313,39 @@ export default function App() {
       });
   };
 
+  /** Arquivo → Exportar conexões: todas as conexões salvas, sem as senhas. */
+  const exportConnections = async () => {
+    const path = await chooseExportPath("atlas-connections.json", ["json"]);
+    if (!path) return;
+    try {
+      const n = await local.connectionsExport(path, connections.map((c, i) => toRecord(c, i)));
+      setDialog({ kind: "info", title: t("cmd.exportConnections"), message: t("conn.exported", { n, path }) });
+    } catch (e) {
+      showError(t("cmd.exportConnections"), e);
+    }
+  };
+
+  /** Arquivo → Importar conexões: entram como conexões novas (id novo; nome repetido ganha " (2)") e sem senha. */
+  const importConnections = async () => {
+    const path = await chooseOpenFile(["json"]);
+    if (!path) return;
+    try {
+      const records = await local.connectionsImport(path);
+      const names = new Set(connections.map((c) => c.name.toLowerCase()));
+      const stamp = Date.now().toString(36);
+      const added = records.map((r, i) => {
+        let name = r.name;
+        for (let k = 2; names.has(name.toLowerCase()); k++) name = `${r.name} (${k})`;
+        names.add(name.toLowerCase());
+        return fromRecord({ ...r, id: `c${stamp}${i}`, name, hasPassword: false });
+      });
+      if (added.length) setConnections((list) => [...list, ...added]);
+      setDialog({ kind: "info", title: t("cmd.importConnections"), message: t("conn.imported", { n: added.length }) });
+    } catch (e) {
+      showError(t("cmd.importConnections"), e);
+    }
+  };
+
   /* ---------- Menus de contexto ---------- */
   const showContextMenu = (node: TreeNode, x: number, y: number) => {
     const c = resolveNode(node.id, connections);
@@ -1832,8 +1865,8 @@ export default function App() {
     clearRecents: { id: "clearRecents", label: "cmd.clearRecents", run: recents.length ? () => setRecents([]) : undefined },
     openConnection: { id: "openConnection", label: "cmd.openConnection", run: selConn && !openConnections.has(selConn.id) ? () => connect(selConn.id) : undefined },
     closeConnection: { id: "closeConnection", label: "cmd.closeConnection", run: selConn && openConnections.has(selConn.id) ? () => disconnect(selConn.id) : undefined },
-    importConnections: { id: "importConnections", label: "cmd.importConnections" },
-    exportConnections: { id: "exportConnections", label: "cmd.exportConnections" },
+    importConnections: { id: "importConnections", label: "cmd.importConnections", run: isDesktop ? () => void importConnections() : undefined },
+    exportConnections: { id: "exportConnections", label: "cmd.exportConnections", run: isDesktop && connections.length ? () => void exportConnections() : undefined },
     closeWindow: { id: "closeWindow", label: "cmd.closeWindow" },
     closeTab: { id: "closeTab", label: "cmd.closeTab", shortcut: "Ctrl+W", run: activeTab !== "objects" ? () => closeTab(activeTab) : undefined },
     exit: { id: "exit", label: "cmd.exit" },

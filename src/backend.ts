@@ -942,6 +942,10 @@ export interface Snippet {
 export const local = {
   status: () => call<{ path: string; schemaVersion: number | null; error: string | null }>("local_status"),
   profiles: () => call<ProfileRecord[]>("profiles_list"),
+  /** Grava as conexões num arquivo JSON (sem senhas); devolve quantas. */
+  connectionsExport: (path: string, profiles: ProfileRecord[]) => call<number>("connections_export", { path, profiles }),
+  /** Lê as conexões de um arquivo exportado. */
+  connectionsImport: (path: string) => call<ProfileRecord[]>("connections_import", { path }),
   /** `password` null/vazio + `savePassword` = mantém a senha já salva; `savePassword` false = remove do cofre. */
   saveProfile: (profile: ProfileRecord, password: string | null, savePassword: boolean) =>
     call<void>("profile_save", { profile, password, savePassword }),
@@ -1125,6 +1129,9 @@ export async function onBackupLog(jobId: string, cb: (line: string) => void): Pr
 
 /** Janela nativa "Abrir arquivo". `null` se o usuário cancelar. */
 export async function chooseOpenFile(extensions: string[]): Promise<string | null> {
+  // Só em desenvolvimento: testes automatizados informam o arquivo sem abrir a janela nativa.
+  const injected = import.meta.env.DEV ? (window as { __atlasOpenPath?: string }).__atlasOpenPath : undefined;
+  if (injected) return injected;
   const f = await open({ multiple: false, filters: [{ name: extensions.map((x) => `*.${x}`).join(", "), extensions }, { name: "*", extensions: ["*"] }] });
   return typeof f === "string" ? f : null;
 }

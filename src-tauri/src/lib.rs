@@ -231,6 +231,8 @@ pub fn run() {
             local::profiles_list,
             local::profile_save,
             local::profile_delete,
+            local::connections_export,
+            local::connections_import,
             local::history_add,
             local::history_list,
             local::history_favorite,

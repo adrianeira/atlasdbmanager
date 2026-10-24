@@ -491,7 +491,9 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 > uma captura. Só entram na esteira depois que aparecerem numa captura de `capturas/`.
 
 ## 1. Conexões
-- [ ] Importar/exportar conexões (arquivo de perfil), compartilhamento via nuvem
+- [x] **Importar / Exportar conexões** (Arquivo): arquivo JSON `atlas-connections` com as conexões, **sem senhas**; ao importar viram
+      conexões novas (nome repetido ganha " (2)") e a senha é pedida na primeira vez *(`src-tauri/src/local.rs`)*
+- [ ] Compartilhamento de conexões via nuvem
 - [ ] Importar conexão a partir de URI *(`src/components/ConnectionDialog.tsx:547,556`)*
 - [ ] Adicionar/remover banco manualmente no diálogo *(`src/components/ConnectionDialog.tsx:431-432`)*
 - [ ] SSH tunnel

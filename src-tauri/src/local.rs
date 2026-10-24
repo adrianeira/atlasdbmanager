@@ -87,6 +87,39 @@ pub fn profile_save(
     local.with(|s| atlas_local::save_profile(s, &profile, action))
 }
 
+/// Arquivo de conexões: só o que identifica o servidor; as senhas nunca saem do cofre.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ConnectionsFile {
+    format: String,
+    version: u32,
+    connections: Vec<ProfileRecord>,
+}
+
+const CONNECTIONS_FORMAT: &str = "atlas-connections";
+
+/// Grava as conexões em `path` (JSON), sem senha.
+#[tauri::command]
+pub fn connections_export(path: String, profiles: Vec<ProfileRecord>) -> Result<usize, DatabaseError> {
+    let connections: Vec<ProfileRecord> = profiles.into_iter().map(|p| ProfileRecord { has_password: false, ..p }).collect();
+    let count = connections.len();
+    let file = ConnectionsFile { format: CONNECTIONS_FORMAT.into(), version: 1, connections };
+    let json = serde_json::to_string_pretty(&file).map_err(|e| DatabaseError::new(ErrorKind::Internal, e.to_string()))?;
+    std::fs::write(&path, json).map_err(|e| DatabaseError::new(ErrorKind::Internal, format!("cannot write {path}: {e}")))?;
+    Ok(count)
+}
+
+/// Lê as conexões de um arquivo exportado; quem importa decide ids e nomes novos.
+#[tauri::command]
+pub fn connections_import(path: String) -> Result<Vec<ProfileRecord>, DatabaseError> {
+    let text = std::fs::read_to_string(&path).map_err(|e| DatabaseError::new(ErrorKind::InvalidInput, format!("cannot read {path}: {e}")))?;
+    let file: ConnectionsFile = serde_json::from_str(&text)
+        .map_err(|e| DatabaseError::new(ErrorKind::InvalidInput, format!("not an Atlas connections file: {e}")))?;
+    if file.format != CONNECTIONS_FORMAT {
+        return Err(DatabaseError::new(ErrorKind::InvalidInput, "not an Atlas connections file"));
+    }
+    Ok(file.connections.into_iter().map(|p| ProfileRecord { has_password: false, ..p }).collect())
+}
+
 #[tauri::command]
 pub fn profile_delete(local: State<'_, Local>, id: String) -> Result<(), DatabaseError> {
     local.with(|s| atlas_local::delete_profile(s, &id))
