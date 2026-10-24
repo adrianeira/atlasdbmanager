@@ -20,6 +20,8 @@ interface Props {
   /** Abre uma conexão fechada (pede a senha se faltar). */
   onConnect: (id: string) => void;
   /** Duplo clique num achado: abre o objeto (`what` diz se foi um campo, para abrir o designer). */
+  /** Duplo clique numa tabela dos resultados em Data: abre a consulta que lista as linhas achadas. */
+  onOpenRows: (connId: string, database: string, schema: string, sql: string) => void;
   onOpen: (connId: string, database: string, schema: string, object: { kind: FindObject["kind"] | "table"; name: string; identity: string | null }, what?: FindWhat) => void;
   active: boolean;
   onStatus: (cells: StatusCell[]) => void;
@@ -50,7 +52,7 @@ function Highlighted({ match }: { match: FindMatch }) {
 
 const label = (o: FindObject, withSchema: boolean) => `${withSchema ? `${o.schema}.` : ""}${o.name}`;
 
-export function FindDoc({ conns, initial, onConnect, onOpen, active, onStatus }: Props) {
+export function FindDoc({ conns, initial, onConnect, onOpen, onOpenRows, active, onStatus }: Props) {
   const t = useT();
   const [connId, setConnId] = useState(initial.connId ?? "");
   const [database, setDatabase] = useState(initial.database ?? "");
@@ -313,7 +315,7 @@ export function FindDoc({ conns, initial, onConnect, onOpen, active, onStatus }:
                 className={`fd-grid fd-row fd-group${selected === key ? " is-selected" : ""}`}
                 role="treeitem"
                 onClick={() => setSelected(key)}
-                onDoubleClick={() => onOpen(connId, database, x.schema, { kind: "table", name: x.table, identity: null })}
+                onDoubleClick={() => onOpenRows(connId, database, x.schema, x.sql)}
               >
                 <span className="fd-name"><SmallIcon name="table" /><span>{withSchema ? key : x.table}</span></span>
                 <span>{x.count}</span>

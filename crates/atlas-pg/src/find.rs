@@ -86,6 +86,8 @@ pub struct DataMatch {
     pub schema: String,
     pub table: String,
     pub count: i64,
+    /// Consulta que lista as linhas achadas (o texto procurado já dentro dela), para abrir no editor.
+    pub sql: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -409,7 +411,7 @@ pub async fn find_data(s: &PgSession, o: &FindOptions, cancelled: &(dyn Fn() -> 
         .client
         .query(
             &format!(
-                "SELECT c.oid::bigint, a.attname::text FROM pg_catalog.pg_attribute a JOIN pg_catalog.pg_class c ON c.oid = a.attrelid \
+                "SELECT c.oid::bigint, a.attname::text, t.typname::text FROM pg_catalog.pg_attribute a JOIN pg_catalog.pg_class c ON c.oid = a.attrelid \
                    JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace JOIN pg_catalog.pg_type t ON t.oid = a.atttypid \
                   WHERE c.relkind IN ('r','p') AND a.attnum > 0 AND NOT a.attisdropped AND t.typname <> 'bytea' AND {SCHEMA_OK} ORDER BY c.oid, a.attnum"
             ),
@@ -417,10 +419,14 @@ pub async fn find_data(s: &PgSession, o: &FindOptions, cancelled: &(dyn Fn() -> 
         )
         .await
         .map_err(|e| map_error(&e))?;
-    let mut by_table: HashMap<i64, Vec<String>> = HashMap::new();
+    let mut by_table: HashMap<i64, Vec<(String, bool)>> = HashMap::new();
     for r in &columns {
-        by_table.entry(r.get(0)).or_default().push(r.get(1));
+        let typ: String = r.get(2);
+        // Colunas de texto entram direto no filtro; as demais são lidas como texto.
+        let textual = matches!(typ.as_str(), "text" | "varchar" | "bpchar" | "name" | "citext");
+        by_table.entry(r.get(0)).or_default().push((r.get(1), textual));
     }
+    let literal = pattern.replace('\'', "''");
     result.total = tables.len();
     for r in &tables {
         if cancelled() {
@@ -432,14 +438,17 @@ pub async fn find_data(s: &PgSession, o: &FindOptions, cancelled: &(dyn Fn() -> 
             result.scanned += 1;
             continue;
         };
-        let cond = cols.iter().map(|c| format!("{}::text {op} $1", quote_ident(c))).collect::<Vec<_>>().join(" OR ");
-        let sql = format!("SELECT count(*) FROM {}.{} WHERE {cond}", quote_ident(&schema), quote_ident(&table));
+        let target = format!("{}.{}", quote_ident(&schema), quote_ident(&table));
+        let column = |c: &str, textual: bool| if textual { format!("{target}.{}", quote_ident(c)) } else { format!("{target}.{}::text", quote_ident(c)) };
+        let cond = |rhs: &str| cols.iter().map(|(c, textual)| format!("{} {op} {rhs}", column(c, *textual))).collect::<Vec<_>>().join(" OR ");
+        let sql = format!("SELECT count(*) FROM {target} WHERE {}", cond("$1"));
         match s.client.query_one(&sql, &[&pattern]).await {
             Ok(row) => {
                 result.scanned += 1;
                 let count: i64 = row.get(0);
                 if count > 0 {
-                    result.tables.push(DataMatch { schema, table, count });
+                    let sql = format!("SELECT * FROM {target} WHERE {}", cond(&format!("'{literal}'")));
+                    result.tables.push(DataMatch { schema, table, count, sql });
                 }
             }
             Err(e) if e.as_db_error().is_some_and(|d| d.code().code() == "57014") => {

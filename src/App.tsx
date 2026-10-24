@@ -2344,6 +2344,7 @@ export default function App() {
           openConnections={openConnections}
           initial={{ connectionId: tab.connectionId, database: tab.database, schema: tab.schema }}
           initialSql={tab.sql}
+          autoRun={tab.autoRun}
           active={isActive}
           onStatus={statusFor(tab.id)}
           onDirty={(d) => setTabDirty(tab.id, d)}
@@ -2494,6 +2495,7 @@ export default function App() {
           initial={{ connId: tab.connectionId, database: tab.database, schema: tab.schema }}
           onConnect={(id) => void connect(id)}
           onOpen={(connId, database, schemaName, object, what) => void openFindHit(connId, database, schemaName, object, what)}
+          onOpenRows={(connId, database, schemaName, sql) => openTab({ kind: "query", title: t("tab.untitledQuery"), windowTitle: t("tab.untitledQuery"), icon: "query", connectionId: connId, database, schema: schemaName, sql, autoRun: true })}
           active={isActive}
           onStatus={statusFor(tab.id)}
         />

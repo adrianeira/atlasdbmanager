@@ -19,6 +19,8 @@ export interface DocTab {
   fnName?: string;
   fnIdentity?: string;
   sql?: string;
+  /** Consulta: executa o `sql` assim que a aba abre. */
+  autoRun?: boolean;
   dirty?: boolean;
   /** Texto do placeholder para telas ainda não construídas. */
   note?: string;

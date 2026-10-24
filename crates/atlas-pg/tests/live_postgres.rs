@@ -792,6 +792,10 @@ async fn find_searches_structure_and_data() {
     let counts: Vec<(&str, i64)> = r.tables.iter().map(|t| (t.table.as_str(), t.count)).collect();
     assert_eq!(counts, [("zeta_pai", 2)], "{counts:?}");
     assert_eq!((r.scanned, r.total, r.cancelled), (2, 2, false));
+    // A consulta devolvida lista as linhas achadas (colunas de texto sem cast, as outras como texto).
+    let listed = atlas_pg::execute(&s, &r.tables[0].sql, 100).await.unwrap();
+    assert_eq!(listed.statements[0].result.as_ref().unwrap().rows.len(), 2, "{}", r.tables[0].sql);
+    assert!(r.tables[0].sql.contains("ILIKE '%zeta%'") && r.tables[0].sql.contains("::text ILIKE"), "{}", r.tables[0].sql);
     assert!(data(opts("zeta", FindMode::Contains, false)).await.tables.iter().any(|t| t.table == "zeta_pai" && t.count == 1), "só 'zeta tres' tem minúscula");
     assert!(data(opts("A1", FindMode::Whole, false)).await.tables.iter().any(|t| t.count == 1));
     assert!(data(opts("Ze", FindMode::Prefix, false)).await.tables.iter().any(|t| t.count == 1));

@@ -720,6 +720,8 @@ export interface DataMatch {
   schema: string;
   table: string;
   count: number;
+  /** Consulta que lista as linhas achadas. */
+  sql: string;
 }
 
 export interface FindDataResult {

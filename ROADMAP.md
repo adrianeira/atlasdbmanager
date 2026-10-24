@@ -266,7 +266,8 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       funções gera **uma linha por ocorrência**, com o trecho ao redor; reproduz o exemplo da referência (5 objetos, 10 ocorrências)
 - [x] **Data**: quantas linhas de cada tabela têm o texto em alguma coluna (lida como texto), com "Number of Matched Records";
       `\` como escape (`%` e `_` valem como curingas no LIKE), botão **Stop** que interrompe a consulta no servidor e aviso das
-      tabelas sem permissão; duplo clique abre a tabela
+      tabelas sem permissão; **duplo clique numa tabela abre uma consulta nova, já executada, com o SELECT e a condição do texto
+      procurado** (uma condição `ILIKE '%texto%'` por coluna) e o registro listado, como na referência
 - [x] Duplo clique num achado abre o objeto (dados, designer da tabela para campo, designer de função); testado no PG 9.6 e 18
       *(`src/documents/FindDoc.tsx`, `crates/atlas-pg/src/find.rs`)*
 - Limites: a caixa **Queries** aparece desabilitada (as consultas salvas ainda não são objetos para procurar); os índices que

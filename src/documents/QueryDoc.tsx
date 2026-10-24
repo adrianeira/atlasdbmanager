@@ -25,6 +25,8 @@ interface Props {
   openConnections: Set<string>;
   initial: QueryContext;
   initialSql?: string;
+  /** Executa o `initialSql` ao abrir (ex.: o resultado de uma busca). */
+  autoRun?: boolean;
   active: boolean;
   onStatus: (cells: StatusCell[]) => void;
   onDirty: (dirty: boolean) => void;
@@ -137,7 +139,7 @@ function mockExecute(sqlText: string, conn: ConnectionMock | undefined, database
 }
 
 export function QueryDoc({
-  connections, openConnections, initial, initialSql, active, onStatus, onDirty, registerActions, backend: backendProp, connecting, onOpenConnection, onLoadSchemas, onRefreshSchemas, onExport, onExecuted,
+  connections, openConnections, initial, initialSql, autoRun, active, onStatus, onDirty, registerActions, backend: backendProp, connecting, onOpenConnection, onLoadSchemas, onRefreshSchemas, onExport, onExecuted,
 }: Props) {
   const t = useT();
   const { queryMaxRows } = useOptions();
@@ -313,6 +315,18 @@ export function QueryDoc({
     });
     setResultTab(1);
   }, [backend, conn, ctx.database, ctx.schema, t]);
+
+  // Executa uma vez ao abrir; a marca vai dentro do timer porque o StrictMode cancela e refaz o efeito.
+  const autoRan = useRef(false);
+  useEffect(() => {
+    if (!autoRun || !conn) return;
+    const id = window.setTimeout(() => {
+      if (autoRan.current) return;
+      autoRan.current = true;
+      run(false);
+    }, 60);
+    return () => window.clearTimeout(id);
+  }, [autoRun, conn, run]);
 
   useEffect(() => {
     registerActions(active ? { run, stop, explain, beautify } : null);
