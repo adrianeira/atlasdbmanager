@@ -272,6 +272,7 @@ type Dialog =
   | { kind: "connection"; editing?: ConnectionMock; group?: string }
   | { kind: "deleteConnection"; conn: ConnectionMock }
   | { kind: "closeDirty"; tabId: string }
+  | { kind: "closeDbDirty"; run: () => void }
   | { kind: "password"; connId: string; retry?: string }
   | { kind: "error"; title: string; message: string }
   | { kind: "info"; title: string; message: string }
@@ -611,7 +612,7 @@ export default function App() {
     }, 450);
   };
 
-  const disconnect = (connId: string) => {
+  const disconnect = (connId: string) => parkTables(connId, undefined, () => {
     if (connections.find((c) => c.id === connId)?.live) {
       void pg.close(connId).catch(() => undefined);
       // Ao reabrir, a estrutura é lida de novo do servidor.
@@ -621,7 +622,7 @@ export default function App() {
     setOpenConnections((s) => remove(s, connId));
     const prefix = `db:${seg(connId)}/`;
     setOpenDatabases((s) => new Set([...s].filter((x) => !x.startsWith(prefix))));
-  };
+  });
 
   /** `refresh`: relê só a lista de schemas, sem indicador de carregamento e mantendo o que já foi lido de cada um. */
   const loadDatabase = async (connId: string, dbName: string, force = false, refresh = false) => {
@@ -1425,16 +1426,16 @@ export default function App() {
     void local.setPref("session.tabs", state).catch(() => undefined);
   }, []);
 
-  /** Abre de volta as tabelas esperando uma conexão que acabou de abrir (lendo o banco e o schema se preciso). */
-  const restoreTables = async (connId: string) => {
-    if (restoring.current.has(connId)) return;
-    const mine = pendingTables.current.filter((x) => x.connectionId === connId);
+  /** Abre de volta as tabelas guardadas de um banco que acabou de ser aberto (lendo o schema se preciso). */
+  const restoreTables = async (connId: string, dbName: string) => {
+    const key = `${connId}/${dbName}`;
+    if (restoring.current.has(key)) return;
+    const mine = pendingTables.current.filter((x) => x.connectionId === connId && x.database === dbName);
     if (!mine.length) return;
-    // A lista de bancos pode ainda não ter chegado (conexão recém-aberta): as tabelas ficam esperando e voltam a ser tentadas quando ela chegar.
-    if (!connectionsRef.current.find((c) => c.id === connId)?.databases.length) return;
-    restoring.current.add(connId);
-    pendingTables.current = pendingTables.current.filter((x) => x.connectionId !== connId);
+    if (!connectionsRef.current.find((c) => c.id === connId)?.databases.some((d) => d.name === dbName)) return;
+    restoring.current.add(key);
     for (const saved of mine) {
+      pendingTables.current = pendingTables.current.filter((x) => x !== saved);
       // O estado novo só chega às refs depois de renderizar: espera o schema aparecer (e depois ficar lido) antes de olhar.
       const schemaNow = () => connectionsRef.current.find((c) => c.id === connId)?.databases.find((d) => d.name === saved.database)?.schemas.find((s) => s.name === saved.schema);
       const until = async (done: () => boolean) => { for (let i = 0; i < 40 && !done(); i++) await new Promise((r) => setTimeout(r, 50)); };
@@ -1460,15 +1461,46 @@ export default function App() {
       setTabs((ts) => [...ts, tab]);
       if (saved.active) setActiveTab(id);
     }
-    restoring.current.delete(connId);
+    restoring.current.delete(key);
   };
-  // Conexão que ficou aberta: reabre as tabelas que estavam abertas nela.
-  const liveKey = connections.filter((c) => c.live && c.databases.length).map((c) => c.id).join("|");
+  // O usuário abriu um banco: voltam as tabelas que estavam abertas nele (abrir só a conexão não traz nada).
+  const openDbKey = [...openDatabases].join("|");
   useEffect(() => {
-    for (const id of liveKey.split("|").filter(Boolean)) void restoreTables(id);
+    const seen = new Set<string>();
+    for (const p of pendingTables.current) {
+      const key = `${p.connectionId}/${p.database}`;
+      if (seen.has(key) || !openDatabases.has(`db:${seg(p.connectionId)}/${seg(p.database)}`)) continue;
+      seen.add(key);
+      void restoreTables(p.connectionId, p.database);
+    }
     // `restoreTables` lê o estado atual por refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveKey]);
+  }, [openDbKey]);
+
+  /**
+   * Fechar a conexão (ou um banco) fecha as abas de tabela dele, mas elas ficam guardadas e voltam quando o banco for aberto de novo;
+   * só o X da própria aba faz a tabela ser esquecida. Com alterações não gravadas, pergunta antes. `then` roda em seguida.
+   */
+  const parkTables = (connId: string, dbName: string | undefined, then: () => void) => {
+    const mine = tabsRef.current.filter((x) => x.kind === "data" && x.connectionId === connId && x.database && x.schema && x.object && (!dbName || x.database === dbName));
+    const run = () => {
+      for (const x of mine) {
+        const entry: SavedTable = {
+          connectionId: connId, database: x.database!, schema: x.schema!, object: x.object!,
+          kind: (x.objectKind === "view" || x.objectKind === "matview" ? x.objectKind : "table") as SavedTable["kind"], title: x.title, active: x.id === activeTabRef.current,
+        };
+        pendingTables.current = [...pendingTables.current.filter((p) => !(p.connectionId === connId && p.database === entry.database && p.schema === entry.schema && p.object === entry.object)), entry];
+      }
+      if (mine.length) {
+        const ids = new Set(mine.map((x) => x.id));
+        setTabs((ts) => ts.filter((x) => !ids.has(x.id)));
+        if (ids.has(activeTabRef.current)) setActiveTab("objects");
+      }
+      then();
+    };
+    if (mine.some((x) => x.dirty)) setDialog({ kind: "closeDbDirty", run });
+    else run();
+  };
 
   // Ao iniciar: "Continue where you left off" reabre as consultas da sessão anterior.
   useEffect(() => {
@@ -1481,8 +1513,6 @@ export default function App() {
         pendingTables.current = (Array.isArray(saved?.tables) ? saved.tables : [])
           .filter((x) => x && known.has(x.connectionId) && typeof x.database === "string" && typeof x.schema === "string" && typeof x.object === "string" && typeof x.title === "string")
           .map((x, i) => ({ ...x, kind: x.kind === "view" || x.kind === "matview" ? x.kind : "table", active: i === saved?.activeTable }));
-        // Conexões que já estão abertas (raro: a abertura acontece depois do início) recuperam as tabelas já.
-        for (const c of connectionsRef.current) if (c.live) void restoreTables(c.id);
         const restored: DocTab[] = (saved?.tabs ?? []).filter((x) => x && typeof x.sql === "string").map((x) => {
           const keep = !!x.connectionId && known.has(x.connectionId);
           const id = `doc${++tabSeq.current}`;
@@ -1785,10 +1815,10 @@ export default function App() {
       const isInitial = dbName === (conn.initialDatabase || "postgres");
       items.push(
         isOpen
-          ? item("cmd.closeDatabase", () => {
+          ? item("cmd.closeDatabase", () => parkTables(conn.id, dbName, () => {
               setOpenDatabases((s) => remove(s, node.id));
               if (live) void pg.closeDatabase(conn.id, dbName).catch(() => undefined);
-            })
+            }))
           : item("cmd.openDatabase", () => toggle(node)),
         sep,
         item("cmd.newDatabase", live ? () => setDialog({ kind: "newDatabase", connId: conn.id }) : undefined),
@@ -3329,6 +3359,15 @@ export default function App() {
             setSelectedNode("root");
             setDialog(null);
           }}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+      {dialog?.kind === "closeDbDirty" && (
+        <MessageDialog
+          title={t("msg.unsavedTitle")}
+          message={t("msg.unsavedTables")}
+          okLabel={t("msg.discard")}
+          onOk={() => { dialog.run(); setDialog(null); }}
           onCancel={() => setDialog(null)}
         />
       )}
