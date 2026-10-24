@@ -643,7 +643,9 @@ Hoje o menu Exibir tem só Lista, Detalhe e Ícones (`viewMode` em `src/App.tsx`
       Atualizar relê o schema. Os dados vêm de uma consulta só (`pg_schema_diagram`); sem servidor, usa as tabelas da
       demonstração. Não é a Modelagem da seção 10: aqui é a visão do schema como ele está no banco
       *(`src/components/ErDiagram.tsx`, `src/er.ts`, `crates/atlas-pg/src/meta.rs`)*
-- Ainda não há no ER Diagram: zoom, ferramentas de ligar (criar chave estrangeira pelo desenho), Preview e Size da barra
+- **Zoom** (botões − / +, clique no % volta a 100%, Ctrl + roda do mouse; de 25% a 300%) e **tela cheia** (botão na barra inferior, Esc sai)
+  no ER Diagram; o arrasto de cartões, linhas e pontas acompanha o zoom
+- Ainda não há no ER Diagram: ferramentas de ligar (criar chave estrangeira pelo desenho), Preview e Size da barra
   inferior da referência, chaves para tabelas de outro schema (não têm cartão), tabelas com mais de 40 colunas mostram as
   40 primeiras e a linha "mais N colunas"
 - [ ] **Flatten Object List**: lista única dos objetos do schema, sem as pastas

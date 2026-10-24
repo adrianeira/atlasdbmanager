@@ -571,8 +571,42 @@ input {
 
 .er-canvas {
   position: relative;
-  min-width: 100%;
-  min-height: 100%;
+  transform-origin: 0 0;
+}
+
+.er-zoomer {
+  position: relative;
+}
+
+.er-wrap.is-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: var(--c-window);
+}
+
+.er-spacer {
+  flex: 1;
+}
+
+.er-zoom {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.er-zoom-value {
+  min-width: 44px;
+  height: 20px;
+  border: 0;
+  background: none;
+  color: var(--c-text);
+  font: inherit;
+  text-align: center;
+}
+
+.er-zoom-value:hover {
+  background: var(--c-hover);
 }
 
 .er-canvas.has-grid {

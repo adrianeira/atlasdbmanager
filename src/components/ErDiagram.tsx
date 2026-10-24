@@ -24,6 +24,14 @@ type State = { status: "loading" } | { status: "error"; message: string } | { st
 
 const STORAGE_PREFIX = "atlas.er.";
 
+const ZOOM_STEPS = [0.25, 0.4, 0.5, 0.67, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 2, 3];
+
+/** Próximo degrau de zoom acima (`dir` 1) ou abaixo (-1) do valor atual. */
+function stepZoom(z: number, dir: 1 | -1): number {
+  if (dir > 0) return ZOOM_STEPS.find((s) => s > z + 0.001) ?? ZOOM_STEPS[ZOOM_STEPS.length - 1];
+  return [...ZOOM_STEPS].reverse().find((s) => s < z - 0.001) ?? ZOOM_STEPS[0];
+}
+
 function readPositions(key: string): Record<string, Pos> {
   try {
     const raw = JSON.parse(localStorage.getItem(STORAGE_PREFIX + key) ?? "{}") as Record<string, Pos>;
@@ -171,6 +179,44 @@ export function ErDiagram({ storageKey, schema, load, showGrid, snapToGrid, show
   const [endDrag, setEndDrag] = useState<{ id: string; end: "a" | "b"; side: Side } | null>(null);
   /** Enquanto arrasta, a dica não acompanha o mouse (cada atualização redesenharia o diagrama à toa). */
   const dragging = useRef(false);
+  /** Zoom do diagrama (1 = 100%) e tela cheia. As coordenadas do mouse são divididas pelo zoom para valerem no desenho. */
+  const [zoom, setZoom] = useState(1);
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [viewport, setViewport] = useState({ w: 0, h: 0 });
+  const [fullscreen, setFullscreen] = useState(false);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setViewport({ w: el.clientWidth, h: el.clientHeight }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Ctrl + roda do mouse: zoom (o ouvinte não é passivo para poder cancelar o zoom da página).
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      setZoom((z) => stepZoom(z, e.deltaY < 0 ? 1 : -1));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  // Tela cheia: o diagrama cobre a janela do app (o navegador pode recusar a tela cheia nativa); Esc sai.
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setFullscreen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fullscreen]);
+  const toggleFullscreen = () => setFullscreen((f) => !f);
 
   useEffect(() => {
     let alive = true;
@@ -197,7 +243,9 @@ export function ErDiagram({ storageKey, schema, load, showGrid, snapToGrid, show
   }, [storageKey, schema, reloadKey]);
 
   const model = state.status === "ready" ? state.model : null;
-  const size = useMemo(() => (model ? canvasSize(model, positions) : { w: 0, h: 0 }), [model, positions]);
+  const content = useMemo(() => (model ? canvasSize(model, positions) : { w: 0, h: 0 }), [model, positions]);
+  /** O desenho ocupa pelo menos a área visível (em unidades do desenho, já descontado o zoom). */
+  const size = { w: Math.max(content.w, Math.ceil(viewport.w / zoom)), h: Math.max(content.h, Math.ceil(viewport.h / zoom)) };
 
   // Durante o arrasto de uma ponta, a linha já se refaz com o lado mais próximo do mouse.
   const liveEnds = useMemo(
@@ -222,7 +270,7 @@ export function ErDiagram({ storageKey, schema, load, showGrid, snapToGrid, show
   const hoverLine = (e: ReactMouseEvent, id: string) => {
     if (dragging.current) return;
     const box = canvasRef.current?.getBoundingClientRect();
-    if (box) setTip({ x: e.clientX - box.left, y: e.clientY - box.top, id });
+    if (box) setTip({ x: (e.clientX - box.left) / zoomRef.current, y: (e.clientY - box.top) / zoomRef.current, id });
   };
 
   /** Marca o início e o fim de um arrasto no canvas (cursor de "agarrado" e linhas sem reagir ao mouse). */
@@ -247,7 +295,7 @@ export function ErDiagram({ storageKey, schema, load, showGrid, snapToGrid, show
     let moved = false;
     trackDrag(
       (ev) => {
-        const delta = handle.axis === "x" ? ev.clientX - startX : ev.clientY - startY;
+        const delta = (handle.axis === "x" ? ev.clientX - startX : ev.clientY - startY) / zoomRef.current;
         if (!moved && Math.abs(delta) < 4) return;
         if (!moved) {
           moved = true;
@@ -303,8 +351,8 @@ export function ErDiagram({ storageKey, schema, load, showGrid, snapToGrid, show
           setTip(null);
           setDragging(true);
         }
-        const px = ev.clientX - box.left;
-        const py = ev.clientY - box.top;
+        const px = (ev.clientX - box.left) / zoomRef.current;
+        const py = (ev.clientY - box.top) / zoomRef.current;
         let best: Side = SIDES[0];
         let bestD = Infinity;
         for (const side of SIDES) {
@@ -341,8 +389,8 @@ export function ErDiagram({ storageKey, schema, load, showGrid, snapToGrid, show
     let moved = false;
     trackDrag(
       (ev) => {
-        const dx = ev.clientX - startX;
-        const dy = ev.clientY - startY;
+        const dx = (ev.clientX - startX) / zoomRef.current;
+        const dy = (ev.clientY - startY) / zoomRef.current;
         if (!moved && Math.abs(dx) + Math.abs(dy) < 4) return;
         if (!moved) {
           moved = true;
@@ -372,16 +420,17 @@ export function ErDiagram({ storageKey, schema, load, showGrid, snapToGrid, show
   const selectedSet = new Set(selected);
 
   return (
-    <div className="er-wrap">
-      <div className="er-scroll">
+    <div className={`er-wrap${fullscreen ? " is-fullscreen" : ""}`} ref={wrapRef}>
+      <div className="er-scroll" ref={scrollRef}>
         {state.status === "loading" && <div className="doc-loading"><span className="spinner" />{t("common.loading")}</div>}
         {state.status === "error" && <div className="doc-banner is-warn">{state.message}</div>}
         {model && model.tables.length === 0 && <div className="er-empty muted">{t("er.empty")}</div>}
         {model && model.tables.length > 0 && (
+          <div className="er-zoomer" style={{ width: size.w * zoom, height: size.h * zoom }}>
           <div
             ref={canvasRef}
             className={`er-canvas${showGrid ? " has-grid" : ""}`}
-            style={{ width: size.w, height: size.h }}
+            style={{ width: size.w, height: size.h, transform: `scale(${zoom})` }}
             onMouseDown={(e) => {
               if (e.target !== e.currentTarget) return;
               setSelRel(null);
@@ -487,6 +536,7 @@ export function ErDiagram({ storageKey, schema, load, showGrid, snapToGrid, show
               </div>
             )}
           </div>
+          </div>
         )}
       </div>
       <div className="er-bar">
@@ -495,6 +545,15 @@ export function ErDiagram({ storageKey, schema, load, showGrid, snapToGrid, show
           <span>{t("er.refresh")}</span>
         </button>
         <span className="muted">{model ? t("er.summary", { tables: model.tables.length, relations: lines.length }) : ""}</span>
+        <span className="er-spacer" />
+        <div className="er-zoom" role="group" aria-label={t("er.zoom")}>
+          <button type="button" className="icon-button" title={t("er.zoomOut")} aria-label={t("er.zoomOut")} disabled={zoom <= ZOOM_STEPS[0]} onClick={() => setZoom((z) => stepZoom(z, -1))}>−</button>
+          <button type="button" className="er-zoom-value" title={t("er.zoomReset")} onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</button>
+          <button type="button" className="icon-button" title={t("er.zoomIn")} aria-label={t("er.zoomIn")} disabled={zoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]} onClick={() => setZoom((z) => stepZoom(z, 1))}>+</button>
+        </div>
+        <button type="button" className="icon-button" title={t(fullscreen ? "er.exitFullscreen" : "er.fullscreen")} aria-label={t(fullscreen ? "er.exitFullscreen" : "er.fullscreen")} onClick={toggleFullscreen}>
+          <SmallIcon name="fullscreen" />
+        </button>
       </div>
     </div>
   );
