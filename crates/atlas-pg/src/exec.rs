@@ -20,6 +20,12 @@ pub fn quote_ident(name: &str) -> String {
 /// (memória limitada) e o result set é marcado como `truncated`.
 pub async fn execute(s: &PgSession, sql: &str, max_rows: usize) -> Result<QueryOutcome, DatabaseError> {
     let started = Instant::now();
+    let result = execute_inner(s, sql, max_rows, started).await;
+    s.client.log_command(sql, started.elapsed().as_secs_f64(), result.as_ref().err());
+    result
+}
+
+async fn execute_inner(s: &PgSession, sql: &str, max_rows: usize, started: Instant) -> Result<QueryOutcome, DatabaseError> {
 
     // Os tipos das colunas vêm de descrever o comando (`prepare`), mas só DEPOIS de executá-lo: descrever antes
     // faz o servidor recusar textos com vários comandos ou com erro, e dentro de uma transação aberta pelo
@@ -231,7 +237,18 @@ pub fn select_sql(schema: &str, table: &str, columns: &[String], order_by: &[Ord
 /// Lê o resultado de um único `SELECT` linha a linha, sem guardar nada na memória: `on_begin` recebe
 /// as colunas (com o tipo, quando o servidor descreve) e `on_row` cada linha; devolver `Ok(false)`
 /// encerra a leitura (cancelamento). Devolve quantas linhas foram entregues.
-pub async fn stream_rows<B, R>(s: &PgSession, sql: &str, on_begin: B, mut on_row: R) -> Result<u64, DatabaseError>
+pub async fn stream_rows<B, R>(s: &PgSession, sql: &str, on_begin: B, on_row: R) -> Result<u64, DatabaseError>
+where
+    B: FnOnce(&[ResultColumn]) -> Result<(), DatabaseError>,
+    R: FnMut(&[Option<&str>]) -> Result<bool, DatabaseError>,
+{
+    let started = Instant::now();
+    let result = stream_rows_inner(s, sql, on_begin, on_row).await;
+    s.client.log_command(sql, started.elapsed().as_secs_f64(), result.as_ref().err());
+    result
+}
+
+async fn stream_rows_inner<B, R>(s: &PgSession, sql: &str, on_begin: B, mut on_row: R) -> Result<u64, DatabaseError>
 where
     B: FnOnce(&[ResultColumn]) -> Result<(), DatabaseError>,
     R: FnMut(&[Option<&str>]) -> Result<bool, DatabaseError>,

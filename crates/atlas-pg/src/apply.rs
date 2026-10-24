@@ -22,14 +22,20 @@ pub struct PlannedStatement {
 /// Executa tudo em uma transação em conexão dedicada; qualquer falha ou contagem
 /// inesperada desfaz o conjunto inteiro. Devolve as linhas afetadas por comando.
 pub async fn apply_in_transaction(conn: PgSession, statements: &[PlannedStatement]) -> Result<Vec<u64>, DatabaseError> {
-    let mut client = conn.client;
-    let tx = client.transaction().await.map_err(|e| map_error(&e))?;
+    let client = conn.client;
+    client.batch_execute("BEGIN").await.map_err(|e| map_error(&e))?;
     let mut affected = Vec::with_capacity(statements.len());
     for (i, st) in statements.iter().enumerate() {
         let params: Vec<&(dyn ToSql + Sync)> = st.params.iter().map(|p| p as &(dyn ToSql + Sync)).collect();
-        let n = tx.execute(st.sql.as_str(), &params).await.map_err(|e| map_error(&e))?;
+        let n = match client.execute(st.sql.as_str(), &params).await {
+            Ok(n) => n,
+            Err(e) => {
+                let _ = client.batch_execute("ROLLBACK").await;
+                return Err(map_error(&e));
+            }
+        };
         if st.expect_one_row && n != 1 {
-            // `tx` é descartado sem commit: o driver envia ROLLBACK.
+            let _ = client.batch_execute("ROLLBACK").await;
             let mut err = DatabaseError::new(
                 ErrorKind::ConcurrencyConflict,
                 format!("statement {} affected {n} rows (expected exactly 1); all changes were rolled back", i + 1),
@@ -39,7 +45,10 @@ pub async fn apply_in_transaction(conn: PgSession, statements: &[PlannedStatemen
         }
         affected.push(n);
     }
-    tx.commit().await.map_err(|e| map_error(&e))?;
+    if let Err(e) = client.batch_execute("COMMIT").await {
+        let _ = client.batch_execute("ROLLBACK").await;
+        return Err(map_error(&e));
+    }
     Ok(affected)
 }
 

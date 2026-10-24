@@ -2552,3 +2552,15 @@ select.et-input {
 .mon-grid tbody tr.is-sel td { background: #cde6f7; }
 .mon-grid tbody tr.is-sel td.is-key { background: var(--c-accent); color: #fff; }
 .mon-grid td.is-null { color: var(--c-text-muted); }
+
+/* ---------- History Log ---------- */
+.hl-doc { height: 100%; display: flex; flex-direction: column; background: var(--c-surface); }
+.hl-toolbar { flex: none; display: flex; align-items: center; gap: 4px; height: 34px; padding: 0 8px; border-bottom: 1px solid var(--c-border); background: var(--c-window); }
+.hl-sep { width: 1px; height: 18px; margin: 0 4px; background: var(--c-border); }
+.hl-pause { font-size: 8px; letter-spacing: -1px; }
+.mon-btn.is-on { background: var(--c-selected); }
+.hl-body { flex: 1; min-height: 0; overflow: auto; font-family: var(--font-mono); font-size: 12px; line-height: 1.4; padding: 2px 0; }
+.hl-line { display: flex; align-items: flex-start; }
+.hl-no { flex: none; padding: 0 8px 0 4px; text-align: right; color: var(--c-text-disabled); user-select: none; }
+.hl-text { white-space: pre; padding-right: 12px; }
+.hl-body.is-wrap .hl-text { white-space: pre-wrap; word-break: break-word; min-width: 0; }

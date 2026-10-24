@@ -416,6 +416,19 @@ servidor e busca. Atualiza sozinho a cada 5 segundos e a barra de status mostra 
 Testado ao vivo em 9.6 e 18 (motor e tela, com os dois servidores juntos). Fora desta entrega: os outros SGBDs do submenu da
 referência e o gráfico de uso, que a referência não mostra.
 
+### History Log
+Tools → History Log (Ctrl+L) abre uma aba "History Log" que mostra tudo o que o Atlas manda aos servidores, no formato da
+referência: `[2026-10-23 16:56:45.377][PostgreSQL 9.6][32600][PGSQL]`, o comando e `Time: 0.003s`, com o erro logo depois
+(`ERROR:`, `LINE n:` com o cursor, `DETAIL:` e `HINT:`). Um cliente com registro (`LoggedClient`) no lugar do cliente do driver
+anota cada comando (consultas, DDL, DML, transações, resultados do editor e exportações, inclusive as consultas de catálogo da própria
+árvore), em memória, no máximo 4000 entradas e 8 MB. Senhas em `PASSWORD '...'` saem mascaradas e comandos enormes são cortados.
+A aba tem Clear, Word Wrap, Show Errors Only (o comando que falhou e o erro), Pause, busca, numeração de linhas, rolagem
+automática no fim e "Last Refresh Time" na barra de status. O menu Tools passou a seguir a ordem da referência, com Find in
+Database/Schema.
+Testado ao vivo em 9.6 e 18 (registro, erro com posição, senha mascarada e pausa) e na tela.
+Fora desta entrega: a gravação em arquivo e as inserções em lote do import e do Data Transfer, que usam instruções preparadas e
+não aparecem no registro.
+
 ## Limitações conhecidas
 - Exportar o resultado de uma consulta exige um único comando que devolva linhas.
 - Exportação de tabela sem filtro/ordenação usa a ordem natural do servidor.

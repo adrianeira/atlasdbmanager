@@ -2,11 +2,12 @@ use crate::error::map_error;
 use atlas_core::{ConnectionParams, DatabaseError, ErrorKind, ServerInfo, SslMode};
 use postgres_native_tls::MakeTlsConnector;
 use std::time::{Duration, Instant};
-use tokio_postgres::{CancelToken, Client, Config, NoTls};
+use crate::logged::LoggedClient;
+use tokio_postgres::{CancelToken, Config, NoTls};
 
 /// Uma conexão física aberta com um banco PostgreSQL.
 pub struct PgSession {
-    pub client: Client,
+    pub client: LoggedClient,
     /// Serializa as execuções do editor que trocam o `search_path`: sem isso duas abas na mesma
     /// conexão física poderiam se atropelar entre o `SET` e a consulta.
     pub(crate) exec_lock: tokio::sync::Mutex<()>,
@@ -108,7 +109,7 @@ pub async fn connect(params: &ConnectionParams, database: Option<&str>) -> Resul
     let row = client
         .query_one(
             "SELECT current_setting('server_version'), current_setting('server_version_num')::int, \
-                    current_database()::text, current_user::text",
+                    current_database()::text, current_user::text, pg_backend_pid()",
             &[],
         )
         .await
@@ -136,5 +137,8 @@ pub async fn connect(params: &ConnectionParams, database: Option<&str>) -> Resul
         latency_ms,
     };
     let cancel = client.cancel_token();
+    let (major, minor) = (version_num / 10000, version_num / 100 % 100);
+    let label = if version_num >= 100000 { format!("PostgreSQL {major}") } else { format!("PostgreSQL {major}.{minor}") };
+    let client = LoggedClient::new(client, label, row.get(4));
     Ok(PgSession { client, exec_lock: tokio::sync::Mutex::new(()), cancel, tls, server })
 }

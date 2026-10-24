@@ -440,6 +440,20 @@ export async function onSyncDeployProgress(id: string, cb: (done: number, total:
   });
 }
 
+/* ----- History Log (aba) ----- */
+
+export interface SqlLogEntry {
+  seq: number;
+  atMs: number;
+  server: string;
+  pid: number;
+  text: string;
+  secs: number | null;
+  error: boolean;
+  failed: boolean;
+}
+export interface SqlLogPage { entries: SqlLogEntry[]; last: number; paused: boolean }
+
 /* ----- Server Monitor (aba) ----- */
 
 export interface MonitorProcess {
@@ -910,6 +924,9 @@ export const pg = {
   syncScript: (compareId: string, selection: SyncSelection[]) => call<SyncScript>("datasync_script", { compareId, selection }),
   syncScriptFull: (compareId: string, selection: SyncSelection[]) => call<string>("datasync_script_full", { compareId, selection }),
   syncDeploy: (req: SyncDeployRequest) => call<SyncDeployCounts>("datasync_deploy", { req }),
+  sqlLogRead: (after: number) => call<SqlLogPage>("sqllog_read", { after }),
+  sqlLogClear: () => call<void>("sqllog_clear"),
+  sqlLogSetPaused: (paused: boolean) => call<void>("sqllog_set_paused", { paused }),
   monitorSnapshot: (sessionId: string) => call<MonitorSnapshot>("monitor_snapshot", { sessionId }),
   monitorEndProcess: (sessionId: string, pid: number) => call<boolean>("monitor_end_process", { sessionId, pid }),
   dictDefaults: (title: string) => call<DictSettings>("dict_defaults", { title }),

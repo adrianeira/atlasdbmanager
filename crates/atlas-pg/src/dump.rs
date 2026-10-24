@@ -755,9 +755,16 @@ pub fn data_select(t: &DumpTable) -> String {
 
 /// Transmite os dados da tabela em formato `COPY` (texto). `sink` recebe cada pedaço e devolve `false` para parar.
 /// Devolve as linhas copiadas.
-pub async fn copy_table(s: &PgSession, t: &DumpTable, mut sink: impl FnMut(&[u8], u64) -> Result<bool, DatabaseError>) -> Result<u64, DatabaseError> {
+pub async fn copy_table(s: &PgSession, t: &DumpTable, sink: impl FnMut(&[u8], u64) -> Result<bool, DatabaseError>) -> Result<u64, DatabaseError> {
     let sql = format!("COPY ({}) TO STDOUT", data_select(t));
-    let stream = s.client.copy_out(sql.as_str()).await.map_err(sql_err)?;
+    let started = std::time::Instant::now();
+    let result = copy_table_inner(s, &sql, sink).await;
+    s.client.log_command(&sql, started.elapsed().as_secs_f64(), result.as_ref().err());
+    result
+}
+
+async fn copy_table_inner(s: &PgSession, sql: &str, mut sink: impl FnMut(&[u8], u64) -> Result<bool, DatabaseError>) -> Result<u64, DatabaseError> {
+    let stream = s.client.copy_out(sql).await.map_err(sql_err)?;
     futures_util::pin_mut!(stream);
     let mut rows = 0u64;
     while let Some(chunk) = stream.next().await {

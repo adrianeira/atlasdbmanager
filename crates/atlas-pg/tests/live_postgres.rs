@@ -1932,3 +1932,36 @@ async fn server_monitor_lists_processes_variables_status_and_ends_a_process() {
     }
     assert!(victim.client.is_closed(), "o processo encerrado perde a conexão");
 }
+
+#[tokio::test]
+async fn history_log_records_statements_errors_and_masks_passwords() {
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    let pid: i32 = s.client.query_one("SELECT pg_backend_pid()", &[]).await.unwrap().get(0);
+    atlas_pg::history_set_paused(false);
+    let (_, base) = atlas_pg::history_read(0);
+
+    atlas_pg::execute(&s, "SELECT 1 AS um", 10).await.expect("ok");
+    let bad = atlas_pg::execute(&s, "SELECT\n  nao_existe FROM pg_class", 10).await;
+    assert!(bad.is_err());
+    // Um comando com senha nunca entra com o texto da senha (o servidor recusa o papel que já existe ou aceita; tanto faz).
+    let _ = atlas_pg::execute(&s, "CREATE ROLE atlas_hist_tmp LOGIN PASSWORD 'segredo123'", 1).await;
+    let _ = atlas_pg::execute(&s, "DROP ROLE IF EXISTS atlas_hist_tmp", 1).await;
+
+    let (entries, last) = atlas_pg::history_read(base);
+    let mine: Vec<_> = entries.iter().filter(|e| e.pid == pid).collect();
+    let ok = mine.iter().find(|e| e.text == "SELECT 1 AS um").expect("o comando aparece");
+    assert!(ok.secs.is_some() && !ok.error && !ok.failed && ok.server.starts_with("PostgreSQL "), "{ok:?}");
+    let failed = mine.iter().find(|e| e.text.contains("nao_existe FROM") && !e.error).expect("o comando que falhou aparece");
+    assert!(failed.failed);
+    let message = mine.iter().find(|e| e.error && e.text.contains("nao_existe")).expect("o erro aparece");
+    assert!(message.text.starts_with("ERROR:  ") && message.text.contains("LINE 2:") && message.text.contains('^') && message.secs.is_none(), "{}", message.text);
+    assert!(mine.iter().all(|e| !e.text.contains("segredo123")), "a senha sai mascarada");
+    assert!(mine.iter().any(|e| e.text.contains("PASSWORD '********'")));
+
+    // Pausado: nada novo é registrado.
+    atlas_pg::history_set_paused(true);
+    atlas_pg::execute(&s, "SELECT 2 AS dois", 10).await.expect("ok");
+    atlas_pg::history_set_paused(false);
+    assert!(atlas_pg::history_read(last).0.iter().all(|e| e.text != "SELECT 2 AS dois"));
+}

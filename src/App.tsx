@@ -30,6 +30,7 @@ import { dropFuncSql } from "./sql/func";
 import { dropSeqSql } from "./sql/sequence";
 import { dropExtSql } from "./sql/extension";
 import { ExtensionDesignerDoc, type ExtensionBackend } from "./documents/ExtensionDesignerDoc";
+import { HistoryLogDoc } from "./documents/HistoryLogDoc";
 import { ServerMonitorDoc } from "./documents/ServerMonitorDoc";
 import { dropTypeSql } from "./sql/typedef";
 import { dropRoleSql } from "./sql/role";
@@ -1866,6 +1867,17 @@ export default function App() {
         }).catch((e) => showError(t("dd.title"), e));
       },
     },
+    console: { id: "console", label: "cmd.console", shortcut: "F6" },
+    historyLog: {
+      id: "historyLog", label: "cmd.historyLog", shortcut: "Ctrl+L",
+      run: () => openTab({ kind: "historyLog", title: t("hl.title"), windowTitle: t("hl.title"), icon: "history", object: "historylog" }),
+    },
+    findInDatabase: {
+      id: "findInDatabase", label: "cmd.findInDatabase",
+      run: ctx.connection?.live && ctx.database && openConnections.has(ctx.connection.id)
+        ? () => setDialog({ kind: "find", connId: ctx.connection!.id, database: ctx.database!.name, schema: ctx.schema?.name })
+        : undefined,
+    },
     monitorPostgres: {
       id: "monitorPostgres", label: "mon.postgres",
       run: () => {
@@ -1943,7 +1955,7 @@ export default function App() {
   const tableMenu: MenuDef = { label: "menu.table", items: entries("addRecord", "deleteRecord", "-", "applyChanges", "discardChanges", "-", "refreshData") };
   const tailMenus: MenuDef[] = [
     { label: "menu.favorites", items: entries("addFavorite", "manageFavorites") },
-    { label: "menu.tools", items: entries("dataTransfer", "dataSync", "structureSync", "dataGen", "dataDictionary", "-", sub("mon.title", "monitorPostgres"), "-", "options") },
+    { label: "menu.tools", items: entries("dataTransfer", "dataGen", "dataDictionary", "dataSync", "structureSync", "-", "console", sub("mon.title", "monitorPostgres"), "-", "findInDatabase", "-", "historyLog", "-", "options") },
     { label: "menu.window", items: entries("nextTab", "previousTab", "-", "closeTab", "closeAllTabs") },
     { label: "menu.help", items: entries("documentation", "-", "about") },
   ];
@@ -2377,6 +2389,9 @@ export default function App() {
           backend={conn?.live ? sequenceBackendFor(tab, conn) : undefined}
         />
       );
+    }
+    if (tab.kind === "historyLog") {
+      return <HistoryLogDoc active={isActive} onStatus={statusFor(tab.id)} />;
     }
     if (tab.kind === "monitor") {
       return (
