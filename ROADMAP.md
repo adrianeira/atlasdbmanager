@@ -505,7 +505,8 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
       nem em arquivo. Testado com um servidor SSH em processo (5 testes: senha, chave, chave nova/alterada, erro, vários clientes) e pela tela
       (teste de conexão, salvar, reconectar com a senha do cofre, segundo banco). `cargo run -p atlas-ssh --example dev_server` sobe um servidor
       SSH só para desenvolvimento. Limite: com `verify-full` o nome do host do certificado é conferido contra `127.0.0.1`
-- [ ] HTTP tunnel
+- [ ] HTTP tunnel *(não implementado: na referência ele só funciona com um script PHP instalado no servidor web, com protocolo próprio do fornecedor;
+      sem esse servidor não há como conectar, então não há aba HTTP no diálogo para não prometer o que não funciona)*
 - [ ] Autenticação Kerberos/GSSAPI
 - [ ] Grupos (pastas) de conexão na árvore
 - [ ] Novos provedores: MySQL, MariaDB, SQL Server, Oracle, SQLite, MongoDB, Redis,
