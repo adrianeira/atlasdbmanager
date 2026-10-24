@@ -2499,7 +2499,7 @@ select.et-input {
 .dd-intro { min-height: 190px; }
 .dd-num { max-width: 120px; }
 .dd-hint { white-space: pre-line; margin-left: 180px; font-size: 12px; }
-.dd-label { margin-top: 6px; }
+.dd-sublabel { margin-top: 6px; }
 .dd-radios { display: flex; flex-direction: column; gap: 6px; }
 .dd-radios label { display: flex; align-items: center; gap: 6px; }
 .dd-font-row { display: flex; gap: 6px; max-width: 260px; }

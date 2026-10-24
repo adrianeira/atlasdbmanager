@@ -132,16 +132,16 @@ export function LayoutStep({ servers, settings, setSettings, defaults }: { serve
       <div className="dd-form">
         {check(t("dd.breadcrumbs"), settings.breadcrumbs, (v) => patch({ breadcrumbs: v }))}
         {fontRow(settings.breadcrumbFont, (f) => patch({ breadcrumbFont: f }), !settings.breadcrumbs)}
-        <div className="dd-label">{t("dd.headingFont")}</div>
+        <div className="dd-sublabel">{t("dd.headingFont")}</div>
         {fontRow(settings.headingFont, (f) => patch({ headingFont: f }))}
-        <div className="dd-label">{t("dd.subheadingFont")}</div>
+        <div className="dd-sublabel">{t("dd.subheadingFont")}</div>
         {fontRow(settings.subheadingFont, (f) => patch({ subheadingFont: f }))}
         <div className="dd-left-footer">
           {check(t("dd.leftFooter"), settings.leftFooter, (v) => patch({ leftFooter: v }))}
           <input className="field" value={settings.leftFooterText} disabled={!settings.leftFooter} onChange={(e) => patch({ leftFooterText: e.target.value })} />
         </div>
         {check(t("dd.pageNumber"), settings.pageNumber, (v) => patch({ pageNumber: v }))}
-        <div className="dd-label">{t("dd.footerFont")}</div>
+        <div className="dd-sublabel">{t("dd.footerFont")}</div>
         {fontRow(settings.footerFont, (f) => patch({ footerFont: f }))}
         {restore(
           () => ({ breadcrumbFont: defaults.breadcrumbFont, headingFont: defaults.headingFont, subheadingFont: defaults.subheadingFont, footerFont: defaults.footerFont }),
@@ -152,9 +152,9 @@ export function LayoutStep({ servers, settings, setSettings, defaults }: { serve
     main: (
       <div className="dd-form">
         {check(t("dd.includeIntro"), settings.includeIntro, (v) => patch({ includeIntro: v }))}
-        <div className="dd-label">{t("dd.intro")}</div>
+        <div className="dd-sublabel">{t("dd.intro")}</div>
         <textarea className="field dd-area dd-intro" value={settings.introText} disabled={!settings.includeIntro} spellCheck={false} onChange={(e) => patch({ introText: e.target.value })} />
-        <div className="dd-label">{t("dd.font")}</div>
+        <div className="dd-sublabel">{t("dd.font")}</div>
         <Dropdown className="dd-dd" value={settings.bodyFont} items={FONT_FAMILIES.map((f) => ({ value: f, label: t(f === "Default" ? "dd.font.default" : (`dd.font.${f}` as never)) }))} onChange={(v) => patch({ bodyFont: v })} />
         {restore(() => ({ bodyFont: defaults.bodyFont }), () => ({ includeIntro: defaults.includeIntro, introText: defaults.introText, bodyFont: defaults.bodyFont }))}
       </div>
@@ -164,12 +164,12 @@ export function LayoutStep({ servers, settings, setSettings, defaults }: { serve
         <label className="dd-field"><span>{t("dd.paper")}</span>
           <Dropdown className="dd-dd" value={settings.paper} items={PAPERS.map((p) => ({ value: p, label: p }))} onChange={(v) => patch({ paper: v })} />
         </label>
-        <div className="dd-label">{t("dd.orientation")}</div>
+        <div className="dd-sublabel">{t("dd.orientation")}</div>
         <div className="dd-radios">
           <label><input type="radio" name="dd-or" checked={!settings.landscape} onChange={() => patch({ landscape: false })} />{t("dd.portrait")}</label>
           <label><input type="radio" name="dd-or" checked={settings.landscape} onChange={() => patch({ landscape: true })} />{t("dd.landscape")}</label>
         </div>
-        <div className="dd-label">{t("dd.margins")}</div>
+        <div className="dd-sublabel">{t("dd.margins")}</div>
         {margin(0, t("dd.left"))}{margin(1, t("dd.right"))}{margin(2, t("dd.top"))}{margin(3, t("dd.bottom"))}
         {restore(() => ({}), () => ({ paper: defaults.paper, landscape: defaults.landscape, margins: defaults.margins }))}
       </div>
