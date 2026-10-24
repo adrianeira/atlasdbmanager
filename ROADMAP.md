@@ -480,6 +480,9 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 - Exportar o resultado de uma consulta exige um único comando que devolva linhas.
 - Exportação de tabela sem filtro/ordenação usa a ordem natural do servidor.
 
+> Itens marcados "não confirmado na referência" saíram de uma lista de funções que um gerenciador de PostgreSQL costuma ter, não de
+> uma captura. Só entram na esteira depois que aparecerem numa captura de `capturas/`.
+
 ## 1. Conexões
 - [ ] Importar/exportar conexões (arquivo de perfil), compartilhamento via nuvem
 - [ ] Importar conexão a partir de URI *(`src/components/ConnectionDialog.tsx:547,556`)*
@@ -528,13 +531,13 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 - [x] Histórico de consultas e favoritos (ver "Histórico de consultas" em Entregues)
 - [ ] Transaction panel, Parameters window
 - [ ] Beautify / Minify além de "Formatar"
-- [ ] Plano de execução gráfico *(hoje `EXPLAIN` só em texto)*
+- [ ] Plano de execução gráfico *(hoje `EXPLAIN` só em texto; **não confirmado na referência**)*
 
 ## 5. Designers
 - [x] Trigger designer completo (aba Gatilhos da tabela; ver "Gatilhos" em Entregues)
-- [ ] Rule designer *(PostgreSQL)*
-- [ ] Partition designer
-- [ ] Inherits browser *(`src/documents/TableDesignerDoc.tsx:617`)*
+- [x] Rules: já são uma aba do designer de tabela (como na referência); não há designer à parte
+- [ ] Partition designer *(**não confirmado na referência**)*
+- [ ] Inherits browser *(`src/documents/TableDesignerDoc.tsx:617`; **não confirmado na referência**)*
 - [ ] Preview de dados no designer
 
 ## 6. Tipos de objeto não implementados
@@ -543,11 +546,11 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 - [ ] Debugger de PL/pgSQL
 - [x] Type (ENUM, composto, domínio): designer (ver "Tipos" em Entregues)
 - [x] Sequence: designer, reiniciar, definir valor (ver "Sequências" em Entregues)
-- [ ] Event Trigger (gatilhos de evento do banco; os gatilhos de tabela já estão no designer)
+- [ ] Event Trigger (gatilhos de evento do banco; os gatilhos de tabela já estão no designer; **não confirmado na referência**)
 - [x] Extension: lista, instalar, atualizar, mover de schema e remover (ver "Extensões" em Entregues)
 - [x] Foreign Server (ver "Foreign Server" em Entregues)
 - [x] Foreign Table (ver "Foreign Table" em Entregues)
-- [ ] Publication / Subscription (replicação lógica)
+- [ ] Publication / Subscription (replicação lógica; **não confirmado na referência**)
 - [x] Role / User manager: atributos, senha e participações (ver "Usuários e papéis" em Entregues); o gerenciador de
       privilégios por objeto segue em aberto
 - [ ] Tablespace
