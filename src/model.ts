@@ -118,6 +118,10 @@ export interface ConnectionMock {
   starred?: boolean;
   /** Há senha salva no cofre de credenciais do sistema para este perfil. */
   hasPassword?: boolean;
+  /** Lista personalizada de bancos (aba Databases): só eles aparecem na árvore; `autoOpen` abre o banco ao conectar. */
+  customDbs?: { name: string; autoOpen: boolean }[];
+  /** Observações da conexão (aba Remarks). */
+  remarks?: string;
 }
 
 export type ConnectionColor = "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "gray";

@@ -154,6 +154,8 @@ function toRecord(c: ConnectionMock, sortOrder: number): ProfileRecord {
   const options: Record<string, unknown> = { sslMode: c.sslMode ?? "disable" };
   if (c.color) options.color = c.color;
   if (c.starred) options.starred = true;
+  if (c.customDbs) options.customDbs = c.customDbs;
+  if (c.remarks) options.remarks = c.remarks;
   return {
     id: c.id, name: c.name, provider: c.provider, host: c.host, port: c.port, initialDatabase: c.initialDatabase,
     user: c.user, environment: c.environment ?? "development", options, sortOrder, hasPassword: !!c.hasPassword,
@@ -171,6 +173,8 @@ function fromRecord(r: ProfileRecord): ConnectionMock {
       starred: o.starred === true,
     }),
     hasPassword: r.hasPassword,
+    customDbs: Array.isArray(o.customDbs) ? (o.customDbs as { name: string; autoOpen: boolean }[]).filter((d) => d && typeof d.name === "string").map((d) => ({ name: d.name, autoOpen: d.autoOpen === true })) : undefined,
+    remarks: typeof o.remarks === "string" ? o.remarks : undefined,
   };
 }
 
@@ -456,6 +460,15 @@ export default function App() {
       comment: dbs.comments[name],
     }));
 
+  /** Bancos do servidor; com lista personalizada (aba Databases) só os da lista aparecem. */
+  const fetchDatabases = async (connId: string, includeHidden: boolean) => {
+    const dbs = await pg.listDatabases(connId, includeHidden);
+    const custom = connectionsRef.current.find((c) => c.id === connId)?.customDbs;
+    if (!custom) return dbs;
+    const wanted = new Set(custom.map((d) => d.name));
+    return { ...dbs, databases: dbs.databases.filter((n) => wanted.has(n)), hidden: 0 };
+  };
+
   /** Abre a sessão no servidor e lê bancos/roles. Rejeita se a senha ainda não é conhecida. */
   const openSession = async (connId: string) => {
     if (openRef.current.has(connId)) return;
@@ -463,7 +476,7 @@ export default function App() {
     if (!conn) return;
     // Sem senha digitada nesta sessão, o núcleo usa a do cofre (profileId); ela não vem para a UI.
     const info = await pg.open(connId, paramsFor(conn), conn.id);
-    const dbs = await pg.listDatabases(connId, showHiddenRef.current);
+    const dbs = await fetchDatabases(connId, showHiddenRef.current);
     const roles = await pg.listRoles(connId).catch(() => []);
     updateConn(connId, (c) => ({
       ...c,
@@ -487,7 +500,24 @@ export default function App() {
       }
       setConnecting((s) => add(s, connId));
       void openSession(connId)
-        .then(() => setExpanded((s) => add(s, `conn:${seg(connId)}`)))
+        .then(() => {
+          setExpanded((s) => add(s, `conn:${seg(connId)}`));
+          // Bancos marcados em "Auto Open" (aba Databases) abrem ao conectar. A lista de bancos acabou de entrar no estado:
+          // espera o React refletir (até 3 s) para `loadDatabase` achá-los.
+          for (const d of conn.customDbs ?? []) {
+            if (!d.autoOpen) continue;
+            void (async () => {
+              for (let i = 0; i < 30; i++) {
+                if (connectionsRef.current.find((c) => c.id === connId)?.databases.some((x) => x.name === d.name)) break;
+                await new Promise((r) => window.setTimeout(r, 100));
+              }
+              await loadDatabase(connId, d.name);
+              const dbId = `db:${seg(connId)}/${seg(d.name)}`;
+              setOpenDatabases((s) => add(s, dbId));
+              setExpanded((s) => add(s, dbId));
+            })().catch(() => undefined);
+          }
+        })
         .catch((e) => {
           const err = toAtlasError(e);
           // Senha recusada: pede de novo em vez de repetir a tentativa (spec §26.2).
@@ -613,7 +643,7 @@ export default function App() {
     const fail = (e: unknown) => showError(t("cmd.refresh"), e);
     if (node.kind === "connection") {
       void withLoading(node.id, async () => {
-        const dbs = await pg.listDatabases(connId, showHiddenRef.current);
+        const dbs = await fetchDatabases(connId, showHiddenRef.current);
         updateConn(connId, (cc) => ({ ...cc, hiddenDatabases: dbs.hidden, databases: mergeDatabases(cc.databases, dbs) }));
       }).catch(fail);
     } else if (node.kind === "database" && c.database) {
@@ -794,7 +824,7 @@ export default function App() {
     patchLayout({ showHidden: next });
     for (const c of connectionsRef.current) {
       if (!c.live || !openRef.current.has(c.id)) continue;
-      void pg.listDatabases(c.id, next)
+      void fetchDatabases(c.id, next)
         .then((dbs) => {
           updateConn(c.id, (cc) => ({ ...cc, hiddenDatabases: dbs.hidden, databases: mergeDatabases(cc.databases, dbs) }));
           for (const d of c.databases) if (d.loaded) void loadDatabase(c.id, d.name, false, true).catch(() => undefined);
@@ -1272,6 +1302,8 @@ export default function App() {
       name: form.name, provider: form.provider, host: form.host, port: Number(form.port) || 0, user: form.user,
       initialDatabase: form.initialDatabase, environment: form.environment,
       sslMode: (form.useSsl ? form.sslMode : "disable") as ConnectionMock["sslMode"],
+      customDbs: form.customDbList ? form.databases : undefined,
+      remarks: form.remarks.trim() ? form.remarks : undefined,
     };
     const id = editing?.id ?? `c${Date.now().toString(36)}`;
     // "Salvar senha" marcado: vai para o cofre do sistema (app desktop). Desmarcado: só na memória

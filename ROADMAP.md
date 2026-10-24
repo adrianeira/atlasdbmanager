@@ -496,7 +496,9 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 - [ ] Compartilhamento de conexões via nuvem
 - [x] **URI da conexão**: botão **URI...** no formulário (mostra e aceita `postgresql://usuario:senha@host:porta/banco?sslmode=...`; a senha não
       aparece de volta) e **Nova conexão com URI...** no primeiro passo; `allow`/`prefer` valem como sem TLS *(`src/connectionUri.ts`)*
-- [ ] Adicionar/remover banco manualmente no diálogo *(`src/components/ConnectionDialog.tsx:431-432`)*
+- [x] **Aba Databases** do diálogo de conexão: "Use custom database list", adicionar/remover banco da lista e **Auto Open**; com a lista
+      ligada só esses bancos aparecem na árvore e os marcados abrem ao conectar. A aba **Remarks** também passou a ser guardada
+      *(`src/components/ConnectionDialog.tsx`, opções do perfil)*
 - [ ] SSH tunnel
 - [ ] HTTP tunnel
 - [ ] Autenticação Kerberos/GSSAPI

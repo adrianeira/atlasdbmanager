@@ -100,6 +100,7 @@ export function formFromConnection(c: ConnectionMock): ConnectionForm {
   return {
     ...defaultForm(p), name: c.name, host: c.host, port: String(c.port), initialDatabase: c.initialDatabase, user: c.user,
     environment: (c.environment as Environment) ?? "development", useSsl: !!ssl, sslMode: ssl ? c.sslMode! : "verify-full",
+    customDbList: !!c.customDbs, databases: c.customDbs ?? [], remarks: c.remarks ?? "",
     // Marcado por padrão (como a referência). Com o campo de senha vazio, nada muda no cofre.
     savePassword: true,
   };
@@ -248,6 +249,8 @@ export function ConnectionDialog({ editing, recentProviders, knownPassword = "",
   };
 
   /** Diálogo "URI...": `forNew` vem do primeiro passo (a URI escolhe o tipo PostgreSQL e abre o formulário). */
+  const [dbName, setDbName] = useState("");
+  const [dbSel, setDbSel] = useState<string | null>(null);
   const [uriDlg, setUriDlg] = useState<{ text: string; forNew: boolean; error: boolean } | null>(null);
   const openUri = (forNew: boolean) => {
     const text = forNew ? "" : formatConnectionUri({ host: form.host, port: form.port, user: form.user, database: form.initialDatabase, sslMode: form.useSsl ? form.sslMode : "disable" });
@@ -450,18 +453,52 @@ export function ConnectionDialog({ editing, recentProviders, knownPassword = "",
     </div>
   );
 
+  const dbOff = !form.customDbList;
+  const addDb = () => {
+    const name = dbName.trim();
+    if (!name || form.databases.some((d) => d.name === name)) return;
+    set("databases", [...form.databases, { name, autoOpen: false }]);
+    setDbName("");
+    setDbSel(name);
+  };
   const databasesTab = (
     <div className="form-grid form-grid-wide">
       {check("customDbList", "conn.customDbList")}
-      <div className="mini-grid">
+      <div className={`mini-grid${dbOff ? " is-disabled" : ""}`}>
         <div className="mini-grid-head"><span>{t("info.database")}</span><span>{t("conn.autoOpen")}</span></div>
         {form.databases.map((d) => (
-          <div key={d.name} className="mini-grid-row"><span>{d.name}</span><span><input type="checkbox" checked={d.autoOpen} readOnly /></span></div>
+          <div key={d.name} className={`mini-grid-row${dbSel === d.name ? " is-selected" : ""}`} onClick={() => !dbOff && setDbSel(d.name)}>
+            <span>{d.name}</span>
+            <span>
+              <input
+                type="checkbox"
+                checked={d.autoOpen}
+                disabled={dbOff}
+                aria-label={t("conn.autoOpen")}
+                onChange={(e) => set("databases", form.databases.map((x) => (x.name === d.name ? { ...x, autoOpen: e.target.checked } : x)))}
+              />
+            </span>
+          </div>
         ))}
       </div>
       <div className="form-buttons-left">
-        <button type="button" className="btn" disabled>{t("conn.addDb")}</button>
-        <button type="button" className="btn" disabled>{t("conn.removeDb")}</button>
+        <input
+          className="field"
+          style={{ width: 200 }}
+          disabled={dbOff}
+          value={dbName}
+          placeholder={t("info.database")}
+          spellCheck={false}
+          onChange={(e) => setDbName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") addDb(); }}
+        />
+        <button type="button" className="btn" disabled={dbOff || !dbName.trim()} onClick={addDb}>{t("conn.addDb")}</button>
+        <button
+          type="button"
+          className="btn"
+          disabled={dbOff || !form.databases.some((d) => d.name === dbSel)}
+          onClick={() => { set("databases", form.databases.filter((d) => d.name !== dbSel)); setDbSel(null); }}
+        >{t("conn.removeDb")}</button>
       </div>
     </div>
   );

@@ -2632,3 +2632,6 @@ select.et-input {
 
 .conn-uri-dialog { width: min(520px, 92vw); }
 .conn-uri-dialog .modal-body { display: flex; flex-direction: column; gap: 6px; }
+
+.mini-grid-row.is-selected { background: var(--c-selected); }
+.mini-grid.is-disabled { color: var(--c-text-disabled); }
