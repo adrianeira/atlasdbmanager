@@ -589,7 +589,6 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 - [ ] AI integrado (chat, geração de SQL, explicação, refactor)
 - [ ] Sincronização em nuvem (conexões, consultas, snippets, modelos)
 - [ ] Colaboração: comentários, histórico de versões
-- [ ] Compare Database (schema diff)
 - [x] Server Monitor (ver "Server Monitor" em Entregues)
 - [x] Query Builder visual (ver "Query Builder" em Entregues)
 - [ ] Pivot Table
