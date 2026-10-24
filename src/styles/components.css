@@ -2752,4 +2752,19 @@ select.et-input {
 .result-pin > .result-pin-close { padding: 0 8px 0 2px; color: var(--c-text-muted); }
 
 /* Lista de sugestões do editor: sem sublinhado na parte digitada. */
-.cm-tooltip-autocomplete .cm-completionMatchedText { text-decoration: none !important; }
+.cm-tooltip-autocomplete .cm-completionMatchedText { text-decoration: none !important; background: rgba(255, 208, 0, 0.4); }
+
+/* Lista de sugestões do editor: um ícone por tipo (tabela, view, função, coluna, palavra-chave), o schema à direita e o trecho digitado destacado. */
+.cm-tooltip-autocomplete > ul > li { display: flex; align-items: center; }
+.cm-tooltip-autocomplete .cm-completionIcon { width: 16px !important; height: 16px; padding: 0 !important; margin-right: 6px; font-size: 0 !important; opacity: 1 !important; background: center / 16px no-repeat; box-sizing: border-box; flex: none; }
+.cm-tooltip-autocomplete .cm-completionIcon::after { content: none !important; }
+.cm-tooltip-autocomplete .cm-completionIcon-table { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1.5' y='2.5' width='13' height='11' rx='1.5' fill='%23fff' stroke='%232f7fd0'/%3E%3Crect x='1.5' y='2.5' width='13' height='3.5' fill='%232f7fd0'/%3E%3Cpath d='M1.5 9.5h13M6 6v7.5' stroke='%232f7fd0' fill='none'/%3E%3C/svg%3E"); }
+.cm-tooltip-autocomplete .cm-completionIcon-view { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1.5' y='2.5' width='13' height='3' fill='%232f7fd0'/%3E%3Ccircle cx='5' cy='10' r='2.6' fill='%23fff' stroke='%232f7fd0' stroke-width='1.2'/%3E%3Ccircle cx='11' cy='10' r='2.6' fill='%23fff' stroke='%232f7fd0' stroke-width='1.2'/%3E%3Cpath d='M7.6 10h.8' stroke='%232f7fd0'/%3E%3C/svg%3E"); }
+.cm-tooltip-autocomplete .cm-completionIcon-matview { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1.5' y='2.5' width='13' height='3' fill='%23d6453d'/%3E%3Ccircle cx='5' cy='10' r='2.6' fill='%23fff' stroke='%23d6453d' stroke-width='1.2'/%3E%3Ccircle cx='11' cy='10' r='2.6' fill='%23fff' stroke='%23d6453d' stroke-width='1.2'/%3E%3Cpath d='M7.6 10h.8' stroke='%23d6453d'/%3E%3C/svg%3E"); }
+.cm-tooltip-autocomplete .cm-completionIcon-function { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext x='1' y='12' font-family='serif' font-style='italic' font-weight='bold' font-size='12' fill='%232f7fd0'%3Ef%3C/text%3E%3Ctext x='7.5' y='14' font-family='sans-serif' font-size='8' fill='%232f7fd0'%3Ex%3C/text%3E%3C/svg%3E"); }
+.cm-tooltip-autocomplete .cm-completionIcon-column { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='5' y='1.5' width='6' height='13' fill='%23e3e8ee' stroke='%238a96a3'/%3E%3Cpath d='M5 5.5h6M5 9.5h6' stroke='%238a96a3'/%3E%3C/svg%3E"); }
+.cm-tooltip-autocomplete .cm-completionIcon-keyword { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='5.5' cy='6' r='3.2' fill='%23f2b01e' stroke='%23c98a0a'/%3E%3Cpath d='M7.8 8.3L13.5 14M11.3 11.8l1.8-1.8' stroke='%23c98a0a' stroke-width='1.6' fill='none'/%3E%3C/svg%3E"); }
+.cm-tooltip-autocomplete .cm-completionIcon-type { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext x='3.5' y='12.5' font-family='sans-serif' font-style='italic' font-size='12' fill='%238a96a3'%3Et%3C/text%3E%3C/svg%3E"); }
+.cm-tooltip-autocomplete .cm-completionIcon-property { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='5' y='1.5' width='6' height='13' fill='%23e3e8ee' stroke='%238a96a3'/%3E%3Cpath d='M5 5.5h6M5 9.5h6' stroke='%238a96a3'/%3E%3C/svg%3E"); }
+.cm-tooltip-autocomplete .cm-completionDetail { margin-left: 6px; color: var(--c-text-muted); font-style: normal; }
+.cm-tooltip-autocomplete .cm-completionWhere { margin-left: auto; padding-left: 24px; color: var(--c-text-muted); }

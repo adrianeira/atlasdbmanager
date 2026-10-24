@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { defaultKeymap, history, historyKeymap, indentWithTab, toggleComment } from "@codemirror/commands";
-import { PostgreSQL, sql } from "@codemirror/lang-sql";
+import { PostgreSQL, sql, type SQLNamespace } from "@codemirror/lang-sql";
 import { bracketMatching, foldGutter, HighlightStyle, indentOnInput, indentUnit, syntaxHighlighting } from "@codemirror/language";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import {
@@ -11,6 +11,7 @@ import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/sea
 import { tags } from "@lezer/highlight";
 import { onZoom, zoomIn, zoomOut, zoomReset } from "../editorZoom";
 import { useOptions, type AppOptions } from "../options";
+import type { AtlasCompletion } from "../sqlCompletion";
 
 /* Cores de sintaxe próprias, legíveis nos temas claro e escuro (via variáveis CSS). */
 
@@ -59,8 +60,8 @@ export interface SqlEditorHandle {
 interface Props {
   value: string;
   readOnly?: boolean;
-  /** tabela → colunas, para o autocomplete. */
-  schema?: Record<string, string[]>;
+  /** Nomes para o autocomplete: tabelas (com colunas), views e funções; ver `completionNamespace`. */
+  schema?: SQLNamespace;
   defaultSchema?: string;
   placeholder?: string;
   /** Linhas (a partir de 1) com o fundo marcado: `add` em verde e `remove` em vermelho (comparação de DDL). */
@@ -82,7 +83,22 @@ function optionExtensions(o: AppOptions): Extension[] {
     o.wordWrap ? EditorView.lineWrapping : [],
     EditorState.tabSize.of(o.tabWidth),
     indentUnit.of(o.insertSpaces ? " ".repeat(o.tabWidth) : "	"),
-    autocompletion({ activateOnTyping: o.codeCompletion, selectOnOpen: o.autoSelectFirst }),
+    autocompletion({
+      activateOnTyping: o.codeCompletion,
+      selectOnOpen: o.autoSelectFirst,
+      // O schema (ou a tabela, no caso de coluna) no canto direito de cada sugestão.
+      addToOptions: [{
+        position: 90,
+        render: (c) => {
+          const where = (c as AtlasCompletion).where;
+          if (!where) return null;
+          const el = document.createElement("span");
+          el.className = "cm-completionWhere";
+          el.textContent = where;
+          return el;
+        },
+      }],
+    }),
   ];
 }
 

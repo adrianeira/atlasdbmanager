@@ -716,6 +716,7 @@ Hoje o menu Exibir tem só Lista, Detalhe e Ícones (`viewMode` em `src/App.tsx`
       (coluna renomeada ou apagada) é descartado e a tabela abre normal; o botão Filter & Sort fica marcado enquanto há filtro ou ordenação *(`src/tableView.ts`, preferência `tv:<chave>`)*
 - [x] **Reordenar colunas** arrastando o cabeçalho (barra azul mostra onde cai); a ordem entra na visão lembrada da tabela e na exportação
 - [x] **Consultas ligadas a um banco se comportam como as tabelas**: fechar o banco ou a conexão as fecha e guarda (com o texto); voltam quando o banco abre, e ao reabrir o app só com o banco aberto. Pergunta antes se há transação aberta; o X esquece a consulta
+- [x] **Lista de sugestões do editor como a da referência**: ícone por tipo (tabela, view, view materializada, função, coluna, palavra-chave), o schema à direita (a tabela, no caso de coluna), os argumentos da função ao lado do nome e o trecho digitado destacado em amarelo; tabelas vêm antes das funções e das palavras-chave *(`src/sqlCompletion.ts`)*
 - [x] **Restaurar layout padrão** (menu ⋯ do cabeçalho e botão no diálogo Columns): ordem, largura e visibilidade das colunas e a ordenação das linhas voltam ao padrão; o filtro fica
 - [x] **Reordenar abas** arrastando na barra (Objects fica sempre primeira); a posição é gravada e a tabela volta no lugar ao reabrir o banco
 - [ ] Perfis nomeados da visão da tabela (provável conteúdo do menu `Table Profile ▾`): salvar, aplicar, renomear e excluir. Falta a captura do menu

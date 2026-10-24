@@ -1,3 +1,4 @@
+import { completionNamespace } from "../sqlCompletion";
 import { ExplainView, type ExplainData } from "../components/ExplainView";
 import { SummaryView, type SummaryData } from "../components/SummaryView";
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
@@ -266,11 +267,7 @@ export function QueryDoc({
   }, [db, ctx.schema]);
 
 
-  const completionSchema = useMemo(() => {
-    const out: Record<string, string[]> = {};
-    for (const tb of schemaMock?.objects.table ?? []) out[tb.name] = (tb.columns ?? []).map((c) => c.name);
-    return out;
-  }, [schemaMock]);
+  const completionSchema = useMemo(() => completionNamespace(schemaMock), [schemaMock]);
 
   /** `substituted`: texto já com os parâmetros trocados (vem da janela de parâmetros). */
   const run = useCallback((selectionOnly: boolean, substituted?: string) => {
