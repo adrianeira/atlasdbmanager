@@ -673,6 +673,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
             onRefresh={dirty || loading ? undefined : refresh}
             lookupCols={lookup ? lookupCols : undefined}
             valueLabels={fkValues ? valueLabels : undefined}
+            summary
             onLookup={(row, col, anchor) => {
               const fk = fkByCol.get(col);
               if (fk) setFkOpen({ row, fk, anchor });

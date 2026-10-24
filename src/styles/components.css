@@ -2652,3 +2652,12 @@ select.et-input {
 .cell-editor-image img { max-width: none; image-rendering: auto; }
 .cell-editor-web { flex: 1; min-height: 0; border: 0; background: #fff; }
 .cell-editor-empty { flex: 1; padding: 10px; }
+
+/* Linha de resumo no rodapé do grid. */
+.dg-summary { position: sticky; bottom: 0; z-index: 2; display: flex; background: var(--c-surface-alt); border-top: 1px solid var(--c-grid-line); }
+.dg-summary .dg-rowhead { flex: none; }
+.dg-summary-cell { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 0 5px; border: 0; border-right: 1px solid var(--c-grid-line); background: none; color: var(--c-text); font: inherit; text-align: left; overflow: hidden; cursor: default; }
+.dg-summary-cell:hover { background: var(--c-hover); }
+.dg-summary-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dg-summary-arrow { flex: none; color: var(--c-text-muted); font-size: 9px; visibility: hidden; }
+.dg-summary-cell:hover .dg-summary-arrow, .dg-summary-cell.is-empty:focus-visible .dg-summary-arrow { visibility: visible; }

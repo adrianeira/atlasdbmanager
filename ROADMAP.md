@@ -552,7 +552,9 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 - [x] **Valor da chave estrangeira**: botão "FK Values" na barra da tabela troca a chave pela descrição da linha referenciada (coluna `nome`,
       `name`, `descricao`... ou a primeira de texto que não pareça chave), só em chaves de uma coluna e só na exibição (editar, copiar e o lookup "…"
       seguem com a chave); busca só as chaves da página, com parâmetros, e lembra a escolha *(`pg_fk_labels`, `crates/atlas-pg/src/exec.rs`)*
-- [ ] Agrupamento / sumário no rodapé do grid
+- [x] **Sumário no rodapé do grid** (dados da tabela): cada coluna escolhe Contagem, Distintos, Soma, Média, Mínimo ou Máximo sobre as linhas
+      carregadas; soma e média com decimal exato (sem erro de ponto flutuante, conferido contra o banco); a dica mostra o valor inteiro
+      *(`src/summary.ts`, `DataGrid.tsx`)*. Ainda sem o agrupamento de linhas
 
 ## 4. Editor SQL
 - [x] Snippet manager (ver "Snippets" em Entregues)
