@@ -12,7 +12,7 @@ entrada" no código (botão/ação existente, só falta implementar o comportame
 > **12 (Features cross-cutting)** não serão trabalhadas no ciclo atual. Ficam listadas aqui
 > apenas como referência de paridade futura com o produto de referência.
 
-## Entregues neste ciclo (até 2026-10-23)
+## Entregues neste ciclo (até 2026-10-24)
 
 Fora da lista original de paridade: ajustes de UX, novos recursos e polimento visual.
 
