@@ -655,7 +655,7 @@ export default function App() {
 
   const openTab = (tab: Omit<DocTab, "id">, recentLabel?: string) => {
     // Reaproveita a aba se o mesmo objeto já estiver aberto no mesmo modo.
-    const existing = tab.object && tabs.find((x) => x.kind === tab.kind && x.connectionId === tab.connectionId && x.database === tab.database && x.schema === tab.schema && x.object === tab.object);
+    const existing = tab.object && !appOptions.multipleForms && tabs.find((x) => x.kind === tab.kind && x.connectionId === tab.connectionId && x.database === tab.database && x.schema === tab.schema && x.object === tab.object);
     if (existing) {
       setActiveTab(existing.id);
       return;

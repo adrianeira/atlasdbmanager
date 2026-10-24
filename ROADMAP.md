@@ -289,12 +289,19 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       *(`crates/atlas-pg/src/dump.rs`, `src-tauri/src/dump.rs`, `src/components/DumpDialog.tsx`)*
 
 ### Opções
-- [x] **Ferramentas → Opções...** com cinco abas: **Geral** (idioma, tema claro/escuro/sistema, legendas da barra), **Editor
-      SQL** (tamanho da fonte, linhas mostradas por resultado), **Dados da tabela** (registros por página), **Histórico**
-      (gravar, quantas consultas guardar, limpar) e **Dados locais** (caminho e versão do banco local, copiar caminho)
-- [x] Valores fora do limite são corrigidos ao sair do campo; **Restaurar padrões**; as opções ficam no banco local
-      (`ui.options`) e valem na hora
+- [x] **Ferramentas → Opções...** no desenho da referência: lista de categorias à esquerda e o conteúdo à direita. Categorias com
+      efeito real: **General** (idioma, tema, legendas da barra, permitir abrir várias abas do mesmo objeto), **Code Completion**
+      (usar completar código, selecionar a primeira sugestão), **SQL Editor** (números de linha, dobra de código, destaque de
+      parênteses e de sintaxe, quebra de linha, largura do Tab, espaços no Tab, tamanho da fonte, linhas por resultado),
+      **Table Data** (limitar registros ao abrir, registros por página, sombreamento das linhas: nenhum, a cada 2 ou a cada 3),
+      mais **History** e **Local Data** do Atlas; todas valem na hora, sem reiniciar
+- [x] Valores fora do limite são corrigidos ao sair do campo; **Restaurar padrões**; as opções ficam no banco local (`ui.options`)
       *(`src/components/OptionsDialog.tsx`, `src/options.ts`)*
+- [ ] Da referência ainda sem equivalente: Tabs (onde abrir a aba nova, o que abrir ao iniciar), cores e fonte do editor, formatos de
+      data/hora e separador de milhar, "Auto begin transaction", fonte do grid, Auto Recovery (salvar consultas sozinho),
+      File Locations, Connectivity (proxy), Advanced e confirmações ao fechar. As categorias AI e Environment (SQL*Plus, Mongo,
+      OCI) dependem de recursos que o Atlas não tem
+- Padrão do sombreamento: a cada 2 linhas (a referência vem com "Every Third Row")
 
 ### Navegação / Árvore
 - [x] **Layout da área de objetos como na referência**: a aba Objects não desenha mais uma segunda barra vertical ao lado do

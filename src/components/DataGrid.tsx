@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { copyToClipboard, readClipboard } from "../clipboard";
 import type { MenuEntry } from "../commands";
 import { useT } from "../i18n";
+import { useOptions } from "../options";
 import { quoteIdent, type CellValue } from "../model";
 import { DateTimePopup, type DateTimeKind } from "./DateTimePopup";
 import { PopupMenu } from "./PopupMenu";
@@ -195,6 +196,9 @@ export function DataGrid({
   sqlTarget, onDeleteRow, onRefresh, findQuery, activeFind, highlightAll, onSaveAs, onSortColumn, onClearSort, onAddFilter, onActiveCell, onOpenCellEditor,
 }: Props) {
   const t = useT();
+  const { rowShading } = useOptions();
+  /** Linhas sombreadas (Opções → Registros → Row Shading). */
+  const shadeRow = (ri: number) => (rowShading === "every2" ? ri % 2 === 1 : rowShading === "every3" ? ri % 3 === 2 : false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; row: number; col: number } | null>(null);
   const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number; col: number } | null>(null);
@@ -546,7 +550,7 @@ export function DataGrid({
           const ri = first + k;
           const isActive = ri === activeRow;
           // Linhas zebradas (alternadas), como na referência.
-          const cls = `dg-row${ri % 2 === 1 ? " is-alt" : ""}${isActive ? " is-active" : ""}${deletedRows?.has(ri) ? " is-deleted" : ""}${newRows?.has(ri) ? " is-new" : ""}`;
+          const cls = `dg-row${shadeRow(ri) ? " is-alt" : ""}${isActive ? " is-active" : ""}${deletedRows?.has(ri) ? " is-deleted" : ""}${newRows?.has(ri) ? " is-new" : ""}`;
           return (
             <div key={ri} className={cls} style={{ top: headerHeight + ri * rowHeight, height: rowHeight }} role="row" aria-rowindex={ri + 1}>
               <div className="dg-rowhead" style={{ width: rowHeadWidth }} />

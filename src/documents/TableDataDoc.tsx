@@ -50,7 +50,7 @@ const MAX_PAGE_SIZE = 1_000_000;
 
 export function TableDataDoc({ schema, table: tableProp, active, production, onStatus, backend, lookup, isView, onDirty, onExport }: Props) {
   const t = useT();
-  const DEFAULT_PAGE_SIZE = useOptions().pageSize;
+  const { pageSize: DEFAULT_PAGE_SIZE, limitRecords } = useOptions();
   const [table, setTable] = useState<DbObject>(tableProp);
   const cols = useMemo(() => table.columns ?? [], [table]);
   const keyCols = cols.map((c, i) => ({ c, i })).filter((x) => x.c.key).sort((a, b) => (a.c.key ?? 0) - (b.c.key ?? 0));
@@ -99,7 +99,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   const [sqlText, setSqlText] = useState(() => selectSql(schema, tableProp.name, DEFAULT_PAGE_SIZE, 0));
   // Engrenagem do rodapé (como na referência): troca a paginação por "Limitar registros".
   const [limitPanel, setLimitPanel] = useState(false);
-  const [limitOn, setLimitOn] = useState(true);
+  const [limitOn, setLimitOn] = useState(limitRecords);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [sizeText, setSizeText] = useState(String(DEFAULT_PAGE_SIZE));
   const [truncated, setTruncated] = useState(false);

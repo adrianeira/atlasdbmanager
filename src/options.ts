@@ -1,5 +1,7 @@
 import { createContext, useContext } from "react";
 
+export type RowShading = "none" | "every2" | "every3";
+
 /** Opções da tela Ferramentas → Opções, guardadas no banco local (preferência `ui.options`). */
 export interface AppOptions {
   /** Tamanho da fonte do editor SQL, em px. */
@@ -8,27 +10,68 @@ export interface AppOptions {
   queryMaxRows: number;
   /** Registros por página ao abrir uma tabela. */
   pageSize: number;
+  /** Editor SQL. */
+  showLineNumbers: boolean;
+  codeFolding: boolean;
+  braceHighlight: boolean;
+  syntaxHighlight: boolean;
+  wordWrap: boolean;
+  tabWidth: number;
+  insertSpaces: boolean;
+  /** Completar código (lista de sugestões ao digitar) e já marcar a primeira. */
+  codeCompletion: boolean;
+  autoSelectFirst: boolean;
+  /** Registros: abrir tabelas com "Limitar registros" ligado e o sombreamento das linhas. */
+  limitRecords: boolean;
+  rowShading: RowShading;
+  /** Geral: permitir abrir o mesmo objeto em mais de uma aba. */
+  multipleForms: boolean;
 }
 
-export const DEFAULT_OPTIONS: AppOptions = { editorFontSize: 13, queryMaxRows: 1000, pageSize: 1000 };
+export const DEFAULT_OPTIONS: AppOptions = {
+  editorFontSize: 13, queryMaxRows: 1000, pageSize: 1000,
+  showLineNumbers: true, codeFolding: true, braceHighlight: true, syntaxHighlight: true, wordWrap: false, tabWidth: 2, insertSpaces: true,
+  codeCompletion: true, autoSelectFirst: true,
+  limitRecords: true, rowShading: "every2",
+  multipleForms: false,
+};
 
 export const OPTION_LIMITS = {
   editorFontSize: [9, 28],
   queryMaxRows: [10, 100_000],
   pageSize: [10, 100_000],
+  tabWidth: [1, 16],
 } as const;
+
+type NumericKey = keyof typeof OPTION_LIMITS;
 
 const clamp = (v: unknown, [min, max]: readonly [number, number], fallback: number): number => {
   const n = Math.floor(Number(v));
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
 };
 
+const bool = (v: unknown, fallback: boolean) => (typeof v === "boolean" ? v : fallback);
+
 /** Valores guardados (possivelmente de outra versão, ou editados à mão) viram opções válidas. */
 export function sanitizeOptions(raw: Partial<Record<keyof AppOptions, unknown>> | null | undefined): AppOptions {
+  const d = DEFAULT_OPTIONS;
+  const num = (k: NumericKey) => clamp(raw?.[k], OPTION_LIMITS[k], d[k]);
   return {
-    editorFontSize: clamp(raw?.editorFontSize, OPTION_LIMITS.editorFontSize, DEFAULT_OPTIONS.editorFontSize),
-    queryMaxRows: clamp(raw?.queryMaxRows, OPTION_LIMITS.queryMaxRows, DEFAULT_OPTIONS.queryMaxRows),
-    pageSize: clamp(raw?.pageSize, OPTION_LIMITS.pageSize, DEFAULT_OPTIONS.pageSize),
+    editorFontSize: num("editorFontSize"),
+    queryMaxRows: num("queryMaxRows"),
+    pageSize: num("pageSize"),
+    tabWidth: num("tabWidth"),
+    showLineNumbers: bool(raw?.showLineNumbers, d.showLineNumbers),
+    codeFolding: bool(raw?.codeFolding, d.codeFolding),
+    braceHighlight: bool(raw?.braceHighlight, d.braceHighlight),
+    syntaxHighlight: bool(raw?.syntaxHighlight, d.syntaxHighlight),
+    wordWrap: bool(raw?.wordWrap, d.wordWrap),
+    insertSpaces: bool(raw?.insertSpaces, d.insertSpaces),
+    codeCompletion: bool(raw?.codeCompletion, d.codeCompletion),
+    autoSelectFirst: bool(raw?.autoSelectFirst, d.autoSelectFirst),
+    limitRecords: bool(raw?.limitRecords, d.limitRecords),
+    rowShading: raw?.rowShading === "none" || raw?.rowShading === "every2" || raw?.rowShading === "every3" ? raw.rowShading : d.rowShading,
+    multipleForms: bool(raw?.multipleForms, d.multipleForms),
   };
 }
 

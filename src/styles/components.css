@@ -2143,7 +2143,7 @@ select.et-input {
 .ed-sep { height: 1px; margin: 4px 0; background: var(--c-border); }
 
 /* Opções. */
-.opt-dialog { width: min(600px, 92vw); }
+.opt-dialog { width: min(760px, 94vw); }
 .opt-body { display: flex; flex-direction: column; gap: 10px; min-height: 230px; }
 .opt-path { width: 100%; }
 
@@ -2611,3 +2611,13 @@ select.et-input {
 .fd-chevron { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; padding: 0; border: 0; background: none; color: var(--c-text-muted); }
 .fd-busy { display: flex; align-items: center; justify-content: center; gap: 8px; }
 .fd-busy .spinner { flex: none; }
+
+/* Tela Opções: lista de categorias à esquerda, como na referência. */
+.opt-layout { display: flex; min-height: 360px; }
+.opt-nav { flex: none; width: 150px; display: flex; flex-direction: column; padding: 4px 0; border-right: 1px solid var(--c-border); background: var(--c-surface); }
+.opt-nav-item { height: 22px; padding: 0 10px; border: 0; background: none; color: var(--c-text); font: inherit; text-align: left; cursor: default; }
+.opt-nav-item:hover { background: var(--c-hover); }
+.opt-nav-item.is-active { background: var(--c-selected); }
+.opt-layout .opt-body { flex: 1; min-width: 0; }
+.opt-section { color: var(--c-text); margin-bottom: 2px; }
+.opt-indent { margin-left: 18px; }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { errorText, local, toAtlasError } from "../backend";
 import { useT, type Lang, type MessageKey } from "../i18n";
-import { DEFAULT_OPTIONS, OPTION_LIMITS, sanitizeOptions, type AppOptions } from "../options";
+import { DEFAULT_OPTIONS, OPTION_LIMITS, sanitizeOptions, type AppOptions, type RowShading } from "../options";
 import { MessageDialog } from "./MessageDialog";
 import { SmallIcon } from "../icons";
 
@@ -21,9 +21,12 @@ interface Props {
   onClose: () => void;
 }
 
-type Tab = "general" | "editor" | "data" | "history" | "storage";
+type Tab = "general" | "completion" | "editor" | "data" | "history" | "storage";
+type NumKey = "editorFontSize" | "queryMaxRows" | "pageSize" | "tabWidth";
+type BoolKey = { [K in keyof AppOptions]: AppOptions[K] extends boolean ? K : never }[keyof AppOptions];
 const TABS: { id: Tab; label: MessageKey }[] = [
   { id: "general", label: "opt.general" },
+  { id: "completion", label: "opt.completion" },
   { id: "editor", label: "opt.editor" },
   { id: "data", label: "opt.data" },
   { id: "history", label: "opt.history" },
@@ -36,7 +39,8 @@ export function OptionsDialog({ options, appearance, onApply, onClose }: Props) 
   const [opts, setOpts] = useState<AppOptions>(options);
   const [look, setLook] = useState<AppearanceOptions>(appearance);
   // Os campos numéricos são texto enquanto se digita; viram número válido ao sair do campo.
-  const [text, setText] = useState({ editorFontSize: String(options.editorFontSize), queryMaxRows: String(options.queryMaxRows), pageSize: String(options.pageSize) });
+  const numbers = (o: AppOptions) => ({ editorFontSize: String(o.editorFontSize), queryMaxRows: String(o.queryMaxRows), pageSize: String(o.pageSize), tabWidth: String(o.tabWidth) });
+  const [text, setText] = useState(numbers(options));
   const [recording, setRecording] = useState(true);
   const [keep, setKeep] = useState("2000");
   const [info, setInfo] = useState<{ path: string; schemaVersion: number | null; error: string | null } | null>(null);
@@ -56,7 +60,7 @@ export function OptionsDialog({ options, appearance, onApply, onClose }: Props) 
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, confirmClear]);
 
-  const num = (key: keyof AppOptions) => (
+  const num = (key: NumKey) => (
     <input
       className="field exp-num"
       inputMode="numeric"
@@ -69,7 +73,12 @@ export function OptionsDialog({ options, appearance, onApply, onClose }: Props) 
       }}
     />
   );
-  const limit = (key: keyof AppOptions) => `${OPTION_LIMITS[key][0].toLocaleString()} – ${OPTION_LIMITS[key][1].toLocaleString()}`;
+  const limit = (key: NumKey) => `${OPTION_LIMITS[key][0].toLocaleString()} – ${OPTION_LIMITS[key][1].toLocaleString()}`;
+  const check = (key: BoolKey, label: MessageKey, indent = false, disabled = false) => (
+    <label className={`check-row${indent ? " opt-indent" : ""}${disabled ? " is-disabled" : ""}`}>
+      <input type="checkbox" checked={opts[key]} disabled={disabled} onChange={(e) => setOpts({ ...opts, [key]: e.target.checked })} /><span>{t(label)}</span>
+    </label>
+  );
   const row = (label: MessageKey, control: React.ReactNode, hint?: string) => (
     <div className="exp-row">
       <label>{t(label)}</label>
@@ -80,7 +89,7 @@ export function OptionsDialog({ options, appearance, onApply, onClose }: Props) 
 
   const apply = async () => {
     setError(null);
-    const finalOptions = sanitizeOptions(text);
+    const finalOptions = sanitizeOptions({ ...opts, ...text });
     try {
       await local.setPref("ui.options", finalOptions);
       await local.setPref("history.enabled", recording);
@@ -96,7 +105,7 @@ export function OptionsDialog({ options, appearance, onApply, onClose }: Props) 
 
   const restore = () => {
     setOpts(DEFAULT_OPTIONS);
-    setText({ editorFontSize: String(DEFAULT_OPTIONS.editorFontSize), queryMaxRows: String(DEFAULT_OPTIONS.queryMaxRows), pageSize: String(DEFAULT_OPTIONS.pageSize) });
+    setText(numbers(DEFAULT_OPTIONS));
     setKeep("2000");
     setRecording(true);
   };
@@ -120,11 +129,26 @@ export function OptionsDialog({ options, appearance, onApply, onClose }: Props) 
               </select>
             ))}
             <label className="check-row"><input type="checkbox" checked={look.showCaptions} onChange={(e) => setLook({ ...look, showCaptions: e.target.checked })} /><span>{t("opt.captions")}</span></label>
+            {check("multipleForms", "opt.multipleForms")}
+          </>
+        );
+      case "completion":
+        return (
+          <>
+            {check("codeCompletion", "opt.useCompletion")}
+            {check("autoSelectFirst", "opt.autoSelect", true, !opts.codeCompletion)}
           </>
         );
       case "editor":
         return (
           <>
+            {check("showLineNumbers", "opt.lineNumbers")}
+            {check("codeFolding", "opt.folding")}
+            {check("braceHighlight", "opt.braces")}
+            {check("syntaxHighlight", "opt.syntax")}
+            {check("wordWrap", "opt.wordWrap")}
+            {row("opt.tabWidth", num("tabWidth"), limit("tabWidth"))}
+            {check("insertSpaces", "opt.insertSpaces")}
             {row("opt.fontSize", num("editorFontSize"), `px (${limit("editorFontSize")})`)}
             {row("opt.maxRows", num("queryMaxRows"), limit("queryMaxRows"))}
             <div className="muted exp-note">{t("opt.maxRowsNote")}</div>
@@ -133,7 +157,15 @@ export function OptionsDialog({ options, appearance, onApply, onClose }: Props) 
       case "data":
         return (
           <>
+            {check("limitRecords", "opt.limitRecords")}
             {row("opt.pageSize", num("pageSize"), limit("pageSize"))}
+            {row("opt.rowShading", (
+              <select className="field" value={opts.rowShading} onChange={(e) => setOpts({ ...opts, rowShading: e.target.value as RowShading })}>
+                <option value="none">{t("opt.shadeNone")}</option>
+                <option value="every2">{t("opt.shadeSecond")}</option>
+                <option value="every3">{t("opt.shadeThird")}</option>
+              </select>
+            ))}
             <div className="muted exp-note">{t("opt.pageSizeNote")}</div>
           </>
         );
@@ -166,12 +198,17 @@ export function OptionsDialog({ options, appearance, onApply, onClose }: Props) 
     <div className="modal-overlay" role="presentation">
       <div className="modal opt-dialog" role="dialog" aria-label={t("opt.title")}>
         <div className="modal-header"><span className="modal-title">{t("opt.title")}</span><button type="button" className="modal-close" aria-label={t("tab.close")} title={t("tab.close")} onClick={onClose}><SmallIcon name="close" /></button></div>
-        <div className="dlg-tabs" role="tablist">
-          {TABS.map((x) => (
-            <button key={x.id} type="button" role="tab" aria-selected={tab === x.id} className={`dlg-tab${tab === x.id ? " is-active" : ""}`} onClick={() => setTab(x.id)}>{t(x.label)}</button>
-          ))}
+        <div className="opt-layout">
+          <div className="opt-nav" role="tablist" aria-orientation="vertical">
+            {TABS.map((x) => (
+              <button key={x.id} type="button" role="tab" aria-selected={tab === x.id} className={`opt-nav-item${tab === x.id ? " is-active" : ""}`} onClick={() => setTab(x.id)}>{t(x.label)}</button>
+            ))}
+          </div>
+          <div className="modal-body opt-body">
+            <div className="opt-section">{t(TABS.find((x) => x.id === tab)!.label)}</div>
+            {body()}
+          </div>
         </div>
-        <div className="modal-body opt-body">{body()}</div>
         {error && <div className="doc-banner is-warn">{error}</div>}
         <div className="modal-footer">
           <button type="button" className="btn" onClick={restore}>{t("opt.restore")}</button>

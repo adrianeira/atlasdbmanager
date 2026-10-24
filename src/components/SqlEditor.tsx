@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { defaultKeymap, history, historyKeymap, indentWithTab, toggleComment } from "@codemirror/commands";
 import { PostgreSQL, sql } from "@codemirror/lang-sql";
-import { bracketMatching, foldGutter, HighlightStyle, indentOnInput, syntaxHighlighting } from "@codemirror/language";
+import { bracketMatching, foldGutter, HighlightStyle, indentOnInput, indentUnit, syntaxHighlighting } from "@codemirror/language";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import {
   Decoration, drawSelection, EditorView, highlightActiveLineGutter, keymap, lineNumbers, placeholder as cmPlaceholder,
@@ -10,6 +10,7 @@ import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, s
 import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
 import { tags } from "@lezer/highlight";
 import { onZoom, zoomIn, zoomOut, zoomReset } from "../editorZoom";
+import { useOptions, type AppOptions } from "../options";
 
 /* Cores de sintaxe próprias, legíveis nos temas claro e escuro (via variáveis CSS). */
 
@@ -68,11 +69,30 @@ interface Props {
   handleRef?: (h: SqlEditorHandle | null) => void;
 }
 
+/** O que a tela Opções → Editor / Completar código controla; fica num compartimento para valer sem recriar o editor. */
+function optionExtensions(o: AppOptions): Extension[] {
+  return [
+    o.showLineNumbers ? lineNumbers() : [],
+    o.showLineNumbers ? highlightActiveLineGutter() : [],
+    o.codeFolding ? foldGutter() : [],
+    o.braceHighlight ? bracketMatching() : [],
+    o.syntaxHighlight ? syntaxHighlighting(atlasHighlight) : [],
+    o.wordWrap ? EditorView.lineWrapping : [],
+    EditorState.tabSize.of(o.tabWidth),
+    indentUnit.of(o.insertSpaces ? " ".repeat(o.tabWidth) : "	"),
+    autocompletion({ activateOnTyping: o.codeCompletion, selectOnOpen: o.autoSelectFirst }),
+  ];
+}
+
 export function SqlEditor({ value, readOnly, schema, defaultSchema, placeholder, lineMarks, onChange, onCursor, onRun, handleRef }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const langConf = useRef(new Compartment());
   const marksConf = useRef(new Compartment());
+  const optConf = useRef(new Compartment());
+  const options = useOptions();
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
   const cbs = useRef({ onChange, onCursor, onRun });
   cbs.current = { onChange, onCursor, onRun };
 
@@ -90,21 +110,16 @@ export function SqlEditor({ value, readOnly, schema, defaultSchema, placeholder,
       { key: "Mod-0", preventDefault: true, run: () => (zoomReset(), true) },
     ]);
     const extensions: Extension[] = [
-      lineNumbers(),
-      highlightActiveLineGutter(),
-      foldGutter(),
+      optConf.current.of(optionExtensions(optionsRef.current)),
       history(),
       drawSelection(),
       indentOnInput(),
-      bracketMatching(),
       closeBrackets(),
       highlightSelectionMatches(),
       search({ top: true }),
-      syntaxHighlighting(atlasHighlight),
       atlasTheme,
       langConf.current.of(sql({ dialect: PostgreSQL, schema, defaultSchema, upperCaseKeywords: true })),
       marksConf.current.of([]),
-      autocompletion({ activateOnTyping: true }),
       runKeys,
       keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...completionKeymap, indentWithTab]),
       // Ctrl + roda do mouse: zoom do texto.
@@ -184,6 +199,10 @@ export function SqlEditor({ value, readOnly, schema, defaultSchema, placeholder,
       .map(([cls, n]) => Decoration.line({ class: cls }).range(doc.line(n).from));
     v.dispatch({ effects: marksConf.current.reconfigure(EditorView.decorations.of(Decoration.set(ranges))) });
   }, [lineMarks, value, readOnly]);
+
+  useEffect(() => {
+    view.current?.dispatch({ effects: optConf.current.reconfigure(optionExtensions(options)) });
+  }, [options]);
 
   // Autocomplete acompanha o schema selecionado.
   useEffect(() => {
