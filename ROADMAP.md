@@ -570,7 +570,10 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
       que ficam lembrados na aba; `::cast`, textos, comentários e blocos `$$` não contam, e o texto vira literal com as aspas escapadas *(`src/sql/params.ts`)*
 - [x] **Minify SQL** (menu Query e barra da consulta): tira comentários e junta tudo numa linha, preservando textos, identificadores entre aspas e blocos
       `$$`; Beautify e Minify valem para a seleção (ou o texto todo); **Converter para maiúsculas/minúsculas** do menu Format também passaram a funcionar
-- [ ] Plano de execução gráfico *(hoje `EXPLAIN` só em texto; **não confirmado na referência**)*
+- [x] **Explain** (botão e menu Query): aba "Explain 1" depois dos resultados, com **Visual** (árvore de nós com custo acima e tabela/tipo abaixo; o nome fica vermelho
+      quando o custo próprio do nó passa do **limite de custo (%)**; zoom, salvar como imagem SVG e localizar com anterior/próximo), **JSON**, **Text**, **Statistics**
+      (por tipo de nó: quantidade, custo e %, batendo com os números da referência) e **Info** *(`src/explain.ts`, `src/components/ExplainView.tsx`)*
+- [ ] Explain: **Pin** da aba (guardar o plano ao rodar outra consulta) e a aba **Summary** dos resultados *(aparecem nas capturas; o Atlas não tem nenhum dos dois nos resultados em geral)*
 
 ## 5. Designers
 - [x] Trigger designer completo (aba Gatilhos da tabela; ver "Gatilhos" em Entregues)

@@ -1,3 +1,4 @@
+import { ExplainView, type ExplainData } from "../components/ExplainView";
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { DataGrid, typeKind, type GridColumn } from "../components/DataGrid";
 import { Dropdown } from "../components/Dropdown";
@@ -105,6 +106,8 @@ interface ResultSet {
 }
 
 interface RunOutcome {
+  /** Plano de execução (o botão Explain): vira a aba "Explain" depois dos resultados. */
+  explain?: ExplainData;
   sql: string;
   ms: number;
   results: ResultSet[];
@@ -369,15 +372,24 @@ export function QueryDoc({
     const text = editor.current?.getSelection() || editor.current?.getText() || "";
     if (!text.trim()) return;
     if (backend && conn) {
-      // EXPLAIN sem ANALYZE: o servidor só planeja, não executa o comando.
-      const sqlText = `EXPLAIN ${text.trim().replace(/;\s*$/, "")}`;
+      // EXPLAIN sem ANALYZE: o servidor só planeja, não executa o comando. Pede o plano em JSON (desenho) e em texto.
+      const query = text.trim().replace(/;\s*$/, "");
+      const sqlText = `EXPLAIN (FORMAT JSON) ${query}`;
+      const database = ctx.database ?? conn.initialDatabase;
       setRunning(true);
       void (async () => {
         try {
           await backend.ensureOpen(conn.id);
-          const res = fromLive(sqlText, await backend.execute(conn.id, ctx.database ?? conn.initialDatabase, sqlText, queryMaxRows, ctx.schema), t, queryMaxRows);
-          setOutcome(res);
-          setResultTab(res.results.length ? 1 : 0);
+          const started = performance.now();
+          const out = await backend.execute(conn.id, database, `${sqlText};\nEXPLAIN ${query}`, queryMaxRows, ctx.schema);
+          const cell = out.statements[0]?.result?.rows[0]?.[0];
+          const lines = out.statements[1]?.result?.rows.map((r) => String(r[0] ?? "")) ?? [];
+          const ms = out.elapsedMs ?? Math.round(performance.now() - started);
+          setOutcome({
+            sql: sqlText, ms, results: [], message: `${sqlText}\n> OK`,
+            explain: { json: String(cell ?? ""), text: lines.join("\n"), sql: query, at: new Date().toLocaleString(), ms, connection: conn.name, database, schema: ctx.schema },
+          });
+          setResultTab(1);
         } catch (e) {
           setOutcome({ sql: sqlText, ms: 0, results: [], message: "", error: errorText(toAtlasError(e)) });
           setResultTab(0);
@@ -613,6 +625,9 @@ export function QueryDoc({
                     {t("query.result", { n: i + 1 })}
                   </button>
                 ))}
+                {outcome.explain && (
+                  <button type="button" role="tab" aria-selected={resultTab === outcome.results.length + 1} className={`result-tab${resultTab === outcome.results.length + 1 ? " is-active" : ""}`} onClick={() => setResultTab(outcome.results.length + 1)}>{t("ex.tab", { n: 1 })}</button>
+                )}
                 <span className="spacer" />
                 <button type="button" className="result-export" disabled={!canExport} title={t("query.exportResult")} onClick={exportResult}>
                   <SmallIcon name="export" />
@@ -620,7 +635,9 @@ export function QueryDoc({
                 </button>
               </div>
               <div className="result-body">
-                {resultTab === 0 || !current ? (
+                {outcome.explain && resultTab === outcome.results.length + 1 ? (
+                  <ExplainView data={outcome.explain} />
+                ) : resultTab === 0 || !current ? (
                   <pre className={`result-message${outcome.error ? " is-error" : ""}`}>
                     {outcome.error ? `${outcome.sql}\n> ${outcome.error}` : outcome.message}
                     {"\n> "}{t("query.time", { s: (outcome.ms / 1000).toFixed(3) })}
