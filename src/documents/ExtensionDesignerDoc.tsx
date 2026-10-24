@@ -5,6 +5,7 @@ import { SqlEditor } from "../components/SqlEditor";
 import type { StatusCell } from "../components/StatusBar";
 import { useT, type MessageKey } from "../i18n";
 import { SmallIcon, type SmallIconName } from "../icons";
+import { FullscreenButton } from "../components/FullscreenButton";
 import {
   alterExtStatements, compareVersions, createExtStatements, emptyExt, fromDetail, validateExt, type ExtState,
 } from "../sql/extension";
@@ -220,7 +221,7 @@ export function ExtensionDesignerDoc({ schema, schemas, extName, serverVersionNu
       <div className="object-toolbar" role="toolbar">
         {tool("save", "des.save", dirty && !loadError ? save : undefined)}
         <div className="ot-spacer" />
-        <button type="button" className="icon-button" title={t("notImplemented")} disabled><SmallIcon name="fullscreen" /></button>
+        <FullscreenButton />
       </div>
       <div className="dlg-tabs des-tabs" role="tablist">
         {SUBTABS.map((x) => (

@@ -6,6 +6,7 @@ import { SqlEditor } from "../components/SqlEditor";
 import type { StatusCell } from "../components/StatusBar";
 import { useT, type MessageKey } from "../i18n";
 import { SmallIcon, type SmallIconName } from "../icons";
+import { FullscreenButton } from "../components/FullscreenButton";
 import {
   alterTypeStatements, CREATABLE_KINDS, createTypeStatements, emptyType, fromDetail, isAddValue, validateType,
   type Attr, type DomainCheck, type EnumLabel, type TypeKind, type TypeState,
@@ -245,7 +246,7 @@ export function TypeDesignerDoc({ schema, typeName, owners, serverVersionNum, ac
       <div className="object-toolbar" role="toolbar">
         {tool("save", "des.save", dirty && !loadError && !readOnlyKind ? save : undefined)}
         <div className="ot-spacer" />
-        <button type="button" className="icon-button" title={t("notImplemented")} disabled><SmallIcon name="fullscreen" /></button>
+        <FullscreenButton />
       </div>
       <div className="dlg-tabs des-tabs" role="tablist">
         {SUBTABS.map((x) => (

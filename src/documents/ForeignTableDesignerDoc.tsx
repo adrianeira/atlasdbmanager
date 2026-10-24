@@ -6,6 +6,7 @@ import { SqlEditor } from "../components/SqlEditor";
 import type { StatusCell } from "../components/StatusBar";
 import { useT, type MessageKey } from "../i18n";
 import { SmallIcon, type SmallIconName } from "../icons";
+import { FullscreenButton } from "../components/FullscreenButton";
 import {
   alterForeignTableStatements, createForeignTableStatements, emptyForeignTable, fromDetail, newColumn, validateForeignTable,
   type ForeignTableProblem, type ForeignTableState,
@@ -193,7 +194,7 @@ export function ForeignTableDesignerDoc({ tableName, schema, servers, roles, act
       <div className="object-toolbar" role="toolbar">
         {tool("save", "des.save", dirty && !loadError ? save : undefined)}
         <div className="ot-spacer" />
-        <button type="button" className="icon-button" title={t("notImplemented")} disabled><SmallIcon name="fullscreen" /></button>
+        <FullscreenButton />
       </div>
       <div className="dlg-tabs des-tabs" role="tablist">
         {SUBTABS.map((x) => (

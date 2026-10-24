@@ -8,6 +8,7 @@ import { SqlEditor } from "../components/SqlEditor";
 import type { StatusCell } from "../components/StatusBar";
 import { useT, type MessageKey } from "../i18n";
 import { SmallIcon, type SmallIconName } from "../icons";
+import { FullscreenButton } from "../components/FullscreenButton";
 import type { CellValue } from "../model";
 import {
   alterFuncStatements, callSql, createFuncStatements, DEFAULT_PLPGSQL_BODY, emptyFunc, fromDetail, identityList, PARAM_MODES,
@@ -354,7 +355,7 @@ export function FunctionDesignerDoc({
         </button>
         {running && <span className="spinner" />}
         <div className="ot-spacer" />
-        <button type="button" className="icon-button" title={t("notImplemented")} disabled><SmallIcon name="fullscreen" /></button>
+        <FullscreenButton />
       </div>
 
       <div className="dlg-tabs des-tabs" role="tablist">

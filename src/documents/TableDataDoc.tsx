@@ -9,6 +9,7 @@ import { MessageDialog } from "../components/MessageDialog";
 import type { StatusCell } from "../components/StatusBar";
 import { useT, type MessageKey } from "../i18n";
 import { SmallIcon, type SmallIconName } from "../icons";
+import { FullscreenButton } from "../components/FullscreenButton";
 import { plannedStatements } from "../live";
 import { mockRows, quoteIdent, type CellValue, type DbObject, type ForeignKeyDef } from "../model";
 import { columnType, selectSql } from "../sql/ddl";
@@ -603,7 +604,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
         {tool("dataGen", "data.generation")}
         {tool("biCreate", "data.createBi")}
         <div className="ot-spacer" />
-        <button type="button" className="icon-button" title={t("notImplemented")} disabled><SmallIcon name="fullscreen" /></button>
+        <FullscreenButton />
       </div>
 
       {loadError && <div className="doc-banner is-warn">{loadError}</div>}

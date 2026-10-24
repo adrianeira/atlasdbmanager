@@ -615,7 +615,8 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 - [x] Tema claro/escuro manual (menu Exibir e tela Opções; padrão: seguir o sistema)
 - [x] Tela de Preferências / Options (ver "Opções" em Entregues)
 - [ ] Atalhos de teclado configuráveis
-- [ ] Fullscreen por painel *(vários botões `fullscreen` desabilitados)*
+- [x] **Tela cheia** do documento (botão no canto da barra de ferramentas de consultas, dados da tabela e todos os designers): o
+      documento cobre a janela do app; Esc, o mesmo botão ou trocar de aba saem *(`src/components/FullscreenButton.tsx`)*
 
 ## 13. Toolbar / rodapé — itens menores
 - [ ] Conta (login do serviço em nuvem) *(`src/components/MainToolbar.tsx:100`)*

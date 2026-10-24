@@ -7,6 +7,7 @@ import { SqlEditor } from "../components/SqlEditor";
 import type { StatusCell } from "../components/StatusBar";
 import { useT, type MessageKey } from "../i18n";
 import { SmallIcon } from "../icons";
+import { FullscreenButton } from "../components/FullscreenButton";
 import { quoteIdent, type ColumnDef, type DbObject, type TriggerDef } from "../model";
 import { errorText, toAtlasError } from "../backend";
 import { columnType, createTableSql, createTableStatements, triggerExtras, triggerSql } from "../sql/ddl";
@@ -708,7 +709,7 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
           </div>
         )}
         <div className="ot-spacer" />
-        <button type="button" className="icon-button" title={t("notImplemented")} disabled><SmallIcon name="fullscreen" /></button>
+        <FullscreenButton />
       </div>
 
       <div className="dlg-tabs des-tabs" role="tablist">

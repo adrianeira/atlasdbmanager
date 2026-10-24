@@ -5,6 +5,7 @@ import { SqlEditor } from "../components/SqlEditor";
 import type { StatusCell } from "../components/StatusBar";
 import { useT, type MessageKey } from "../i18n";
 import { SmallIcon } from "../icons";
+import { FullscreenButton } from "../components/FullscreenButton";
 import { alterRoleStatements, createRoleStatements, emptyRole, fromDetail, validateRole, type RoleState } from "../sql/role";
 
 /** Acesso ao banco real; ausente = modo de demonstração. */
@@ -206,7 +207,7 @@ export function RoleDesignerDoc({ roleName, allRoles, serverVersionNum, active, 
           <SmallIcon name="save" /><span>{t("des.save")}</span>
         </button>
         <div className="ot-spacer" />
-        <button type="button" className="icon-button" title={t("notImplemented")} disabled><SmallIcon name="fullscreen" /></button>
+        <FullscreenButton />
       </div>
       <div className="dlg-tabs des-tabs" role="tablist">
         {SUBTABS.map((x) => (

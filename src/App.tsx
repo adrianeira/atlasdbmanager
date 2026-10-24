@@ -33,6 +33,7 @@ import { dropServerStatements } from "./sql/foreignServer";
 import { ExtensionDesignerDoc, type ExtensionBackend } from "./documents/ExtensionDesignerDoc";
 import { ConsoleDoc } from "./documents/ConsoleDoc";
 import { ForeignServerDesignerDoc, type ForeignServerBackend } from "./documents/ForeignServerDesignerDoc";
+import { DocFullscreenContext } from "./components/FullscreenButton";
 import { FindDoc } from "./documents/FindDoc";
 import { ForeignTableDesignerDoc, type ForeignTableBackend } from "./documents/ForeignTableDesignerDoc";
 import { HistoryLogDoc } from "./documents/HistoryLogDoc";
@@ -648,6 +649,15 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("objects");
   const [docStatus, setDocStatus] = useState<Record<string, StatusCell[]>>({});
   const queryActions = useRef<QueryActions | null>(null);
+  /** Aba em tela cheia (o documento cobre a janela); troca de aba, fechar a aba ou Esc saem dela. */
+  const [fullDoc, setFullDoc] = useState<string | null>(null);
+  useEffect(() => {
+    if (!fullDoc) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setFullDoc(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fullDoc]);
+  useEffect(() => { setFullDoc((f) => (f === activeTab ? f : null)); }, [activeTab]);
   const tabSeq = useRef(0);
 
   const ctx = resolveNode(selectedNode, connections);
@@ -2716,7 +2726,9 @@ export default function App() {
                 />
               </div>
               {tabs.filter((x) => x.kind !== "objects").map((tab) => (
-                <div key={tab.id} className={`doc-host${tab.id === activeTab ? "" : " is-hidden"}`}>{renderDoc(tab)}</div>
+                <div key={tab.id} className={`doc-host${tab.id === activeTab ? "" : " is-hidden"}${fullDoc === tab.id ? " is-fullscreen" : ""}`}>
+                  <DocFullscreenContext.Provider value={{ on: fullDoc === tab.id, toggle: () => setFullDoc((f) => (f === tab.id ? null : tab.id)) }}>{renderDoc(tab)}</DocFullscreenContext.Provider>
+                </div>
               ))}
             </div>
           </main>

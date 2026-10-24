@@ -5,6 +5,7 @@ import { SqlEditor } from "../components/SqlEditor";
 import type { StatusCell } from "../components/StatusBar";
 import { useT, type MessageKey } from "../i18n";
 import { SmallIcon, type SmallIconName } from "../icons";
+import { FullscreenButton } from "../components/FullscreenButton";
 import {
   alterSeqStatements, createSeqStatements, emptySeq, fromDetail, isInteger, nextValue, restartSeqSql, SEQ_TYPES, setValueSql, validateSeq,
   type SeqState, type SeqType,
@@ -215,7 +216,7 @@ export function SequenceDesignerDoc({ schema, seqName, owners, serverVersionNum,
           <SmallIcon name="apply" /><span>{t("seq.setValue")}</span>
         </button>
         <div className="ot-spacer" />
-        <button type="button" className="icon-button" title={t("notImplemented")} disabled><SmallIcon name="fullscreen" /></button>
+        <FullscreenButton />
       </div>
       <div className="dlg-tabs des-tabs" role="tablist">
         {SUBTABS.map((x) => (

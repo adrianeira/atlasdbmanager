@@ -8,6 +8,7 @@ import { SqlEditor, type SqlEditorHandle } from "../components/SqlEditor";
 import type { StatusCell } from "../components/StatusBar";
 import { useT, type MessageKey } from "../i18n";
 import { ProviderIcon, SmallIcon, type SmallIconName } from "../icons";
+import { FullscreenButton } from "../components/FullscreenButton";
 import { mockRows, type CellValue, type ConnectionMock } from "../model";
 import { columnType } from "../sql/ddl";
 import { beautifySql } from "../sql/format";
@@ -441,7 +442,7 @@ export function QueryDoc({
         <div className="ot-spacer" />
         <button type="button" className="icon-button is-active" title={t("query.layoutStacked")}><SmallIcon name="splitH" /></button>
         <button type="button" className="icon-button" title={t("notImplemented")} disabled><SmallIcon name="splitV" /></button>
-        <button type="button" className="icon-button" title={t("notImplemented")} disabled><SmallIcon name="fullscreen" /></button>
+        <FullscreenButton />
       </div>
 
       <div className="query-context">

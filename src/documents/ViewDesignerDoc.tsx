@@ -6,6 +6,7 @@ import { SqlEditor, type SqlEditorHandle } from "../components/SqlEditor";
 import type { StatusCell } from "../components/StatusBar";
 import { useT, type MessageKey } from "../i18n";
 import { SmallIcon, type SmallIconName } from "../icons";
+import { FullscreenButton } from "../components/FullscreenButton";
 import type { CellValue } from "../model";
 import { beautifySql } from "../sql/format";
 import {
@@ -353,7 +354,7 @@ export function ViewDesignerDoc({
         {tool("beautify", "query.beautify", tab === "definition" && hasDef ? beautify : undefined)}
         {running && <span className="spinner" />}
         <div className="ot-spacer" />
-        <button type="button" className="icon-button" title={t("notImplemented")} disabled><SmallIcon name="fullscreen" /></button>
+        <FullscreenButton />
       </div>
 
       <div className="dlg-tabs des-tabs" role="tablist">
