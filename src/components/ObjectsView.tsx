@@ -250,6 +250,8 @@ export function ObjectsView({ category, ctx, connectionOpen, viewMode, erOptions
   // Com conexão selecionada (mesmo sem schema) as colunas já seguem o provedor, como na referência.
   const allColumns = ctx.connection ? columnsFor(category, lang, ctx.connection.provider) : EMPTY_TABLE_COLUMNS;
   const columns = allColumns.filter((c, i) => i === 0 || !hiddenColumns.includes(c.key));
+  /** Tabelas externas (foreign) ganham ícone próprio na lista. */
+  const rowIcon = (o: { dataType?: string }) => (category === "table" && o.dataType === "foreign" ? "foreignTable" : category);
   const objects = useMemo(() => {
     const q = search.trim().toLowerCase();
     const list = (all ?? []).filter((o) => !q || o.name.toLowerCase().includes(q));
@@ -436,7 +438,7 @@ export function ObjectsView({ category, ctx, connectionOpen, viewMode, erOptions
                     <td key={c.key} className={c.align === "right" ? "align-right" : undefined}>
                       {i === 0 ? (
                         <span className="cell-name">
-                          <SmallIcon name={category} />
+                          <SmallIcon name={rowIcon(o)} />
                           <span>{c.value(o)}</span>
                         </span>
                       ) : (
@@ -461,7 +463,7 @@ export function ObjectsView({ category, ctx, connectionOpen, viewMode, erOptions
                 onMouseDown={(e) => clickRow(e, o.name)}
                 onDoubleClick={() => openDefault(o.name)}
               >
-                <SmallIcon name={category} />
+                <SmallIcon name={rowIcon(o)} />
                 <span>{o.name}</span>
               </div>
             ))}

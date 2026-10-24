@@ -116,6 +116,14 @@ export interface ForeignServerDetail {
   comment: string | null;
 }
 
+export interface ForeignTableDetail {
+  name: string;
+  server: string;
+  options: OptionPair[];
+  owner: string;
+  comment: string | null;
+}
+
 /** Extensão instalada, com o schema onde foi instalada. */
 export interface ExtensionInfo {
   name: string;
@@ -987,6 +995,8 @@ export const pg = {
   availableExtensions: (sessionId: string, database: string) =>
     call<AvailableExtension[]>("pg_available_extensions", { sessionId, database }),
   foreignWrappers: (sessionId: string, database: string) => call<string[]>("pg_foreign_wrappers", { sessionId, database }),
+  foreignTableDetail: (sessionId: string, database: string, schema: string, name: string) =>
+    call<ForeignTableDetail>("pg_foreign_table_detail", { sessionId, database, schema, name }),
   foreignServerDetail: (sessionId: string, database: string, name: string) => call<ForeignServerDetail>("pg_foreign_server_detail", { sessionId, database, name }),
   extensionDetail: (sessionId: string, database: string, name: string) =>
     call<ExtensionDetail>("pg_extension_detail", { sessionId, database, name }),

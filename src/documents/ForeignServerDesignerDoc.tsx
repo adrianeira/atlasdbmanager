@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { errorText, toAtlasError, type ForeignServerDetail, type OptionPair } from "../backend";
+import { errorText, toAtlasError, type ForeignServerDetail } from "../backend";
 import { MessageDialog } from "../components/MessageDialog";
+import { OptionsGrid } from "../components/OptionsGrid";
 import { SqlEditor } from "../components/SqlEditor";
 import type { StatusCell } from "../components/StatusBar";
 import { useT, type MessageKey } from "../i18n";
 import { SmallIcon, type SmallIconName } from "../icons";
 import {
-  alterServerStatements, createServerStatements, emptyServer, fromDetail, isSecretOption, validateServer, type ServerProblem, type ServerState,
+  alterServerStatements, createServerStatements, emptyServer, fromDetail, validateServer, type ServerProblem, type ServerState,
 } from "../sql/foreignServer";
 
 /** Acesso ao banco real; ausente = modo de demonstração (o wrapper é digitado). */
@@ -41,30 +42,6 @@ const SUBTABS: { id: SubTab; label: MessageKey }[] = [
 ];
 
 type Dialog = null | { kind: "invalid"; problem: ServerProblem } | { kind: "review"; statements: string[] };
-
-/** Linhas chave/valor com adicionar e remover; o valor de uma senha sai mascarado. */
-function OptionsGrid({ rows, onChange, label }: { rows: OptionPair[]; onChange: (rows: OptionPair[]) => void; label: string }) {
-  const t = useT();
-  const [sel, setSel] = useState(0);
-  const set = (i: number, p: Partial<OptionPair>) => onChange(rows.map((r, k) => (k === i ? { ...r, ...p } : r)));
-  return (
-    <div className="fs-grid" role="group" aria-label={label}>
-      <div className="fs-head"><span>{t("fsv.optionName")}</span><span>{t("fsv.optionValue")}</span></div>
-      <div className="fs-rows">
-        {rows.map((r, i) => (
-          <div key={i} className={`fs-row${sel === i ? " is-sel" : ""}`} onClick={() => setSel(i)}>
-            <input className="field" value={r.key} spellCheck={false} aria-label={t("fsv.optionName")} onChange={(e) => set(i, { key: e.target.value })} />
-            <input className="field" type={isSecretOption(r.key) ? "password" : "text"} value={r.value} spellCheck={false} aria-label={t("fsv.optionValue")} onChange={(e) => set(i, { value: e.target.value })} />
-          </div>
-        ))}
-      </div>
-      <div className="fs-tools">
-        <button type="button" className="icon-button" aria-label="+" onClick={() => { onChange([...rows, { key: "", value: "" }]); setSel(rows.length); }}>+</button>
-        <button type="button" className="icon-button" aria-label="−" disabled={!rows.length} onClick={() => { onChange(rows.filter((_, k) => k !== sel)); setSel(Math.max(0, sel - 1)); }}>−</button>
-      </div>
-    </div>
-  );
-}
 
 export function ForeignServerDesignerDoc({ serverName, roles, active, production, onStatus, onDirty, onSaved, backend }: Props) {
   const t = useT();

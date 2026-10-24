@@ -2585,3 +2585,6 @@ select.et-input {
 .fs-users .fs-row { grid-template-columns: 1fr; }
 .fs-users .fs-head { grid-template-columns: 1fr; }
 .fs-map-options { min-width: 0; }
+.ft-cols .fs-head, .ft-cols .fs-row { grid-template-columns: 1fr 1fr 88px; }
+.ft-cols .fs-head span:last-child { text-align: center; }
+.ft-null { display: flex; align-items: center; justify-content: center; }

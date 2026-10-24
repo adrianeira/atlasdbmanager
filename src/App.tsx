@@ -33,6 +33,7 @@ import { dropServerStatements } from "./sql/foreignServer";
 import { ExtensionDesignerDoc, type ExtensionBackend } from "./documents/ExtensionDesignerDoc";
 import { ConsoleDoc } from "./documents/ConsoleDoc";
 import { ForeignServerDesignerDoc, type ForeignServerBackend } from "./documents/ForeignServerDesignerDoc";
+import { ForeignTableDesignerDoc, type ForeignTableBackend } from "./documents/ForeignTableDesignerDoc";
 import { HistoryLogDoc } from "./documents/HistoryLogDoc";
 import { ServerMonitorDoc } from "./documents/ServerMonitorDoc";
 import { dropTypeSql } from "./sql/typedef";
@@ -966,6 +967,12 @@ export default function App() {
     openTab({ kind: "extensionDesigner", title, windowTitle: title, icon: "extension", connectionId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name });
   };
 
+  const newForeignTable = () => {
+    if (!ctx.connection || !ctx.database || !ctx.schema) return;
+    const title = objectTitle(t("des.untitled"), "ftb.tooltip");
+    openTab({ kind: "foreignTableDesigner", title, windowTitle: title, icon: "foreignTable", connectionId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name });
+  };
+
   const newForeignServer = () => {
     if (!ctx.connection || !ctx.database || !ctx.schema) return;
     const title = objectTitle(t("des.untitled"), "cat.foreignServer");
@@ -1111,6 +1118,9 @@ export default function App() {
       if (cat === "table" && kind === "open") {
         const title = objectTitle(name, "tb.table", c);
         openTab({ ...base, kind: "data", title, windowTitle: title, icon: "table" }, `${t("act.openTable")} - ${name}`);
+      } else if (cat === "table" && kind === "design" && c.connection?.live && c.schema?.objects.table?.find((o) => o.name === name)?.dataType === "foreign") {
+        const title = objectTitle(name, "ftb.tooltip", c);
+        openTab({ ...base, kind: "foreignTableDesigner", title, windowTitle: title, icon: "foreignTable" }, `${t("act.design")} - ${name}`);
       } else if (cat === "table" && kind === "design") {
         const title = objectTitle(name, "tb.table", c);
         openTab({ ...base, kind: "designer", title, windowTitle: title, icon: "tableDesign" }, `${t("act.designTable")} - ${name}`);
@@ -1451,6 +1461,7 @@ export default function App() {
       const scName = c.schema.name;
       const name = c.objectName;
       const target = `${quoteIdent(scName)}.${quoteIdent(name)}`;
+      const foreign = c.schema?.objects.table?.find((o) => o.name === name)?.dataType === "foreign";
       const scope = { connId: conn.id, database: dbName, schema: scName, refresh: "schema" as const };
       const duplicate = (withData: boolean) => askName(t("sub.duplicateTable"), t("msg.copyTableName"), `${name}_copy`, (copy) => askDdl({
         ...scope, title: t("sub.duplicateTable"),
@@ -1465,19 +1476,19 @@ export default function App() {
         item("act.designTable", () => openObjects("design", [name], "table", c)),
         item("act.newTable", newTable),
         item("act.deleteTable", live ? () => askDdl({
-          ...scope, title: t("act.deleteTable"), message: confirmDelete("table", name), statements: [`DROP TABLE ${target};`], danger: true, confirmText: prod ? name : undefined,
+          ...scope, title: t("act.deleteTable"), message: confirmDelete("table", name), statements: [`DROP ${foreign ? "FOREIGN TABLE" : "TABLE"} ${target};`], danger: true, confirmText: prod ? name : undefined,
         }) : undefined),
-        item("cmd.emptyTable", live ? () => askDdl({
+        item("cmd.emptyTable", live && !foreign ? () => askDdl({
           ...scope, title: t("cmd.emptyTable"), message: t("msg.confirmEmpty", { name }), statements: [`DELETE FROM ${target};`], danger: true, confirmText: prod ? name : undefined,
         }) : undefined),
-        item("cmd.truncateTable", live ? () => askDdl({
+        item("cmd.truncateTable", live && !foreign ? () => askDdl({
           ...scope, title: t("cmd.truncateTable"), message: t("msg.confirmTruncate", { name }), statements: [`TRUNCATE TABLE ${target};`], danger: true, confirmText: prod ? name : undefined,
         }) : undefined),
         {
           kind: "sub", label: "sub.duplicateTable",
           items: [
-            { kind: "item", text: t("cmd.dupStructData"), run: live ? () => duplicate(true) : undefined },
-            { kind: "item", text: t("cmd.dupStructure"), run: live ? () => duplicate(false) : undefined },
+            { kind: "item", text: t("cmd.dupStructData"), run: live && !foreign ? () => duplicate(true) : undefined },
+            { kind: "item", text: t("cmd.dupStructure"), run: live && !foreign ? () => duplicate(false) : undefined },
           ],
         },
         sep,
@@ -1773,7 +1784,7 @@ export default function App() {
     newProject: { id: "newProject", label: "cmd.newProject" },
     newConnection: { id: "newConnection", label: "cmd.newConnection", run: () => setDialog({ kind: "connection" }) },
     newTableNormal: { id: "newTableNormal", label: "cmd.newTableNormal", run: hasSchema ? newTable : undefined },
-    newTableForeign: { id: "newTableForeign", label: "cmd.newTableForeign" },
+    newTableForeign: { id: "newTableForeign", label: "cmd.newTableForeign", run: ctx.connection?.live && hasSchema ? newForeignTable : undefined },
     newView: { id: "newView", label: "cmd.newView", run: hasSchema ? newView : undefined },
     newMatview: { id: "newMatview", label: "cmd.newMatview", run: hasSchema ? newMatview : undefined },
     newFunction: { id: "newFunction", label: "cmd.newFunction", run: hasSchema ? newFunction : undefined },
@@ -2119,6 +2130,7 @@ export default function App() {
     : active.kind === "typeDesigner" ? "type"
     : active.kind === "extensionDesigner" ? "extension"
     : active.kind === "foreignServerDesigner" ? "foreignServer"
+    : active.kind === "foreignTableDesigner" ? "table"
     : active.kind === "roleDesigner" ? "user"
     : active.objectKind === "matview" ? "matview"
     : active.kind === "viewDesigner" || (active.kind === "data" && active.objectKind === "view") ? "view"
@@ -2304,6 +2316,21 @@ export default function App() {
     });
   };
 
+  const foreignTableBackends = useRef<Record<string, ForeignTableBackend>>({});
+  const foreignTableBackendFor = (tab: DocTab, conn: ConnectionMock): ForeignTableBackend => {
+    const db = tab.database ?? "";
+    const schema = tab.schema ?? "";
+    return (foreignTableBackends.current[tab.id] ??= {
+      loadDetail: async (name) => {
+        const [detail, table] = await Promise.all([pg.foreignTableDetail(conn.id, db, schema, name), pg.tableDetail(conn.id, db, schema, name)]);
+        return { detail, table };
+      },
+      apply: async (statements) => {
+        await pg.apply(conn.id, db, statements.map((sql) => ({ sql, params: [], expectOneRow: false })));
+      },
+    });
+  };
+
   const renderDoc = (tab: DocTab) => {
     const isActive = tab.id === activeTab;
     if (tab.kind === "query") {
@@ -2467,6 +2494,28 @@ export default function App() {
           onConnect={(id) => void connect(id)}
           active={isActive}
           onStatus={statusFor(tab.id)}
+        />
+      );
+    }
+    if (tab.kind === "foreignTableDesigner") {
+      const conn = connections.find((c) => c.id === tab.connectionId);
+      const scope = resolveNode(`schema:${seg(tab.connectionId ?? "")}/${seg(tab.database ?? "")}/${seg(tab.schema ?? "")}`, connections);
+      return (
+        <ForeignTableDesignerDoc
+          tableName={tab.object}
+          schema={tab.schema ?? "public"}
+          servers={scope.schema?.objects.foreignServer?.map((s) => s.name) ?? []}
+          roles={conn?.roles.map((r) => r.name) ?? []}
+          active={isActive}
+          production={conn?.environment === "production"}
+          onStatus={statusFor(tab.id)}
+          onDirty={(dirty) => setTabDirty(tab.id, dirty)}
+          onSaved={(name) => {
+            const title = objectTitle(name, "ftb.tooltip", scope);
+            setTabs((ts) => ts.map((x) => (x.id === tab.id ? { ...x, object: name, title, windowTitle: title } : x)));
+            if (conn?.live && tab.database && tab.schema) void loadSchema(conn.id, tab.database, tab.schema, true).catch(() => undefined);
+          }}
+          backend={conn?.live ? foreignTableBackendFor(tab, conn) : undefined}
         />
       );
     }

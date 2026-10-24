@@ -320,6 +320,8 @@ export interface TreeNode {
   starred?: boolean;
   /** Coluna: parte da chave primária ou de uma chave estrangeira (ícone próprio na árvore). */
   columnRole?: "pk" | "fk";
+  /** Tabela externa (foreign table): ícone próprio. */
+  foreign?: boolean;
   /** Comentário do objeto/coluna no banco (dica ao passar o mouse). */
   comment?: string;
 }
@@ -451,7 +453,7 @@ export function buildVisibleTree(
             const oId = `obj:${scPath}/${cat}/${seg(o.name)}`;
             // Colunas ainda não lidas (conexão real) também deixam a tabela expansível.
             const hasCols = cat === "table" && (o.columns === undefined || o.columns.length > 0);
-            out.push({ id: oId, kind: "object", label: cat === "function" ? functionLabel(o) : o.name, depth: 4, expandable: hasCols, category: cat, comment: o.comment || undefined });
+            out.push({ id: oId, kind: "object", label: cat === "function" ? functionLabel(o) : o.name, depth: 4, expandable: hasCols, category: cat, foreign: cat === "table" && o.dataType === "foreign" ? true : undefined, comment: o.comment || undefined });
             if (!hasCols || !state.expanded.has(oId)) continue;
             // DECISÃO_ATLAS: tabela expandida mostra suas colunas com o tipo.
             // Colunas de FK (inclusive compostas: "a, b"); a PK tem prioridade no ícone.

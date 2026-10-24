@@ -131,7 +131,7 @@ export function NavigationPane(p: Props) {
       case "column":
         return <SmallIcon name={n.columnRole === "pk" ? "columnPk" : n.columnRole === "fk" ? "columnFk" : "column"} />;
       default:
-        return <SmallIcon name={n.category ?? "table"} />;
+        return <SmallIcon name={n.foreign ? "foreignTable" : n.category ?? "table"} />;
     }
   };
 

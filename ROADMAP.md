@@ -458,6 +458,15 @@ Testado ao vivo no PG 9.6 pela tela (criar com opções, mapeamento e senha, rel
 excluir com dois mapeamentos); no teste automatizado a parte do servidor só roda com superusuário (o usuário de teste não é).
 Fora desta entrega: privilégios do servidor (`GRANT USAGE ON FOREIGN SERVER`) e a lista de wrappers como objeto próprio.
 
+### Foreign Table
+As tabelas externas (`relkind 'f'`) aparecem na lista de Tabelas com ícone próprio (também na árvore). **Design Table** abre o designer
+de tabela externa: nome (com `RENAME`), servidor (escolhido entre os do banco; não muda depois), dono, **colunas** (nome, tipo, não
+nulo; incluir, remover, renomear, trocar tipo), **opções** (grade chave/valor, a mesma do Foreign Server) e comentário, com a prévia do SQL
+(`CREATE FOREIGN TABLE ... SERVER ... OPTIONS` ou só o que mudou em `ALTER FOREIGN TABLE`). Excluir usa `DROP FOREIGN TABLE`; esvaziar,
+truncar e duplicar ficam desativados para elas. Abrir a tabela mostra os dados como numa tabela comum. Aparece também em
+"Novo → Tabela → Foreign...". Testado ao vivo no PG 9.6 pela tela (listar, alterar coluna/opção, criar, excluir).
+Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
+
 ## Limitações conhecidas
 - Exportar o resultado de uma consulta exige um único comando que devolva linhas.
 - Exportação de tabela sem filtro/ordenação usa a ordem natural do servidor.
@@ -528,7 +537,7 @@ Fora desta entrega: privilégios do servidor (`GRANT USAGE ON FOREIGN SERVER`) e
 - [ ] Event Trigger (gatilhos de evento do banco; os gatilhos de tabela já estão no designer)
 - [x] Extension: lista, instalar, atualizar, mover de schema e remover (ver "Extensões" em Entregues)
 - [x] Foreign Server (ver "Foreign Server" em Entregues)
-- [ ] Foreign Table
+- [x] Foreign Table (ver "Foreign Table" em Entregues)
 - [ ] Publication / Subscription (replicação lógica)
 - [x] Role / User manager: atributos, senha e participações (ver "Usuários e papéis" em Entregues); o gerenciador de
       privilégios por objeto segue em aberto
