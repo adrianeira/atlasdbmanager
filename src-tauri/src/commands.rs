@@ -4,7 +4,7 @@
 use crate::local::Local;
 use crate::sessions::Sessions;
 use atlas_core::{
-    AvailableExtension, ConnectionParams, DatabaseDetail, DatabaseError, DatabaseList, ExtensionDetail, ForeignServerDetail, FunctionDetail, OrderBy, RoleDetail, SchemaDetail, SequenceDetail,
+    AvailableExtension, ConnectionParams, DatabaseDetail, DatabaseError, DatabaseList, ExtensionDetail, ForeignServerDetail, ForeignTableDetail, FunctionDetail, OrderBy, RoleDetail, SchemaDetail, SequenceDetail,
     TypeDetail, QueryOutcome, RoleInfo, SchemaDiagram, SchemaInfo, SchemaObjects, ServerInfo, TableDetail, TableFilter, ViewDetail,
 };
 use serde::Serialize;
@@ -144,6 +144,18 @@ pub async fn pg_available_extensions(
 pub async fn pg_foreign_wrappers(sessions: State<'_, Sessions>, session_id: String, database: String) -> Result<Vec<String>, DatabaseError> {
     let s = sessions.get(&session_id, Some(&database)).await?;
     atlas_pg::foreign_wrappers(&s).await
+}
+
+#[tauri::command]
+pub async fn pg_foreign_table_detail(
+    sessions: State<'_, Sessions>,
+    session_id: String,
+    database: String,
+    schema: String,
+    name: String,
+) -> Result<ForeignTableDetail, DatabaseError> {
+    let s = sessions.get(&session_id, Some(&database)).await?;
+    atlas_pg::foreign_table_detail(&s, &schema, &name).await
 }
 
 #[tauri::command]

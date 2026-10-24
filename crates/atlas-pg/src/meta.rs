@@ -7,7 +7,7 @@ use atlas_core::{
     AvailableExtension, ColumnInfo, ConstraintInfo, DatabaseDetail, DatabaseError, DatabaseList, DiagramColumn, DiagramRelation,
     DiagramTable, ErrorKind, ExtensionDetail, ExtensionInfo, IndexInfo, ObjectInfo, RoleInfo, RuleInfo, SchemaDiagram,
     FunctionDetail, RoleDetail, SchemaDetail, SchemaInfo, SchemaObjects, SequenceDetail, TableDetail, TypeAttribute, TypeCheck, TypeDetail,
-    TriggerInfo, ViewDetail, ForeignServerDetail, ForeignServerInfo, OptionPair, UserMappingInfo,
+    TriggerInfo, ViewDetail, ForeignServerDetail, ForeignServerInfo, ForeignTableDetail, OptionPair, UserMappingInfo,
 };
 
 /// `include_hidden`: lista também os bancos que a conexão normalmente oculta (templates e os que não aceitam conexão).
@@ -61,21 +61,22 @@ async fn relations(s: &PgSession, schema: &str, kinds: &str) -> Result<Vec<Objec
     // `kinds` é uma constante interna (ex.: "'r','p'"), nunca entrada do usuário.
     let sql = format!(
         "SELECT c.relname::text, CASE WHEN c.reltuples < 0 THEN NULL ELSE c.reltuples::bigint END, \
-                obj_description(c.oid, 'pg_class'), pg_get_userbyid(c.relowner)::text \
+                obj_description(c.oid, 'pg_class'), pg_get_userbyid(c.relowner)::text, CASE WHEN c.relkind = 'f' THEN 'foreign' END \
            FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
           WHERE n.nspname = $1 AND c.relkind IN ({kinds}) ORDER BY c.relname"
     );
     let rows = s.client.query(&sql, &[&schema]).await.map_err(|e| map_error(&e))?;
     Ok(rows
         .iter()
-        .map(|r| ObjectInfo { name: r.get(0), rows: r.get(1), comment: r.get(2), owner: r.get(3), ..Default::default() })
+        .map(|r| ObjectInfo { name: r.get(0), rows: r.get(1), comment: r.get(2), owner: r.get(3), data_type: r.get(4), ..Default::default() })
         .collect())
 }
 
 pub async fn list_objects(s: &PgSession, schema: &str) -> Result<SchemaObjects, DatabaseError> {
     let v = s.server.version_num;
     // Tabelas particionadas (relkind 'p') só existem a partir do PostgreSQL 10.
-    let table_kinds = if v >= 100000 { "'r','p'" } else { "'r'" };
+    // As tabelas estrangeiras (relkind 'f', desde o 9.1) entram na lista, marcadas como "foreign".
+    let table_kinds = if v >= 100000 { "'r','p','f'" } else { "'r','f'" };
     let tables = relations(s, schema, table_kinds).await?;
     let views = relations(s, schema, "'v'").await?;
     let matviews = if v >= 90300 { relations(s, schema, "'m'").await? } else { Vec::new() };
@@ -169,6 +170,27 @@ fn option_pairs(raw: Vec<String>) -> Vec<OptionPair> {
             None => OptionPair { key: o, value: String::new() },
         })
         .collect()
+}
+
+/// Tabela estrangeira: servidor, opções, dono e comentário.
+pub async fn foreign_table_detail(s: &PgSession, schema: &str, name: &str) -> Result<ForeignTableDetail, DatabaseError> {
+    let row = s
+        .client
+        .query_opt(
+            "SELECT srv.srvname::text, COALESCE(ft.ftoptions, ARRAY[]::text[]), pg_get_userbyid(c.relowner)::text, obj_description(c.oid, 'pg_class') \
+               FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+               JOIN pg_catalog.pg_foreign_table ft ON ft.ftrelid = c.oid JOIN pg_catalog.pg_foreign_server srv ON srv.oid = ft.ftserver \
+              WHERE n.nspname = $1 AND c.relname = $2",
+            &[&schema, &name],
+        )
+        .await
+        .map_err(|e| map_error(&e))?;
+    let Some(r) = row else {
+        let mut err = DatabaseError::new(ErrorKind::Server, format!("foreign table \"{name}\" does not exist"));
+        err.code = Some("42P01".into());
+        return Err(err);
+    };
+    Ok(ForeignTableDetail { name: name.to_string(), server: r.get(0), options: option_pairs(r.get(1)), owner: r.get(2), comment: r.get(3) })
 }
 
 /// Os wrappers de dados externos instalados no banco (o campo "Foreign Data Wrapper" do servidor).

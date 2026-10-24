@@ -198,6 +198,17 @@ pub struct UserMappingInfo {
     pub options: Vec<OptionPair>,
 }
 
+/// Tabela estrangeira (`CREATE FOREIGN TABLE`): o servidor e as opções; as colunas vêm do detalhe de tabela comum.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForeignTableDetail {
+    pub name: String,
+    pub server: String,
+    pub options: Vec<OptionPair>,
+    pub owner: String,
+    pub comment: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ForeignServerDetail {
