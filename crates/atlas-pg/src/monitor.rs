@@ -39,7 +39,7 @@ pub async fn snapshot(s: &PgSession) -> Result<Snapshot, DatabaseError> {
     let rows = s
         .client
         .query(
-            "SELECT a.pid, a.usename::text, a.client_addr::text, NULLIF(a.client_port, -1), a.datname::text, a.query, l.mode::text, \
+            "SELECT a.pid, a.usename::text, pg_catalog.host(a.client_addr), NULLIF(a.client_port, -1), a.datname::text, a.query, l.mode::text, \
                     to_char(COALESCE(a.query_start, a.backend_start), 'YYYY-MM-DD HH24:MI:SS.US'), \
                     CASE WHEN l.relation IS NOT NULL THEN 'Locked Object: ' || (SELECT c.relname::text FROM pg_catalog.pg_class c WHERE c.oid = l.relation) \
                          WHEN l.transactionid IS NOT NULL THEN 'Locked Transaction: ' || l.transactionid::text \

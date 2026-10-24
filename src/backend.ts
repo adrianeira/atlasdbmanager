@@ -440,6 +440,21 @@ export async function onSyncDeployProgress(id: string, cb: (done: number, total:
   });
 }
 
+/* ----- Server Monitor (aba) ----- */
+
+export interface MonitorProcess {
+  id: number;
+  user: string | null;
+  host: string | null;
+  port: number | null;
+  db: string | null;
+  command: string | null;
+  state: string | null;
+  time: string | null;
+  info: string | null;
+}
+export interface MonitorSnapshot { processes: MonitorProcess[]; variables: [string, string][]; status: [string, string][] }
+
 /* ----- Data Dictionary (janela separada) ----- */
 
 export interface DictFont { family: string; size: number }
@@ -895,6 +910,8 @@ export const pg = {
   syncScript: (compareId: string, selection: SyncSelection[]) => call<SyncScript>("datasync_script", { compareId, selection }),
   syncScriptFull: (compareId: string, selection: SyncSelection[]) => call<string>("datasync_script_full", { compareId, selection }),
   syncDeploy: (req: SyncDeployRequest) => call<SyncDeployCounts>("datasync_deploy", { req }),
+  monitorSnapshot: (sessionId: string) => call<MonitorSnapshot>("monitor_snapshot", { sessionId }),
+  monitorEndProcess: (sessionId: string, pid: number) => call<boolean>("monitor_end_process", { sessionId, pid }),
   dictDefaults: (title: string) => call<DictSettings>("dict_defaults", { title }),
   dictPreview: (servers: DictServerSel[], settings: DictSettings, which: string) => call<DictPreviewPage | null>("dict_preview", { servers, settings, which }),
   dictGenerate: (req: DictGenerateRequest) => call<DictResult>("dict_generate", { req }),

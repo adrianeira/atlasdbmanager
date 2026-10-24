@@ -30,6 +30,7 @@ import { dropFuncSql } from "./sql/func";
 import { dropSeqSql } from "./sql/sequence";
 import { dropExtSql } from "./sql/extension";
 import { ExtensionDesignerDoc, type ExtensionBackend } from "./documents/ExtensionDesignerDoc";
+import { ServerMonitorDoc } from "./documents/ServerMonitorDoc";
 import { dropTypeSql } from "./sql/typedef";
 import { dropRoleSql } from "./sql/role";
 import { RoleDesignerDoc, type RoleBackend } from "./documents/RoleDesignerDoc";
@@ -1865,7 +1866,13 @@ export default function App() {
         }).catch((e) => showError(t("dd.title"), e));
       },
     },
-    serverMonitor: { id: "serverMonitor", label: "cmd.serverMonitor" },
+    monitorPostgres: {
+      id: "monitorPostgres", label: "mon.postgres",
+      run: () => {
+        if (!connections.some((c) => c.live)) return;
+        openTab({ kind: "monitor", title: `${t("mon.title")} - PostgreSQL`, windowTitle: `${t("mon.title")} - PostgreSQL`, icon: "settings", object: "monitor", connectionId: ctx.connection?.id });
+      },
+    },
     options: { id: "options", label: "cmd.options", run: () => setDialog({ kind: "options" }) },
     nextTab: { id: "nextTab", label: "cmd.nextTab", shortcut: "Ctrl+Tab", run: () => cycleTab(1) },
     previousTab: { id: "previousTab", label: "cmd.previousTab", shortcut: "Ctrl+Shift+Tab", run: () => cycleTab(-1) },
@@ -1936,7 +1943,7 @@ export default function App() {
   const tableMenu: MenuDef = { label: "menu.table", items: entries("addRecord", "deleteRecord", "-", "applyChanges", "discardChanges", "-", "refreshData") };
   const tailMenus: MenuDef[] = [
     { label: "menu.favorites", items: entries("addFavorite", "manageFavorites") },
-    { label: "menu.tools", items: entries("dataTransfer", "dataSync", "structureSync", "dataGen", "dataDictionary", "-", "serverMonitor", "-", "options") },
+    { label: "menu.tools", items: entries("dataTransfer", "dataSync", "structureSync", "dataGen", "dataDictionary", "-", sub("mon.title", "monitorPostgres"), "-", "options") },
     { label: "menu.window", items: entries("nextTab", "previousTab", "-", "closeTab", "closeAllTabs") },
     { label: "menu.help", items: entries("documentation", "-", "about") },
   ];
@@ -2368,6 +2375,17 @@ export default function App() {
             if (conn?.live && tab.database && tab.schema) void loadSchema(conn.id, tab.database, tab.schema, true).catch(() => undefined);
           }}
           backend={conn?.live ? sequenceBackendFor(tab, conn) : undefined}
+        />
+      );
+    }
+    if (tab.kind === "monitor") {
+      return (
+        <ServerMonitorDoc
+          conns={connections.filter((c) => c.live).map((c) => ({ id: c.id, name: c.name, provider: c.provider, open: openConnections.has(c.id) }))}
+          initial={tab.connectionId}
+          onConnect={(id) => void connect(id)}
+          active={isActive}
+          onStatus={statusFor(tab.id)}
         />
       );
     }

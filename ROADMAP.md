@@ -405,6 +405,17 @@ retrato ou paisagem e margens. A tela e o PDF usam o mesmo desenho (a prévia é
 Fora desta entrega: imagem própria de fundo e logotipo da capa, fontes incorporadas (o PDF usa as padrão: Helvetica, Times e
 Courier, então caracteres fora do Latin-1 saem como "?") e a prévia do conteúdo real nas abas de layout (usa uma tabela de exemplo).
 
+### Server Monitor
+Tools → Server Monitor → PostgreSQL... abre uma aba "Server Monitor - PostgreSQL" (reaproveitada se já existir) com a lista de
+conexões e caixas de marcação: marcar uma conexão fechada abre a conexão, e dá para acompanhar vários servidores ao mesmo tempo.
+Três abas: **Process List** (Server, Id, User, Host, Port, db, Command, State com o modo do bloqueio, Time e Info com o objeto ou a
+transação bloqueada, uma linha por bloqueio como na referência), com Refresh, **End Process** (confirma e usa
+`pg_terminate_backend`) e Sort Ascending/Descending pela coluna clicada; **Variables** (`pg_settings` com DateStyle, IntervalStyle
+e TimeZone primeiro) e **Status** (blocos lidos e acertados em cache, conexões, commits e rollbacks do banco), com uma coluna por
+servidor e busca. Atualiza sozinho a cada 5 segundos e a barra de status mostra conexões marcadas e número de processos.
+Testado ao vivo em 9.6 e 18 (motor e tela, com os dois servidores juntos). Fora desta entrega: os outros SGBDs do submenu da
+referência e o gráfico de uso, que a referência não mostra.
+
 ## Limitações conhecidas
 - Exportar o resultado de uma consulta exige um único comando que devolva linhas.
 - Exportação de tabela sem filtro/ordenação usa a ordem natural do servidor.
@@ -527,7 +538,7 @@ Courier, então caracteres fora do Latin-1 saem como "?") e a prévia do conteú
 - [ ] Sincronização em nuvem (conexões, consultas, snippets, modelos)
 - [ ] Colaboração: comentários, histórico de versões
 - [ ] Compare Database (schema diff)
-- [ ] Server Monitor (métricas, locks, slow queries)
+- [x] Server Monitor (ver "Server Monitor" em Entregues)
 - [x] Query Builder visual (ver "Query Builder" em Entregues)
 - [ ] Pivot Table
 - [ ] Charts a partir de consulta
