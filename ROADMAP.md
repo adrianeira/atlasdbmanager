@@ -144,7 +144,7 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [x] **Seis modos**: Acrescentar, Atualizar, Acrescentar/Atualizar, Acrescentar sem atualizar, Excluir e Copiar;
       INSERT estendido com limite de tamanho, vazio como NULL, continuar em erro (SAVEPOINT por registro) ou
       desfazer a tabela inteira; cancelamento desfaz a tabela em andamento
-- [ ] Importar de Access/ODBC/Paradox e "Adicionar URL"
+- [ ] Importar de Access, ODBC e Paradox *(**deixados de fora por enquanto**, por decisão: são formatos antigos e dependem de driver do Windows; o caminho é converter para CSV fora do Atlas)*; "Adicionar URL" segue em aberto
 
 ### Exportação de dados
 - [x] **Assistente de exportação em etapas** (formato → tabelas e arquivos → campos → resumo com log e
@@ -598,7 +598,7 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 ## 7. Importar / Exportar
 - [x] Import Wizard em etapas: TXT, CSV, JSON, XML, Excel e DBF (ver "Importação de dados"); Access/ODBC/Paradox pendentes
 - [x] Export Wizard de tabelas/views em etapas, com várias tabelas e perfis (ver "Exportação de dados")
-- [ ] Formatos que faltam: Access (`.accdb`; não há biblioteca livre que o grave, depende do driver do Windows), Markdown
+- [ ] Formatos que faltam: Access (`.accdb`) e Markdown *(**deixados de fora por enquanto**, por decisão: o `.accdb` depende do driver do Windows e o Markdown não aparece em nenhuma captura da referência)*
 - [ ] Exportação agendada (a estrutura junto com os dados já sai pelo Dump SQL)
 - [x] Dump SQL completo (ver "Dump SQL" em Entregues)
 - [x] Data Transfer entre conexões e bancos (ver "Data Transfer" em Entregues)
