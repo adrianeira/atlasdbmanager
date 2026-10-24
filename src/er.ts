@@ -13,7 +13,7 @@ export const MIN_W = 180;
 export const MAX_W = 380;
 /** Colunas mostradas por cartão; as demais viram a linha "… +N". */
 export const MAX_ROWS = 40;
-export const GRID = 20;
+export const GRID = 10;
 
 export interface ErColumn { name: string; type: string; isPk: boolean; isFk: boolean }
 export interface ErTable { name: string; columns: ErColumn[]; hidden: number; w: number; h: number }

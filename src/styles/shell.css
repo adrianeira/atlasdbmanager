@@ -613,7 +613,7 @@ input {
   background-image:
     linear-gradient(color-mix(in srgb, var(--c-border) 55%, transparent) 1px, transparent 1px),
     linear-gradient(90deg, color-mix(in srgb, var(--c-border) 55%, transparent) 1px, transparent 1px);
-  background-size: 20px 20px;
+  background-size: 10px 10px;
 }
 
 .er-lines {
