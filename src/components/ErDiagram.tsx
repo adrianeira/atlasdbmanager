@@ -380,10 +380,17 @@ export function ErDiagram({ storageKey, schema, load, showGrid, snapToGrid, show
   const startDrag = (e: ReactMouseEvent, name: string) => {
     if (e.button !== 0) return;
     setSelRel(null);
-    if (e.ctrlKey || e.metaKey) onSelect(selected.includes(name) ? selected.filter((n) => n !== name) : [...selected, name]);
+    const ctrl = e.ctrlKey || e.metaKey;
+    if (ctrl) onSelect(selected.includes(name) ? selected.filter((n) => n !== name) : [...selected, name]);
     else if (!selected.includes(name)) onSelect([name]);
+    // Pegar um cartão da seleção move a seleção toda; fora dela (ou com Ctrl), só ele e o que já estava marcado.
+    const group = ctrl ? (selected.includes(name) ? selected : [...selected, name]) : selected.includes(name) ? selected : [name];
+    const origins = new Map(group.filter((n) => positions[n]).map((n) => [n, positions[n]] as const));
     const origin = positions[name];
-    if (!origin) return;
+    if (!origin || !origins.has(name)) return;
+    // Nenhum cartão passa da borda esquerda/superior: o grupo para quando o primeiro encosta.
+    const minX = Math.min(...[...origins.values()].map((p) => p.x));
+    const minY = Math.min(...[...origins.values()].map((p) => p.y));
     const startX = e.clientX;
     const startY = e.clientY;
     let moved = false;
@@ -397,9 +404,22 @@ export function ErDiagram({ storageKey, schema, load, showGrid, snapToGrid, show
           setTip(null);
           setDragging(true);
         }
-        const x = Math.max(0, snap(origin.x + dx, snapToGrid));
-        const y = Math.max(0, snap(origin.y + dy, snapToGrid));
-        setPositions((p) => (p[name]?.x === x && p[name]?.y === y ? p : { ...p, [name]: { x, y } }));
+        // O cartão pego encaixa na grade e os outros andam o mesmo tanto, mantendo o desenho do grupo.
+        const mx = Math.max(-minX, snap(origin.x + dx, snapToGrid) - origin.x);
+        const my = Math.max(-minY, snap(origin.y + dy, snapToGrid) - origin.y);
+        setPositions((p) => {
+          let changed = false;
+          const next = { ...p };
+          for (const [n, o] of origins) {
+            const x = o.x + mx;
+            const y = o.y + my;
+            if (p[n]?.x !== x || p[n]?.y !== y) {
+              next[n] = { x, y };
+              changed = true;
+            }
+          }
+          return changed ? next : p;
+        });
       },
       () => {
         if (!moved) return;
