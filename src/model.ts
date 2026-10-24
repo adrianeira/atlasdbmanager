@@ -337,6 +337,9 @@ export interface TreeNode {
 }
 
 /** Pastas exibidas sob um schema PostgreSQL, na ordem da referência. */
+/** Categorias que a árvore lista como objetos (as outras pastas só existem na árvore com pastas). */
+export const FLAT_CATEGORIES: Category[] = ["table", "view", "matview", "function"];
+
 export const SCHEMA_FOLDERS: Category[] = ["table", "view", "matview", "function", "query", "backup"];
 
 export interface NodeContext {
@@ -413,6 +416,8 @@ export interface TreeState {
   starredOnly?: boolean;
   /** Grupos de conexões, na ordem em que aparecem (os vazios também). */
   groups?: string[];
+  /** Exibir → Flatten Object List: os objetos do schema direto sob ele, sem as pastas. */
+  flatten?: boolean;
 }
 
 export function functionLabel(o: DbObject): string {
@@ -475,27 +480,36 @@ export function buildVisibleTree(
         out.push({ id: scId, kind: "schema", label: sc.name, depth: 2, expandable: true, comment: sc.comment });
         if (!state.expanded.has(scId)) continue;
 
-        for (const cat of SCHEMA_FOLDERS) {
-          const fId = `folder:${scPath}/${cat}`;
-          const items = sc.objects[cat] ?? [];
-          const listsChildren = cat === "table" || cat === "view" || cat === "matview" || cat === "function";
-          out.push({ id: fId, kind: "folder", label: folderLabel(cat), depth: 3, expandable: listsChildren && items.length > 0, category: cat });
-          if (!listsChildren || !state.expanded.has(fId)) continue;
-          for (const o of items) {
+        /** Os objetos de uma categoria (e as colunas das tabelas abertas) a partir de `depth`. */
+        const listObjects = (cat: Category, depth: number) => {
+          for (const o of sc.objects[cat] ?? []) {
             if (!matches(o.name)) continue;
             const oId = `obj:${scPath}/${cat}/${seg(o.name)}`;
             // Colunas ainda não lidas (conexão real) também deixam a tabela expansível.
             const hasCols = cat === "table" && (o.columns === undefined || o.columns.length > 0);
-            out.push({ id: oId, kind: "object", label: cat === "function" ? functionLabel(o) : o.name, depth: 4, expandable: hasCols, category: cat, foreign: cat === "table" && o.dataType === "foreign" ? true : undefined, comment: o.comment || undefined });
+            out.push({ id: oId, kind: "object", label: cat === "function" ? functionLabel(o) : o.name, depth, expandable: hasCols, category: cat, foreign: cat === "table" && o.dataType === "foreign" ? true : undefined, comment: o.comment || undefined });
             if (!hasCols || !state.expanded.has(oId)) continue;
             // DECISÃO_ATLAS: tabela expandida mostra suas colunas com o tipo.
             // Colunas de FK (inclusive compostas: "a, b"); a PK tem prioridade no ícone.
             const fkCols = new Set((o.foreignKeys ?? []).flatMap((fk) => fk.fields.split(",").map((f) => f.trim())));
             for (const c of o.columns ?? []) {
               const columnRole = c.key ? "pk" : fkCols.has(c.name) ? "fk" : undefined;
-              out.push({ id: `col:${scPath}/table/${seg(o.name)}/${seg(c.name)}`, kind: "column", label: `${c.name} (${c.type})`, depth: 5, expandable: false, columnRole, comment: c.comment || undefined });
+              out.push({ id: `col:${scPath}/table/${seg(o.name)}/${seg(c.name)}`, kind: "column", label: `${c.name} (${c.type})`, depth: depth + 1, expandable: false, columnRole, comment: c.comment || undefined });
             }
           }
+        };
+        if (state.flatten) {
+          // "Flatten Object List": sem as pastas, tabelas, views, views materializadas e funções direto sob o schema.
+          for (const cat of FLAT_CATEGORIES) listObjects(cat, 3);
+          continue;
+        }
+        for (const cat of SCHEMA_FOLDERS) {
+          const fId = `folder:${scPath}/${cat}`;
+          const items = sc.objects[cat] ?? [];
+          const listsChildren = cat === "table" || cat === "view" || cat === "matview" || cat === "function";
+          out.push({ id: fId, kind: "folder", label: folderLabel(cat), depth: 3, expandable: listsChildren && items.length > 0, category: cat });
+          if (!listsChildren || !state.expanded.has(fId)) continue;
+          listObjects(cat, 4);
         }
       }
     }
@@ -512,13 +526,13 @@ export function buildVisibleTree(
   return out;
 }
 
-export function parentId(id: string): string | null {
+export function parentId(id: string, flat = false): string | null {
   const sep = id.indexOf(":");
   const kind = id.slice(0, sep);
   const parts = id.slice(sep + 1).split("/");
   switch (kind) {
     case "col": return `obj:${parts.slice(0, 5).join("/")}`;
-    case "obj": return `folder:${parts.slice(0, 4).join("/")}`;
+    case "obj": return flat ? `schema:${parts.slice(0, 3).join("/")}` : `folder:${parts.slice(0, 4).join("/")}`;
     case "folder": return `schema:${parts.slice(0, 3).join("/")}`;
     case "schema": return `db:${parts.slice(0, 2).join("/")}`;
     case "db": return `conn:${parts[0]}`;

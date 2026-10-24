@@ -87,6 +87,8 @@ interface Layout {
   hiddenObjCols: Record<string, string[]>;
   /** "Mostrar itens ocultos": bancos que a conexão oculta e schemas de sistema. */
   showHidden: boolean;
+  /** Exibir → Flatten Object List. */
+  flatten: boolean;
   showCaptions: boolean;
   theme: Theme;
   lang: Lang;
@@ -95,7 +97,7 @@ interface Layout {
 const LAYOUT_KEY = "atlas.layout.v1";
 const CONNECTIONS_KEY = "atlas.connections.v1";
 const DEFAULT_LAYOUT: Layout = {
-  navWidth: 384, navVisible: true, infoVisible: false, viewMode: "detail", erShowGrid: true, erSnapGrid: true, erShowFkNames: true, objSortKey: "name", objSortDir: 1, hiddenObjCols: {}, showHidden: false, showCaptions: true, theme: "system", lang: detectLang(),
+  navWidth: 384, navVisible: true, infoVisible: false, viewMode: "detail", erShowGrid: true, erSnapGrid: true, erShowFkNames: true, objSortKey: "name", objSortDir: 1, hiddenObjCols: {}, showHidden: false, flatten: false, showCaptions: true, theme: "system", lang: detectLang(),
 };
 
 /* ---------- Persistência local do protótipo (no M1: SQLite local + cofre do SO) ---------- */
@@ -450,8 +452,8 @@ export default function App() {
     }
   }, [filterOptions]);
   const nodes = useMemo(
-    () => buildVisibleTree(connections, { expanded, openConnections, openDatabases, filter, filterOptions, starredOnly, groups: allGroups }, (c) => t(FOLDER_LABEL[c] ?? CATEGORY_LABEL[c]), t("nav.myConnections")),
-    [connections, expanded, openConnections, openDatabases, filter, filterOptions, starredOnly, allGroups, t],
+    () => buildVisibleTree(connections, { expanded, openConnections, openDatabases, filter, filterOptions, starredOnly, groups: allGroups, flatten: layout.flatten ?? false }, (c) => t(FOLDER_LABEL[c] ?? CATEGORY_LABEL[c]), t("nav.myConnections")),
+    [connections, expanded, openConnections, openDatabases, filter, filterOptions, starredOnly, allGroups, layout.flatten, t],
   );
 
   const add = (set: Set<string>, id: string) => new Set(set).add(id);
@@ -2107,6 +2109,7 @@ export default function App() {
     viewList: { id: "viewList", label: "cmd.viewList", checked: layout.viewMode === "list", run: () => patchLayout({ viewMode: "list" }) },
     viewDetail: { id: "viewDetail", label: "cmd.viewDetail", checked: layout.viewMode === "detail", run: () => patchLayout({ viewMode: "detail" }) },
     viewIcons: { id: "viewIcons", label: "cmd.viewIcons", checked: layout.viewMode === "icons", run: () => patchLayout({ viewMode: "icons" }) },
+    flatten: { id: "flatten", label: "cmd.flatten", checked: layout.flatten ?? false, run: () => patchLayout({ flatten: !(layout.flatten ?? false) }) },
     chooseColumns: { id: "chooseColumns", label: "cmd.chooseColumns", run: () => setDialog({ kind: "chooseColumns" }) },
     showHidden: { id: "showHidden", label: "cmd.showHidden", checked: layout.showHidden ?? false, run: () => toggleShowHidden() },
     viewEr: { id: "viewEr", label: "cmd.viewEr", checked: layout.viewMode === "er", run: () => patchLayout({ viewMode: "er" }) },
@@ -2281,7 +2284,7 @@ export default function App() {
   };
   const viewMenu: MenuDef = {
     label: "menu.view",
-    items: entries("navigationPane", "informationPane", "toolbarCaptions", "-", "viewList", "viewDetail", "viewIcons", "viewEr", "-", sortSubmenu, "chooseColumns", "-", "showHidden", "-", "erShowGrid", "erSnapGrid", "erShowFkNames", "-", "themeSystem", "themeLight", "themeDark", "-", "langPt", "langEn", "-", "resetLayout"),
+    items: entries("navigationPane", "informationPane", "toolbarCaptions", "-", "viewList", "viewDetail", "viewIcons", "viewEr", "-", sortSubmenu, "chooseColumns", "-", "flatten", "showHidden", "-", "erShowGrid", "erSnapGrid", "erShowFkNames", "-", "themeSystem", "themeLight", "themeDark", "-", "langPt", "langEn", "-", "resetLayout"),
   };
   const queryMenu: MenuDef = { label: "menu.query", items: entries("run", "runSelected", "stop", "-", "explain", "-", "beautify", "minify", "queryBuilder") };
   const formatMenu: MenuDef = { label: "menu.format", items: entries("indent", "outdent", "-", "toggleComment", "-", "upper", "lower") };

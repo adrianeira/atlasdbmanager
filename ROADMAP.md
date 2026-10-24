@@ -685,7 +685,9 @@ Hoje o menu Exibir tem só Lista, Detalhe e Ícones (`viewMode` em `src/App.tsx`
 - Ainda não há no ER Diagram: ferramentas de ligar (criar chave estrangeira pelo desenho), Preview e Size da barra
   inferior da referência, chaves para tabelas de outro schema (não têm cartão), tabelas com mais de 40 colunas mostram as
   40 primeiras e a linha "mais N colunas"
-- [ ] **Flatten Object List**: lista única dos objetos do schema, sem as pastas
+- [x] **Flatten Object List** (Exibir): a árvore mostra tabelas, views, views materializadas e funções direto sob o schema, sem as pastas; a escolha fica
+      lembrada, a seta para a esquerda volta ao schema e a lista de objetos à direita não muda. Não há captura deste item, então o desenho é o mais simples
+      possível *(`buildVisibleTree` em `src/model.ts`)*
 - [x] **Sort**: ordenação da lista de objetos por qualquer coluna, crescente ou decrescente (também pelo clique no cabeçalho)
 - [x] **Choose Columns**: escolher as colunas exibidas na lista de objetos (por categoria; o nome nunca some)
 - [x] **Show Hidden Items**: mostra os bancos que a conexão oculta (templates e sem permissão de conexão) e os schemas de sistema; relê a árvore ao alternar

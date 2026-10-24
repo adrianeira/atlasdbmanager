@@ -106,7 +106,9 @@ export function NavigationPane(p: Props) {
         if (!node) break;
         if (node.expandable && isExpanded(node)) p.onToggle(node);
         else {
-          const parent = parentId(node.id);
+          // Sem as pastas (Flatten Object List) o pai de um objeto é o schema.
+          let parent = parentId(node.id);
+          if (parent && !p.nodes.some((x) => x.id === parent)) parent = parentId(node.id, true);
           if (parent) p.onSelect(parent);
         }
         break;
