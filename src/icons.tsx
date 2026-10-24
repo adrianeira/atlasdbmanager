@@ -124,13 +124,6 @@ const large: Record<string, ReactElement> = {
       <rect x="23.5" y="5" width="5" height="22" rx="1.2" fill="#d43fb0" />
     </>
   ),
-  account: (
-    <>
-      <circle cx="16" cy="16" r="14" fill="#c9ced6" />
-      <circle cx="16" cy="12.5" r="5" fill="#fff" />
-      <path d="M7 25c1.8-4.2 5.2-6.5 9-6.5s7.2 2.3 9 6.5a13 13 0 0 1-18 0z" fill="#fff" />
-    </>
-  ),
 };
 
 export type LargeIconName = keyof typeof large;

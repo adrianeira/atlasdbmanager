@@ -653,7 +653,7 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
       documento cobre a janela do app; Esc, o mesmo botão ou trocar de aba saem *(`src/components/FullscreenButton.tsx`)*
 
 ## 13. Toolbar / rodapé — itens menores
-- [ ] Conta (login do serviço em nuvem) *(`src/components/MainToolbar.tsx:100`)*
+- [ ] Conta (login do serviço em nuvem): o avatar do canto da barra principal foi **removido** (não fazia nada); volta junto com a nuvem
 - [ ] Beautify de célula
 - [ ] Hex / Binary editor próprio *(a vista em hexa só de leitura já existe no Cell Editor; falta editar os bytes por ela)*
 

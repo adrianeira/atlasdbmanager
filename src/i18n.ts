@@ -136,7 +136,6 @@ const en = {
   "tb.automation": "Automation",
   "tb.model": "Model",
   "tb.bi": "BI",
-  "tb.account": "Account",
 
   "cat.matview": "Materialized View",
   "cat.sequence": "Sequence",
@@ -1879,7 +1878,6 @@ const pt: Record<MessageKey, string> = {
   "tb.automation": "Automação",
   "tb.model": "Modelo",
   "tb.bi": "BI",
-  "tb.account": "Conta",
 
   "cat.matview": "View materializada",
   "cat.sequence": "Sequência",

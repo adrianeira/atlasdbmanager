@@ -96,10 +96,6 @@ export function MainToolbar({ highlight, provider, showCaptions, onCategory, onN
         const cat = b.id;
         return button(cat, b.icon, b.label, () => onCategory(cat), highlight === cat);
       })}
-      <div className="tb-spacer" />
-      <button type="button" className="tb-account" title={t("tb.account")} disabled>
-        <LargeIcon name="account" />
-      </button>
     </div>
   );
 }

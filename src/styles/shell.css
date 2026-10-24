@@ -213,18 +213,6 @@ input {
   flex: 1;
 }
 
-.tb-account {
-  align-self: center;
-  border: 0;
-  background: none;
-  padding: 0 8px;
-}
-
-.tb-account svg {
-  width: 36px;
-  height: 36px;
-}
-
 /* ---------- Área de trabalho ---------- */
 
 .workspace {
