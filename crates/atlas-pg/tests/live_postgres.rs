@@ -2157,3 +2157,54 @@ async fn console_completes_commands_keywords_schemas_tables_and_columns() {
 
     atlas_pg::execute(&s, &format!("DROP SCHEMA {ns} CASCADE"), 1).await.unwrap();
 }
+
+#[tokio::test]
+async fn foreign_servers_are_listed_and_described_with_options_and_mappings() {
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    // A lista de objetos sempre traz o campo (vazio quando não há servidores).
+    let before = atlas_pg::list_objects(&s, "public").await.expect("list").foreign_servers.len();
+    let superuser: bool = s.client.query_one("SELECT rolsuper FROM pg_roles WHERE rolname = current_user", &[]).await.unwrap().get(0);
+    if !superuser {
+        eprintln!("criar um wrapper exige superusuário: parte do servidor estrangeiro pulada");
+        return;
+    }
+    let name = format!("atlas_fs_{}", std::process::id());
+    let had_ext: bool = s.client.query_one("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'postgres_fdw')", &[]).await.unwrap().get(0);
+    atlas_pg::execute(
+        &s,
+        &format!(
+            "CREATE EXTENSION IF NOT EXISTS postgres_fdw; \
+             CREATE SERVER {name} FOREIGN DATA WRAPPER postgres_fdw OPTIONS (host 'localhost', port '5432', dbname 'outro'); \
+             CREATE USER MAPPING FOR CURRENT_USER SERVER {name} OPTIONS (user 'remoto', password 'segredo'); \
+             CREATE USER MAPPING FOR PUBLIC SERVER {name} OPTIONS (user 'geral'); \
+             COMMENT ON SERVER {name} IS 'servidor de teste'"
+        ),
+        1,
+    )
+    .await
+    .expect("ddl");
+
+    let objs = atlas_pg::list_objects(&s, "public").await.expect("list");
+    assert_eq!(objs.foreign_servers.len(), before + 1);
+    let info = objs.foreign_servers.iter().find(|f| f.name == name).expect("o servidor aparece");
+    assert_eq!((info.wrapper.as_str(), info.comment.as_deref()), ("postgres_fdw", Some("servidor de teste")));
+    assert!(atlas_pg::foreign_wrappers(&s).await.unwrap().contains(&"postgres_fdw".to_string()));
+
+    let d = atlas_pg::foreign_server_detail(&s, &name).await.expect("detail");
+    assert_eq!(d.wrapper, "postgres_fdw");
+    assert_eq!(d.owner, p.user);
+    let opt = |k: &str| d.options.iter().find(|o| o.key == k).map(|o| o.value.clone());
+    assert_eq!((opt("host").as_deref(), opt("port").as_deref(), opt("dbname").as_deref()), (Some("localhost"), Some("5432"), Some("outro")));
+    assert_eq!(d.mappings.len(), 2, "{:?}", d.mappings);
+    let mine = d.mappings.iter().find(|m| m.user == p.user).expect("mapeamento do usuário atual");
+    assert!(mine.options.iter().any(|o| o.key == "user" && o.value == "remoto") && mine.options.iter().any(|o| o.key == "password"), "{mine:?}");
+    assert!(d.mappings.iter().any(|m| m.user == "public"));
+    let missing = atlas_pg::foreign_server_detail(&s, "nao_existe_xyz").await.unwrap_err();
+    assert_eq!(missing.code.as_deref(), Some("42704"));
+
+    atlas_pg::execute(&s, &format!("DROP SERVER {name} CASCADE"), 1).await.unwrap();
+    if !had_ext {
+        atlas_pg::execute(&s, "DROP EXTENSION postgres_fdw", 1).await.unwrap();
+    }
+}

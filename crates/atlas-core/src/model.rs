@@ -114,6 +114,8 @@ pub struct SchemaObjects {
     pub sequences: Vec<ObjectInfo>,
     /// Extensões instaladas no banco (valem para o banco todo, não para o schema: a lista é a mesma em todos).
     pub extensions: Vec<ExtensionInfo>,
+    /// Servidores estrangeiros do banco (`pg_foreign_server`); valem para o banco todo, como as extensões.
+    pub foreign_servers: Vec<ForeignServerInfo>,
 }
 
 /// Coluna de um cartão do diagrama ER (tamanho e decimais no mesmo formato de `ColumnInfo`).
@@ -167,6 +169,46 @@ pub struct ExtensionInfo {
     /// Schema onde os objetos da extensão foram instalados.
     pub schema: String,
     pub owner: String,
+    pub comment: Option<String>,
+}
+
+/// Servidor estrangeiro (`CREATE SERVER`): a linha da lista de objetos.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForeignServerInfo {
+    pub name: String,
+    pub wrapper: String,
+    pub owner: String,
+    pub comment: Option<String>,
+}
+
+/// Uma opção de servidor ou de mapeamento (`chave 'valor'`).
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct OptionPair {
+    pub key: String,
+    pub value: String,
+}
+
+/// Mapeamento de usuário de um servidor (`CREATE USER MAPPING`); `user` é `public` para o mapeamento de todos.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserMappingInfo {
+    pub user: String,
+    pub options: Vec<OptionPair>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForeignServerDetail {
+    pub name: String,
+    pub wrapper: String,
+    /// `TYPE` e `VERSION` do `CREATE SERVER` (raramente usados).
+    pub server_type: Option<String>,
+    pub version: Option<String>,
+    pub owner: String,
+    pub options: Vec<OptionPair>,
+    pub mappings: Vec<UserMappingInfo>,
     pub comment: Option<String>,
 }
 

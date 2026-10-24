@@ -7,7 +7,7 @@ use atlas_core::{
     AvailableExtension, ColumnInfo, ConstraintInfo, DatabaseDetail, DatabaseError, DatabaseList, DiagramColumn, DiagramRelation,
     DiagramTable, ErrorKind, ExtensionDetail, ExtensionInfo, IndexInfo, ObjectInfo, RoleInfo, RuleInfo, SchemaDiagram,
     FunctionDetail, RoleDetail, SchemaDetail, SchemaInfo, SchemaObjects, SequenceDetail, TableDetail, TypeAttribute, TypeCheck, TypeDetail,
-    TriggerInfo, ViewDetail,
+    TriggerInfo, ViewDetail, ForeignServerDetail, ForeignServerInfo, OptionPair, UserMappingInfo,
 };
 
 /// `include_hidden`: lista também os bancos que a conexão normalmente oculta (templates e os que não aceitam conexão).
@@ -146,7 +146,70 @@ pub async fn list_objects(s: &PgSession, schema: &str) -> Result<SchemaObjects, 
         .map(|r| ExtensionInfo { name: r.get(0), version: r.get(1), schema: r.get(2), owner: r.get(3), comment: r.get(4) })
         .collect();
 
-    Ok(SchemaObjects { tables, views, matviews, functions, types, sequences, extensions })
+    let foreign_servers = s
+        .client
+        .query(
+            "SELECT s.srvname::text, w.fdwname::text, pg_get_userbyid(s.srvowner)::text, obj_description(s.oid, 'pg_foreign_server')                FROM pg_catalog.pg_foreign_server s JOIN pg_catalog.pg_foreign_data_wrapper w ON w.oid = s.srvfdw ORDER BY s.srvname",
+            &[],
+        )
+        .await
+        .map_err(|e| map_error(&e))?
+        .iter()
+        .map(|r| ForeignServerInfo { name: r.get(0), wrapper: r.get(1), owner: r.get(2), comment: r.get(3) })
+        .collect();
+
+    Ok(SchemaObjects { tables, views, matviews, functions, types, sequences, extensions, foreign_servers })
+}
+
+/// `chave=valor` como o catálogo guarda as opções.
+fn option_pairs(raw: Vec<String>) -> Vec<OptionPair> {
+    raw.into_iter()
+        .map(|o| match o.split_once('=') {
+            Some((k, v)) => OptionPair { key: k.to_string(), value: v.to_string() },
+            None => OptionPair { key: o, value: String::new() },
+        })
+        .collect()
+}
+
+/// Os wrappers de dados externos instalados no banco (o campo "Foreign Data Wrapper" do servidor).
+pub async fn foreign_wrappers(s: &PgSession) -> Result<Vec<String>, DatabaseError> {
+    let rows = s.client.query("SELECT fdwname::text FROM pg_catalog.pg_foreign_data_wrapper ORDER BY fdwname", &[]).await.map_err(|e| map_error(&e))?;
+    Ok(rows.iter().map(|r| r.get(0)).collect())
+}
+
+/// Servidor estrangeiro com as opções e os mapeamentos de usuário (as opções do mapeamento só aparecem a quem pode ver).
+pub async fn foreign_server_detail(s: &PgSession, name: &str) -> Result<ForeignServerDetail, DatabaseError> {
+    let row = s
+        .client
+        .query_opt(
+            "SELECT w.fdwname::text, v.srvtype, v.srvversion, pg_get_userbyid(v.srvowner)::text, COALESCE(v.srvoptions, ARRAY[]::text[]),                     obj_description(v.oid, 'pg_foreign_server')                FROM pg_catalog.pg_foreign_server v JOIN pg_catalog.pg_foreign_data_wrapper w ON w.oid = v.srvfdw WHERE v.srvname = $1",
+            &[&name],
+        )
+        .await
+        .map_err(|e| map_error(&e))?;
+    let Some(r) = row else {
+        let mut err = DatabaseError::new(ErrorKind::Server, format!("server \"{name}\" does not exist"));
+        err.code = Some("42704".into());
+        return Err(err);
+    };
+    let mappings = s
+        .client
+        .query("SELECT usename::text, COALESCE(umoptions, ARRAY[]::text[]) FROM pg_catalog.pg_user_mappings WHERE srvname = $1 ORDER BY usename", &[&name])
+        .await
+        .map_err(|e| map_error(&e))?
+        .iter()
+        .map(|m| UserMappingInfo { user: m.get(0), options: option_pairs(m.get(1)) })
+        .collect();
+    Ok(ForeignServerDetail {
+        name: name.to_string(),
+        wrapper: r.get(0),
+        server_type: r.get(1),
+        version: r.get(2),
+        owner: r.get(3),
+        options: option_pairs(r.get(4)),
+        mappings,
+        comment: r.get(5),
+    })
 }
 
 /// Diagrama ER do schema: as tabelas com colunas (marcando chave primária e estrangeira) e as chaves estrangeiras,
