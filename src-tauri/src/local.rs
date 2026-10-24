@@ -143,6 +143,37 @@ pub fn ssh_password_save(id: String, password: Option<Secret>, save: bool) -> Re
     }
 }
 
+/// Maior arquivo que dá para carregar numa célula (a célula guarda o conteúdo inteiro em hexadecimal).
+const MAX_BLOB_FILE: u64 = 64 * 1024 * 1024;
+
+/// Conteúdo de um arquivo no formato `\x...` (hexadecimal) do `bytea`, para gravar numa célula.
+#[tauri::command]
+pub fn file_read_hex(path: String) -> Result<String, DatabaseError> {
+    let meta = std::fs::metadata(&path).map_err(|e| DatabaseError::new(ErrorKind::InvalidInput, format!("cannot read {path}: {e}")))?;
+    if meta.len() > MAX_BLOB_FILE {
+        return Err(DatabaseError::new(ErrorKind::InvalidInput, format!("the file is larger than {} MB", MAX_BLOB_FILE / 1024 / 1024)));
+    }
+    let bytes = std::fs::read(&path).map_err(|e| DatabaseError::new(ErrorKind::InvalidInput, format!("cannot read {path}: {e}")))?;
+    let mut out = String::with_capacity(bytes.len() * 2 + 2);
+    out.push_str("\\x");
+    for b in bytes {
+        out.push_str(&format!("{b:02x}"));
+    }
+    Ok(out)
+}
+
+/// Grava em `path` os bytes de um valor `\x...` (hexadecimal); devolve quantos bytes.
+#[tauri::command]
+pub fn file_write_hex(path: String, hex: String) -> Result<usize, DatabaseError> {
+    let digits = hex.strip_prefix("\\x").unwrap_or(&hex);
+    if !digits.len().is_multiple_of(2) || !digits.bytes().all(|c| c.is_ascii_hexdigit()) {
+        return Err(DatabaseError::new(ErrorKind::InvalidInput, "the value is not hexadecimal binary data"));
+    }
+    let bytes: Vec<u8> = (0..digits.len()).step_by(2).map(|i| u8::from_str_radix(&digits[i..i + 2], 16).unwrap_or(0)).collect();
+    std::fs::write(&path, &bytes).map_err(|e| DatabaseError::new(ErrorKind::Internal, format!("cannot write {path}: {e}")))?;
+    Ok(bytes.len())
+}
+
 #[tauri::command]
 pub fn profile_delete(local: State<'_, Local>, id: String) -> Result<(), DatabaseError> {
     local.with(|s| atlas_local::delete_profile(s, &id))

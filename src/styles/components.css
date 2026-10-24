@@ -2641,3 +2641,14 @@ select.et-input {
 .opt-color label { width: 100px; }
 .opt-color input[type=color] { width: 40px; height: 22px; padding: 0; border: 1px solid var(--c-border-strong); background: none; }
 .opt-color .btn { min-width: 0; padding: 0 6px; }
+
+/* Cell Editor: modos Texto, Hexa, Imagem e Web. */
+.cell-editor-modes { display: flex; gap: 2px; margin-left: 8px; }
+.cell-editor-mode { height: 20px; padding: 0 8px; border: 1px solid transparent; background: none; color: var(--c-text); font: inherit; cursor: default; }
+.cell-editor-mode:hover { background: var(--c-hover); }
+.cell-editor-mode.is-active { background: var(--c-selected); border-color: var(--c-border-strong); }
+.cell-editor-hex { flex: 1; min-height: 0; margin: 0; padding: 6px 8px; overflow: auto; font: 12px/1.4 var(--editor-font, var(--font-mono)); color: var(--c-text); background: var(--c-surface); }
+.cell-editor-image { flex: 1; min-height: 0; overflow: auto; display: flex; align-items: flex-start; justify-content: flex-start; padding: 8px; background: var(--c-surface-alt); }
+.cell-editor-image img { max-width: none; image-rendering: auto; }
+.cell-editor-web { flex: 1; min-height: 0; border: 0; background: #fff; }
+.cell-editor-empty { flex: 1; padding: 10px; }

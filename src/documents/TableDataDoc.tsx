@@ -673,7 +673,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
           columnType={columns[activeCol]?.type ?? ""}
           kind={columns[activeCol]?.kind ?? "text"}
           value={rows[activeRow]?.[activeCol] ?? null}
-          readOnly={readOnly || !!columns[activeCol]?.generated || columns[activeCol]?.kind === "binary" || deleted.has(activeRow) || !rows.length}
+          readOnly={readOnly || !!columns[activeCol]?.generated || deleted.has(activeRow) || !rows.length}
           required={!!columns[activeCol]?.required}
           onChange={(v) => onEdit(activeRow, activeCol, v)}
           onClose={() => setCellEditorOpen(false)}

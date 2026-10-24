@@ -545,8 +545,10 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
       linha, "Formatar JSON" e "Definir como NULL"; aberto pelo botão da toolbar — liga/desliga —
       ou pelo menu de contexto da célula; sincroniza em tempo real com a célula ativa)
       — BLOB e XML formatado ficam para depois *(`src/components/CellEditorPanel.tsx`)*
-- [ ] Visualizações alternativas: Image view, Hex view, Web view *(Form view já existe)*
-- [ ] Edição de BLOB *(hoje só mostra "(BLOB) N bytes")*
+- [x] **Cell Editor com Texto, Hexa, Imagem e Web**: a célula ativa vira texto editável, vista em hexa (16 bytes por linha com ASCII), imagem
+      (PNG, JPEG, GIF, BMP, WEBP, ICO e SVG, também texto `data:image/...;base64`) ou HTML num quadro isolado (sem scripts); **Carregar...** coloca um
+      arquivo na célula (colunas `bytea` guardam os bytes; colunas de texto aceitam arquivo UTF-8, até 64 MB) e **Salvar...** grava a célula em arquivo
+      (idêntico ao original, conferido por MD5); `bytea` que é UTF-8 também se edita como texto *(`src/blob.ts`, `CellEditorPanel.tsx`)*
 - [ ] Modo "mostrar valor da FK em vez da chave" *(lookup já existe)*
 - [ ] Agrupamento / sumário no rodapé do grid
 
