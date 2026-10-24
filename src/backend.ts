@@ -1073,6 +1073,8 @@ export const pg = {
     call<number[]>("pg_apply", { sessionId, database, statements }),
   /** Transação manual (conexão dedicada que fica com a transação aberta até `txEnd`). */
   txBegin: (sessionId: string, database: string) => call<string>("pg_tx_begin", { sessionId, database }),
+  /** Executa SQL do editor dentro da transação aberta. */
+  txExecute: (txId: string, sql: string, maxRows: number, schema?: string) => call<QueryOutcome>("pg_tx_execute", { txId, sql, maxRows, schema: schema ?? null }),
   txApply: (txId: string, statements: PlannedStatement[]) => call<number[]>("pg_tx_apply", { txId, statements }),
   txRows: (txId: string, schema: string, table: string, orderBy: OrderBy[], filter: TableFilter | null, limit: number | null, offset: number) =>
     call<{ sql: string; outcome: QueryOutcome }>("pg_tx_table_rows", { txId, schema, table, orderBy, filter, limit, offset }),

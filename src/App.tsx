@@ -2390,6 +2390,9 @@ export default function App() {
     },
     execute: (connId, db, sqlText, max, schema) => pg.execute(connId, db, sqlText, max, schema),
     cancel: (connId, db) => pg.cancel(connId, db),
+    beginTx: (connId, db) => pg.txBegin(connId, db),
+    executeInTx: (txId, sqlText, max, schema) => pg.txExecute(txId, sqlText, max, schema),
+    endTx: (txId, commit) => pg.txEnd(txId, commit),
   }).current;
 
   const dataBackends = useRef<Record<string, TableDataBackend>>({});

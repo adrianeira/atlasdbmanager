@@ -177,6 +177,7 @@ pub fn run() {
             commands::pg_table_count,
             commands::pg_apply,
             tx::pg_tx_begin,
+            tx::pg_tx_execute,
             tx::pg_tx_apply,
             tx::pg_tx_table_rows,
             tx::pg_tx_table_count,

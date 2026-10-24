@@ -12,6 +12,8 @@ import { FullscreenButton } from "../components/FullscreenButton";
 import { mockRows, type CellValue, type ConnectionMock } from "../model";
 import { columnType } from "../sql/ddl";
 import { beautifySql, minifySql } from "../sql/format";
+import { ParametersDialog } from "../components/ParametersDialog";
+import { findParams, substituteParams, type ParamValue } from "../sql/params";
 import { closeQueryBuilder, errorText, onQueryBuilderBuild, openQueryBuilder, toAtlasError, type QueryBuilderResult } from "../backend";
 import { useOptions } from "../options";
 
@@ -58,6 +60,10 @@ export interface QueryBackend {
   ensureOpen: (connectionId: string) => Promise<void>;
   execute: (connectionId: string, database: string, sql: string, maxRows: number, schema?: string) => Promise<QueryOutcomeLive>;
   cancel: (connectionId: string, database: string) => Promise<void>;
+  /** Opcional: transação manual do editor (conexão dedicada que fica com a transação aberta até `endTx`). */
+  beginTx?: (connectionId: string, database: string) => Promise<string>;
+  executeInTx?: (txId: string, sql: string, maxRows: number, schema?: string) => Promise<QueryOutcomeLive>;
+  endTx?: (txId: string, commit: boolean) => Promise<void>;
 }
 
 type QueryOutcomeLive = import("../backend").QueryOutcome;
@@ -166,6 +172,14 @@ export function QueryDoc({
   const [resultTab, setResultTab] = useState(0);
   const [activeRow, setActiveRow] = useState(0);
   const [split, setSplit] = useState(0.55);
+  /** Transação manual do editor: enquanto aberta, tudo roda nela até Commit ou Rollback. */
+  const [txId, setTxId] = useState<string | null>(null);
+  const [txBusy, setTxBusy] = useState(false);
+  const txRef = useRef<string | null>(null);
+  txRef.current = txId;
+  /** Janela de parâmetros (`:nome`): o texto que vai rodar e os valores (lembrados por nome enquanto a aba existir). */
+  const [paramsDlg, setParamsDlg] = useState<{ text: string; names: string[] } | null>(null);
+  const [paramValues, setParamValues] = useState<Record<string, ParamValue>>({});
   /** Resultados abaixo do editor (padrão) ou ao lado dele. */
   const [side, setSide] = useState(() => {
     try { return localStorage.getItem("atlas.queryLayout") === "side"; } catch { return false; }
@@ -235,12 +249,16 @@ export function QueryDoc({
     return out;
   }, [schemaMock]);
 
-  const run = useCallback((selectionOnly: boolean) => {
+  /** `substituted`: texto já com os parâmetros trocados (vem da janela de parâmetros). */
+  const run = useCallback((selectionOnly: boolean, substituted?: string) => {
     if (running) return;
     // Com seleção executa só a seleção; sem ela, o documento inteiro (sem adivinhar o "statement atual" — ADR-016).
     const sel = editor.current?.getSelection() ?? "";
-    const text = (selectionOnly || sel ? sel : "") || (editor.current?.getText() ?? "");
-    if (!text.trim()) return;
+    const typed = (selectionOnly || sel ? sel : "") || (editor.current?.getText() ?? "");
+    if (!typed.trim()) return;
+    const names = substituted === undefined ? findParams(typed) : [];
+    if (names.length) return setParamsDlg({ text: typed, names });
+    const text = substituted ?? typed;
     setRunning(true);
     if (backend && conn) {
       const database = ctx.database ?? conn.initialDatabase;
@@ -250,7 +268,9 @@ export function QueryDoc({
           onExecuted?.({ connectionId: conn.id, connectionName: conn.name, database, schema: ctx.schema, sql: text.trim(), durationMs: ms, rows, error });
         try {
           await backend.ensureOpen(conn.id);
-          const out = await backend.execute(conn.id, database, text, queryMaxRows, ctx.schema);
+          const out = txRef.current && backend.executeInTx
+            ? await backend.executeInTx(txRef.current, text, queryMaxRows, ctx.schema)
+            : await backend.execute(conn.id, database, text, queryMaxRows, ctx.schema);
           const res = fromLive(text, out, t, queryMaxRows);
           setOutcome(res);
           setResultTab(res.results.length ? 1 : 0);
@@ -278,6 +298,40 @@ export function QueryDoc({
       setRunning(false);
     }, 280);
   }, [running, conn, ctx.database, ctx.schema, backend, t, onExecuted, queryMaxRows]);
+
+  const beginTx = async () => {
+    if (!backend?.beginTx || !conn || txId || txBusy) return;
+    setTxBusy(true);
+    try {
+      await backend.ensureOpen(conn.id);
+      setTxId(await backend.beginTx(conn.id, ctx.database ?? conn.initialDatabase));
+    } catch (e) {
+      setOutcome({ sql: "", ms: 0, results: [], message: "", error: errorText(toAtlasError(e)) });
+      setResultTab(0);
+    } finally {
+      setTxBusy(false);
+    }
+  };
+  const endTx = async (commit: boolean) => {
+    if (!backend?.endTx || !txId || txBusy || running) return;
+    setTxBusy(true);
+    try {
+      await backend.endTx(txId, commit);
+      setTxId(null);
+      setOutcome({ sql: "", ms: 0, results: [], message: t(commit ? "query.txCommitted" : "query.txRolledBack") });
+      setResultTab(0);
+    } catch (e) {
+      // Em falha do COMMIT o servidor já terminou a transação; a conexão dedicada não serve mais.
+      setTxId(null);
+      setOutcome({ sql: "", ms: 0, results: [], message: "", error: errorText(toAtlasError(e)) });
+      setResultTab(0);
+    } finally {
+      setTxBusy(false);
+    }
+  };
+  // A aba não pode fechar com a transação aberta: sai desfazendo (e a aba pergunta antes, pois fica "alterada").
+  useEffect(() => () => { if (txRef.current) void backend?.endTx?.(txRef.current, false).catch(() => undefined); }, [backend]);
+  useEffect(() => { if (txId) onDirty(true); }, [txId, onDirty]);
 
   const stop = useCallback(() => {
     if (backend && conn && running) {
@@ -462,6 +516,14 @@ export function QueryDoc({
         } : undefined)}
         {tool("beautify", "query.beautify", beautify)}
         {tool("beautify", "query.minify", minify)}
+        {txId ? (
+          <>
+            <button type="button" className="ot-button" disabled={txBusy || running} onClick={() => void endTx(true)} title={t("query.txCommit")}><SmallIcon name="apply" /><span>{t("query.txCommit")}</span></button>
+            <button type="button" className="ot-button" disabled={txBusy || running} onClick={() => void endTx(false)} title={t("query.txRollback")}><SmallIcon name="discard" /><span>{t("query.txRollback")}</span></button>
+          </>
+        ) : (
+          <button type="button" className="ot-button" disabled={!conn || !connOpen || running || txBusy || !backend?.beginTx} onClick={() => void beginTx()} title={t("query.txBegin")}><SmallIcon name="transaction" /><span>{t("query.txBegin")}</span></button>
+        )}
         {tool("history", "query.history", () => setHistoryOpen(true))}
         {tool("snippet", "query.snippet", () => setSnippets({ selection: editor.current?.getSelection() ?? "" }))}
         {tool("ai", "query.askAi")}
@@ -478,6 +540,7 @@ export function QueryDoc({
           leftIcon={conn ? <ProviderIcon provider={conn.provider} open={connOpen} /> : <SmallIcon name="myConnections" />}
           value={ctx.connectionId ?? ""}
           items={[{ value: "", label: t("query.noConnection") }, ...connections.map((c) => ({ value: c.id, label: c.name }))]}
+          disabled={!!txId}
           onChange={pickConnection}
         />
         <Dropdown
@@ -486,7 +549,7 @@ export function QueryDoc({
           leftIcon={<SmallIcon name={db ? "database" : "databaseClosed"} />}
           value={ctx.database ?? ""}
           items={(conn?.databases ?? []).map((d) => ({ value: d.name, label: d.name }))}
-          disabled={!conn}
+          disabled={!conn || !!txId}
           placeholder={conn && conn.databases.length === 0 ? t(connecting?.has(conn.id) ? "nav.connecting" : conn.live ? "query.ctx.closed" : "query.ctx.noDatabases") : undefined}
           onChange={pickDatabase}
         />
@@ -524,6 +587,7 @@ export function QueryDoc({
         {running && <span className="spinner" />}
       </div>
 
+      {txId && <div className="query-tx-strip" role="status">{t("query.txActive")}</div>}
       <div className={`query-body${side ? " is-side" : ""}`} ref={bodyRef}>
         <div className="query-editor" style={{ flexBasis: outcome ? `${split * 100}%` : "100%" }}>
           <SqlEditor
@@ -590,6 +654,19 @@ export function QueryDoc({
             setHistoryOpen(false);
           }}
           onClose={() => setHistoryOpen(false)}
+        />
+      )}
+      {paramsDlg && (
+        <ParametersDialog
+          names={paramsDlg.names}
+          initial={paramValues}
+          onCancel={() => setParamsDlg(null)}
+          onOk={(values) => {
+            setParamValues((old) => ({ ...old, ...values }));
+            const text = paramsDlg.text;
+            setParamsDlg(null);
+            run(false, substituteParams(text, values));
+          }}
         />
       )}
     </div>

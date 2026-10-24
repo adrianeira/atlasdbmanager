@@ -2671,3 +2671,10 @@ select.et-input {
 .query-body.is-side .query-editor { min-width: 160px; min-height: 0; }
 .query-body.is-side .query-results { min-width: 0; }
 .vsplitter { flex: none; width: 5px; cursor: col-resize; background: var(--c-surface-alt); border-left: 1px solid var(--c-border); border-right: 1px solid var(--c-border); }
+
+.query-tx-strip { flex: none; padding: 4px 10px; background: #fff4d6; color: #5c4400; border-bottom: 1px solid #e2c36b; }
+:root[data-theme="dark"] .query-tx-strip { background: #4a3d12; color: #f1deb0; border-bottom-color: #7a6525; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .query-tx-strip { background: #4a3d12; color: #f1deb0; border-bottom-color: #7a6525; } }
+.par-dialog { width: min(560px, 94vw); }
+.par-table { display: grid; grid-template-columns: 140px 120px 1fr; gap: 6px 8px; align-items: center; }
+.par-table .par-head { color: var(--c-text-muted); }

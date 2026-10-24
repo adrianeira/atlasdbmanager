@@ -49,6 +49,19 @@ pub async fn pg_tx_apply(
     atlas_pg::apply_in_open_transaction(&conn, &statements).await
 }
 
+/// Executa SQL do editor dentro da transação aberta (os resultados enxergam as alterações ainda não gravadas).
+#[tauri::command]
+pub async fn pg_tx_execute(
+    txs: State<'_, Transactions>,
+    tx_id: String,
+    sql: String,
+    max_rows: usize,
+    schema: Option<String>,
+) -> Result<atlas_core::QueryOutcome, DatabaseError> {
+    let conn = txs.get(&tx_id).await?;
+    atlas_pg::execute_in_schema(&conn, &sql, max_rows.clamp(1, 100_000), schema.as_deref()).await
+}
+
 /// Lê uma página da tabela enxergando as alterações ainda não gravadas da transação.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]

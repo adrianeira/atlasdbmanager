@@ -562,7 +562,11 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 - [x] **Divisão do editor**: os dois botões do canto da consulta alternam entre resultados **abaixo** (padrão) e **ao lado** do editor, com divisor
       arrastável nos dois sentidos; a escolha fica lembrada
 - [x] Histórico de consultas e favoritos (ver "Histórico de consultas" em Entregues)
-- [ ] Transaction panel, Parameters window
+- [x] **Transação manual na consulta**: botão "Begin Transaction" abre uma conexão dedicada; tudo que roda nela fica pendente até **Commit** (Confirmar)
+      ou **Rollback** (Reverter), com faixa de aviso e seletores de conexão/banco travados; fechar a aba reverte e ela pergunta antes (verificado: outra
+      conexão não enxerga o que está pendente) *(`pg_tx_execute`, `QueryDoc.tsx`)*
+- [x] **Janela de parâmetros** (`:nome`): ao executar, os parâmetros da consulta (ou da seleção) pedem Tipo (Texto, Número, NULL ou Expressão) e valor,
+      que ficam lembrados na aba; `::cast`, textos, comentários e blocos `$$` não contam, e o texto vira literal com as aspas escapadas *(`src/sql/params.ts`)*
 - [x] **Minify SQL** (menu Query e barra da consulta): tira comentários e junta tudo numa linha, preservando textos, identificadores entre aspas e blocos
       `$$`; Beautify e Minify valem para a seleção (ou o texto todo); **Converter para maiúsculas/minúsculas** do menu Format também passaram a funcionar
 - [ ] Plano de execução gráfico *(hoje `EXPLAIN` só em texto; **não confirmado na referência**)*
