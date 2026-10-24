@@ -66,6 +66,11 @@ const ACTIONS: Record<Category, ActionDef[]> = {
     { id: "new", label: "act.new", icon: "new", needs: "context", kind: "new" },
     { id: "delete", label: "act.delete", icon: "delete", needs: "selection" },
   ],
+  tablespace: [
+    { id: "design", label: "act.design", icon: "design", needs: "single", kind: "design" },
+    { id: "new", label: "act.new", icon: "new", needs: "context", kind: "new" },
+    { id: "delete", label: "act.delete", icon: "delete", needs: "selection" },
+  ],
   foreignServer: [
     { id: "design", label: "act.design", icon: "design", needs: "single", kind: "design" },
     { id: "new", label: "act.new", icon: "new", needs: "context", kind: "new" },
@@ -162,6 +167,13 @@ function columnsFor(category: Category, lang: string, provider?: string): Column
         { key: "schema", label: "col.schema", width: 120, value: (o) => o.extSchema ?? "" },
         owner,
         { key: "comment", label: "col.comment", width: 420, value: (o) => o.comment ?? "" },
+      ];
+    case "tablespace":
+      return [
+        name,
+        owner,
+        { key: "location", label: "col.location", width: 360, value: (o) => o.location ?? "" },
+        { key: "comment", label: "col.comment", width: 320, value: (o) => o.comment ?? "" },
       ];
     case "foreignServer":
       return [

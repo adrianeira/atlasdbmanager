@@ -36,6 +36,8 @@ import { ForeignServerDesignerDoc, type ForeignServerBackend } from "./documents
 import { DocFullscreenContext } from "./components/FullscreenButton";
 import { FindDoc } from "./documents/FindDoc";
 import { ForeignTableDesignerDoc, type ForeignTableBackend } from "./documents/ForeignTableDesignerDoc";
+import { TablespaceDesignerDoc, type TablespaceBackend } from "./documents/TablespaceDesignerDoc";
+import { dropTablespaceStatement } from "./sql/tablespace";
 import { HistoryLogDoc } from "./documents/HistoryLogDoc";
 import { ServerMonitorDoc } from "./documents/ServerMonitorDoc";
 import { dropTypeSql } from "./sql/typedef";
@@ -208,7 +210,7 @@ function paramsFor(c: ConnectionMock): ConnectionParams {
 
 const CATEGORY_LABEL: Record<Category, MessageKey> = {
   table: "tb.table", view: "tb.view", matview: "cat.matview", function: "tb.function",
-  sequence: "cat.sequence", type: "cat.type", extension: "cat.extension", foreignServer: "cat.foreignServer", user: "tb.user", query: "tb.query",
+  sequence: "cat.sequence", type: "cat.type", extension: "cat.extension", foreignServer: "cat.foreignServer", tablespace: "cat.tablespace", user: "tb.user", query: "tb.query",
   backup: "tb.backup", automation: "tb.automation", model: "tb.model", bi: "tb.bi",
 };
 
@@ -219,7 +221,7 @@ const FOLDER_LABEL: Partial<Record<Category, MessageKey>> = {
 
 const COUNT_LABEL: Record<Category, MessageKey> = {
   table: "status.count.table", view: "status.count.view", matview: "status.count.matview", function: "status.count.function",
-  sequence: "status.count.sequence", type: "status.count.type", extension: "status.count.extension", foreignServer: "status.count.foreignServer", user: "status.count.user", query: "status.count.query",
+  sequence: "status.count.sequence", type: "status.count.type", extension: "status.count.extension", foreignServer: "status.count.foreignServer", tablespace: "status.count.tablespace", user: "status.count.user", query: "status.count.query",
   backup: "status.count.backup", automation: "status.count.automation", model: "status.count.model", bi: "status.count.bi",
 };
 
@@ -844,7 +846,7 @@ export default function App() {
     else void runDdl(d);
   };
   /** Pergunta da confirmação de exclusão, com o nome do objeto. */
-  const confirmDelete = (kind: "database" | "schema" | "table" | "view" | "matview" | "function" | "procedure" | "type" | "sequence" | "extension" | "foreignServer" | "role", name: string) =>
+  const confirmDelete = (kind: "database" | "schema" | "table" | "view" | "matview" | "function" | "procedure" | "type" | "sequence" | "extension" | "foreignServer" | "tablespace" | "role", name: string) =>
     t("msg.confirmDelete", { kind: t(`kind.${kind}`), name });
   const askName = (title: string, label: string, initial: string, onSubmit: (value: string) => void) =>
     setDialog({ kind: "name", title, label, initial, onSubmit });
@@ -1052,6 +1054,12 @@ export default function App() {
     openTab({ kind: "foreignTableDesigner", title, windowTitle: title, icon: "foreignTable", connectionId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name });
   };
 
+  const newTablespace = () => {
+    if (!ctx.connection || !ctx.database || !ctx.schema) return;
+    const title = objectTitle(t("des.untitled"), "cat.tablespace");
+    openTab({ kind: "tablespaceDesigner", title, windowTitle: title, icon: "tablespace", connectionId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name });
+  };
+
   const newForeignServer = () => {
     if (!ctx.connection || !ctx.database || !ctx.schema) return;
     const title = objectTitle(t("des.untitled"), "cat.foreignServer");
@@ -1189,6 +1197,7 @@ export default function App() {
       if (cat === "type") return newType();
       if (cat === "extension") return newExtension();
       if (cat === "foreignServer") return newForeignServer();
+      if (cat === "tablespace") return newTablespace();
       if (cat === "user") return newRole();
       return openTab({ kind: "placeholder", title: `${t("act.new")} ${t(CATEGORY_LABEL[cat])}`, icon: cat, note: t("placeholder.designer") });
     }
@@ -1222,6 +1231,9 @@ export default function App() {
       } else if (cat === "sequence" && c.connection?.live) {
         const title = objectTitle(name, "cat.sequence", c);
         openTab({ ...base, kind: "sequenceDesigner", title, windowTitle: title, icon: "sequence" }, `${t("act.design")} - ${name}`);
+      } else if (cat === "tablespace" && c.connection?.live) {
+        const title = objectTitle(name, "cat.tablespace", c);
+        openTab({ ...base, kind: "tablespaceDesigner", title, windowTitle: title, icon: "tablespace" }, `${t("act.design")} - ${name}`);
       } else if (cat === "foreignServer" && c.connection?.live) {
         const title = objectTitle(name, "cat.foreignServer", c);
         openTab({ ...base, kind: "foreignServerDesigner", title, windowTitle: title, icon: "foreignServer" }, `${t("act.design")} - ${name}`);
@@ -1872,6 +1884,25 @@ export default function App() {
       );
     }
 
+    if (node.kind === "object" && node.category === "tablespace" && c.connection && c.database && c.schema && c.objectName) {
+      const name = c.objectName;
+      const scope = { connId: c.connection.id, database: c.database.name, schema: c.schema.name, refresh: "extensions" as const };
+      const system = name.toLowerCase().startsWith("pg_");
+      items.push(
+        item("act.design", () => openObjects("design", [name], "tablespace", c)),
+        item("act.new", newTablespace),
+        item("act.delete", live && !system ? () => askDdl({
+          ...scope, title: t("act.delete"), message: confirmDelete("tablespace", name), note: t("tsp.deleteNote"),
+          statements: [dropTablespaceStatement(name)], transactional: false, danger: true, confirmText: prod ? name : undefined,
+        }) : undefined),
+        sep,
+        item("cmd.copyName", () => { void navigator.clipboard?.writeText(name).catch(() => undefined); }),
+        sep,
+        item("cmd.refresh", live ? () => refreshNode(node) : undefined),
+        item("cmd.objectInfo", () => patchLayout({ infoVisible: true })),
+      );
+    }
+
     if (node.kind === "object" && node.category === "foreignServer" && c.connection && c.database && c.schema && c.objectName) {
       const name = c.objectName;
       const scope = { connId: c.connection.id, database: c.database.name, schema: c.schema.name, refresh: "extensions" as const };
@@ -2029,7 +2060,7 @@ export default function App() {
     newMatview: { id: "newMatview", label: "cmd.newMatview", run: hasSchema ? newMatview : undefined },
     newFunction: { id: "newFunction", label: "cmd.newFunction", run: hasSchema ? newFunction : undefined },
     newRole: { id: "newRole", label: "cmd.newRole", run: ctx.connection?.live ? newRole : undefined },
-    newTablespace: { id: "newTablespace", label: "cmd.newTablespace" },
+    newTablespace: { id: "newTablespace", label: "cmd.newTablespace", run: ctx.connection?.live && ctx.schema && openConnections.has(ctx.connection.id) ? newTablespace : undefined },
     newCast: { id: "newCast", label: "cmd.newCast" },
     newForeignServer: { id: "newForeignServer", label: "cmd.newForeignServer", run: ctx.connection?.live && ctx.schema && openConnections.has(ctx.connection.id) ? newForeignServer : undefined },
     newLanguage: { id: "newLanguage", label: "cmd.newLanguage" },
@@ -2371,6 +2402,7 @@ export default function App() {
     : active.kind === "typeDesigner" ? "type"
     : active.kind === "extensionDesigner" ? "extension"
     : active.kind === "foreignServerDesigner" ? "foreignServer"
+    : active.kind === "tablespaceDesigner" ? "tablespace"
     : active.kind === "foreignTableDesigner" ? "table"
     : active.kind === "roleDesigner" ? "user"
     : active.objectKind === "matview" ? "matview"
@@ -2545,6 +2577,18 @@ export default function App() {
       loadAvailable: () => pg.availableExtensions(conn.id, db),
       apply: async (statements) => {
         await pg.apply(conn.id, db, statements.map((sql) => ({ sql, params: [], expectOneRow: false })));
+      },
+    });
+  };
+
+  const tablespaceBackends = useRef<Record<string, TablespaceBackend>>({});
+  const tablespaceBackendFor = (tab: DocTab, conn: ConnectionMock): TablespaceBackend => {
+    const db = tab.database ?? "";
+    return (tablespaceBackends.current[tab.id] ??= {
+      loadDetail: (name) => pg.tablespaceDetail(conn.id, db, name),
+      // CREATE TABLESPACE não roda em bloco de transação: um comando por vez.
+      apply: async (statements) => {
+        for (const sql of statements) await pg.execute(conn.id, db, sql, 1);
       },
     });
   };
@@ -2777,6 +2821,25 @@ export default function App() {
             if (conn?.live && tab.database && tab.schema) void loadSchema(conn.id, tab.database, tab.schema, true).catch(() => undefined);
           }}
           backend={conn?.live ? foreignTableBackendFor(tab, conn) : undefined}
+        />
+      );
+    }
+    if (tab.kind === "tablespaceDesigner") {
+      const conn = connections.find((c) => c.id === tab.connectionId);
+      return (
+        <TablespaceDesignerDoc
+          tablespaceName={tab.object}
+          roles={conn?.roles.map((r) => r.name) ?? []}
+          active={isActive}
+          production={conn?.environment === "production"}
+          onStatus={statusFor(tab.id)}
+          onDirty={(dirty) => setTabDirty(tab.id, dirty)}
+          onSaved={(name) => {
+            const title = objectTitle(name, "cat.tablespace", resolveNode(`schema:${seg(tab.connectionId ?? "")}/${seg(tab.database ?? "")}/${seg(tab.schema ?? "")}`, connections));
+            setTabs((ts) => ts.map((x) => (x.id === tab.id ? { ...x, object: name, title, windowTitle: title } : x)));
+            if (conn?.live && tab.database && tab.schema) reloadExtensions(conn.id, tab.database, tab.schema);
+          }}
+          backend={conn?.live ? tablespaceBackendFor(tab, conn) : undefined}
         />
       );
     }

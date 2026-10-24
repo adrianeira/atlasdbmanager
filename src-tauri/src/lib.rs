@@ -163,6 +163,7 @@ pub fn run() {
             commands::pg_extension_detail,
             commands::pg_foreign_wrappers,
             commands::pg_foreign_server_detail,
+            commands::pg_tablespace_detail,
             commands::pg_foreign_table_detail,
             commands::pg_database_detail,
             commands::pg_schema_detail,

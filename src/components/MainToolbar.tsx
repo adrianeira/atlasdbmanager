@@ -33,7 +33,7 @@ function buttonsFor(provider?: ProviderId): ButtonDef[] {
   ];
 }
 
-const OTHERS_LABEL: Record<string, MessageKey> = { matview: "cat.matview", sequence: "cat.sequence", type: "cat.type", extension: "cat.extension", foreignServer: "cat.foreignServer" };
+const OTHERS_LABEL: Record<string, MessageKey> = { matview: "cat.matview", sequence: "cat.sequence", type: "cat.type", extension: "cat.extension", foreignServer: "cat.foreignServer", tablespace: "cat.tablespace" };
 
 export function MainToolbar({ highlight, provider, showCaptions, onCategory, onNewConnection, onNewQuery }: Props) {
   const t = useT();

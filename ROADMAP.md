@@ -576,12 +576,12 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 - [x] Rules: já são uma aba do designer de tabela (como na referência); não há designer à parte
 - [ ] Partition designer *(**não confirmado na referência**)*
 - [ ] Inherits browser *(`src/documents/TableDesignerDoc.tsx:617`; **não confirmado na referência**)*
-- [ ] Preview de dados no designer
+- [ ] Preview de dados no designer *(**não existe na referência**: o designer de tabela tem só Fields, Indexes, Foreign Keys, Uniques, Checks, Excludes, Rules, Triggers, Options, Comment e SQL Preview)*
 
 ## 6. Tipos de objeto não implementados
 - [x] Materialized View: designer, abrir dados, atualizar dados (ver "Views materializadas" em Entregues)
 - [x] Function / Procedure designer (ver "Funções e procedimentos" em Entregues)
-- [ ] Debugger de PL/pgSQL
+- [ ] Debugger de PL/pgSQL *(**não confirmado na referência**: não aparece em nenhuma captura de funções)*
 - [x] Type (ENUM, composto, domínio): designer (ver "Tipos" em Entregues)
 - [x] Sequence: designer, reiniciar, definir valor (ver "Sequências" em Entregues)
 - [ ] Event Trigger (gatilhos de evento do banco; os gatilhos de tabela já estão no designer; **não confirmado na referência**)
@@ -591,7 +591,10 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 - [ ] Publication / Subscription (replicação lógica; **não confirmado na referência**)
 - [x] Role / User manager: atributos, senha e participações (ver "Usuários e papéis" em Entregues); o gerenciador de
       privilégios por objeto segue em aberto
-- [ ] Tablespace
+- [x] **Tablespace** (Others): lista (nome, dono, pasta e comentário) e designer que cria (`CREATE TABLESPACE ... LOCATION ... WITH (...)`), renomeia, troca o
+      dono, altera as opções de custo (`SET`/`RESET`) e comenta, com a prévia do SQL; a pasta só vale ao criar; excluir (`DROP TABLESPACE`, fora de transação)
+      não é oferecido para os do sistema (`pg_default`, `pg_global`). Testado ao vivo no PG 9.6 (criar numa pasta real, alterar, renomear, excluir)
+      *(`crates/atlas-pg/src/meta.rs`, `TablespaceDesignerDoc.tsx`)*
 
 ## 7. Importar / Exportar
 - [x] Import Wizard em etapas: TXT, CSV, JSON, XML, Excel e DBF (ver "Importação de dados"); Access/ODBC/Paradox pendentes

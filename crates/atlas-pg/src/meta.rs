@@ -7,7 +7,7 @@ use atlas_core::{
     AvailableExtension, ColumnInfo, ConstraintInfo, DatabaseDetail, DatabaseError, DatabaseList, DiagramColumn, DiagramRelation,
     DiagramTable, ErrorKind, ExtensionDetail, ExtensionInfo, IndexInfo, ObjectInfo, RoleInfo, RuleInfo, SchemaDiagram,
     FunctionDetail, RoleDetail, SchemaDetail, SchemaInfo, SchemaObjects, SequenceDetail, TableDetail, TypeAttribute, TypeCheck, TypeDetail,
-    TriggerInfo, ViewDetail, ForeignServerDetail, ForeignServerInfo, ForeignTableDetail, OptionPair, UserMappingInfo,
+    TriggerInfo, ViewDetail, ForeignServerDetail, ForeignServerInfo, ForeignTableDetail, OptionPair, TablespaceDetail, TablespaceInfo, UserMappingInfo,
 };
 
 /// `include_hidden`: lista também os bancos que a conexão normalmente oculta (templates e os que não aceitam conexão).
@@ -159,7 +159,24 @@ pub async fn list_objects(s: &PgSession, schema: &str) -> Result<SchemaObjects, 
         .map(|r| ForeignServerInfo { name: r.get(0), wrapper: r.get(1), owner: r.get(2), comment: r.get(3) })
         .collect();
 
-    Ok(SchemaObjects { tables, views, matviews, functions, types, sequences, extensions, foreign_servers })
+    // `pg_tablespace_location` é do 9.2; num servidor mais antigo a lista sai sem a pasta.
+    let location = if s.server.version_num >= 90200 { "COALESCE(pg_tablespace_location(t.oid), '')" } else { "''::text" };
+    let tablespaces = s
+        .client
+        .query(
+            &format!(
+                "SELECT t.spcname::text, pg_get_userbyid(t.spcowner)::text, {location}, shobj_description(t.oid, 'pg_tablespace') \
+                   FROM pg_catalog.pg_tablespace t ORDER BY t.spcname"
+            ),
+            &[],
+        )
+        .await
+        .map_err(|e| map_error(&e))?
+        .iter()
+        .map(|r| TablespaceInfo { name: r.get(0), owner: r.get(1), location: r.get(2), comment: r.get(3) })
+        .collect();
+
+    Ok(SchemaObjects { tables, views, matviews, functions, types, sequences, extensions, foreign_servers, tablespaces })
 }
 
 /// `chave=valor` como o catálogo guarda as opções.
@@ -170,6 +187,28 @@ fn option_pairs(raw: Vec<String>) -> Vec<OptionPair> {
             None => OptionPair { key: o, value: String::new() },
         })
         .collect()
+}
+
+/// Tablespace com dono, pasta, opções e comentário.
+pub async fn tablespace_detail(s: &PgSession, name: &str) -> Result<TablespaceDetail, DatabaseError> {
+    let location = if s.server.version_num >= 90200 { "COALESCE(pg_tablespace_location(t.oid), '')" } else { "''::text" };
+    let row = s
+        .client
+        .query_opt(
+            &format!(
+                "SELECT pg_get_userbyid(t.spcowner)::text, {location}, COALESCE(t.spcoptions, ARRAY[]::text[]), shobj_description(t.oid, 'pg_tablespace') \
+                   FROM pg_catalog.pg_tablespace t WHERE t.spcname = $1"
+            ),
+            &[&name],
+        )
+        .await
+        .map_err(|e| map_error(&e))?;
+    let Some(r) = row else {
+        let mut err = DatabaseError::new(ErrorKind::Server, format!("tablespace \"{name}\" does not exist"));
+        err.code = Some("42704".into());
+        return Err(err);
+    };
+    Ok(TablespaceDetail { name: name.to_string(), owner: r.get(0), location: r.get(1), options: option_pairs(r.get(2)), comment: r.get(3) })
 }
 
 /// Tabela estrangeira: servidor, opções, dono e comentário.

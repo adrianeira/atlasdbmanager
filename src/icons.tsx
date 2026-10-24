@@ -526,6 +526,14 @@ const small: Record<string, ReactElement> = {
       <path d="M1.5 4.2a1 1 0 0 1 1-1h3.2l1.4 1.5h6.4a1 1 0 0 1 1 1v6.6a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" fill="#f3c969" stroke="#c79a2c" strokeWidth=".9" />
     </>
   ),
+  tablespace: (
+    <>
+      <ellipse cx="8" cy="4.2" rx="5.5" ry="2.2" fill="#cfd8e3" stroke="#6b7480" strokeWidth=".9" />
+      <path d="M2.5 4.2v7.2c0 1.2 2.5 2.2 5.5 2.2s5.5-1 5.5-2.2V4.2" fill="#e4eaf1" stroke="#6b7480" strokeWidth=".9" />
+      <path d="M2.5 7.8c0 1.2 2.5 2.2 5.5 2.2s5.5-1 5.5-2.2" fill="none" stroke="#6b7480" strokeWidth=".9" />
+      <circle cx="11" cy="11.6" r=".7" fill="#2f7fd0" />
+    </>
+  ),
   foreignTable: (
     <>
       <rect x="1.5" y="2.5" width="13" height="11" rx="1" fill="#fff" stroke="#2f7fd0" strokeDasharray="2 1.2" />

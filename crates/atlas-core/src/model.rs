@@ -132,6 +132,8 @@ pub struct SchemaObjects {
     pub extensions: Vec<ExtensionInfo>,
     /// Servidores estrangeiros do banco (`pg_foreign_server`); valem para o banco todo, como as extensões.
     pub foreign_servers: Vec<ForeignServerInfo>,
+    /// Tablespaces do cluster (`pg_tablespace`); a lista é a mesma em todos os bancos e schemas.
+    pub tablespaces: Vec<TablespaceInfo>,
 }
 
 /// Coluna de um cartão do diagrama ER (tamanho e decimais no mesmo formato de `ColumnInfo`).
@@ -185,6 +187,28 @@ pub struct ExtensionInfo {
     /// Schema onde os objetos da extensão foram instalados.
     pub schema: String,
     pub owner: String,
+    pub comment: Option<String>,
+}
+
+/// Tablespace: a linha da lista de objetos.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TablespaceInfo {
+    pub name: String,
+    pub owner: String,
+    /// Pasta no servidor; vazia nos tablespaces do sistema (`pg_default` e `pg_global`).
+    pub location: String,
+    pub comment: Option<String>,
+}
+
+/// Tablespace com as opções de custo (`seq_page_cost`, `random_page_cost`...).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TablespaceDetail {
+    pub name: String,
+    pub owner: String,
+    pub location: String,
+    pub options: Vec<OptionPair>,
     pub comment: Option<String>,
 }
 

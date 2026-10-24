@@ -2273,3 +2273,28 @@ async fn fk_labels_use_the_description_column() {
     assert!(atlas_pg::fk_labels(&s, &ns, "cidade", "id", &[]).await.unwrap().labels.is_empty());
     atlas_pg::execute(&s, &format!("DROP SCHEMA {ns} CASCADE"), 1).await.unwrap();
 }
+
+#[tokio::test]
+async fn tablespaces_are_listed_with_detail() {
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    let objs = atlas_pg::list_objects(&s, "public").await.expect("list");
+    let names: Vec<&str> = objs.tablespaces.iter().map(|t| t.name.as_str()).collect();
+    assert!(names.contains(&"pg_default") && names.contains(&"pg_global"), "{names:?}");
+    // Os do sistema não têm pasta própria.
+    assert!(objs.tablespaces.iter().filter(|t| t.name.starts_with("pg_")).all(|t| t.location.is_empty()));
+    let d = atlas_pg::tablespace_detail(&s, "pg_default").await.expect("detail");
+    assert_eq!(d.name, "pg_default");
+    assert!(!d.owner.is_empty());
+    // O comentário de um tablespace fica no catálogo compartilhado (`shobj_description`). Só o dono pode comentar `pg_default`:
+    // sem essa permissão (usuário de teste comum) esta parte é conferida pela tela, com superusuário.
+    if atlas_pg::execute(&s, "COMMENT ON TABLESPACE pg_default IS 'atlas-test'", 1).await.is_ok() {
+        let with = atlas_pg::tablespace_detail(&s, "pg_default").await.expect("detail");
+        let listed = atlas_pg::list_objects(&s, "public").await.unwrap().tablespaces.into_iter().find(|t| t.name == "pg_default").unwrap();
+        atlas_pg::execute(&s, "COMMENT ON TABLESPACE pg_default IS NULL", 1).await.expect("uncomment");
+        assert_eq!(with.comment.as_deref(), Some("atlas-test"));
+        assert_eq!(listed.comment.as_deref(), Some("atlas-test"));
+    }
+    let err = atlas_pg::tablespace_detail(&s, "nao_existe_ts").await.err().expect("must fail");
+    assert_eq!(err.code.as_deref(), Some("42704"));
+}

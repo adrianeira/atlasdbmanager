@@ -5,7 +5,7 @@ use crate::export::Exports;
 use crate::local::Local;
 use crate::sessions::Sessions;
 use atlas_core::{
-    AvailableExtension, ConnectionParams, DatabaseDetail, DatabaseError, DatabaseList, ExtensionDetail, ForeignServerDetail, ForeignTableDetail, FunctionDetail, OrderBy, RoleDetail, SchemaDetail, SequenceDetail,
+    AvailableExtension, ConnectionParams, DatabaseDetail, DatabaseError, DatabaseList, ExtensionDetail, ForeignServerDetail, ForeignTableDetail, TablespaceDetail, FunctionDetail, OrderBy, RoleDetail, SchemaDetail, SequenceDetail,
     TypeDetail, QueryOutcome, RoleInfo, SchemaDiagram, SchemaInfo, SchemaObjects, ServerInfo, TableDetail, TableFilter, ViewDetail,
 };
 use serde::Serialize;
@@ -179,6 +179,17 @@ pub async fn pg_foreign_table_detail(
 ) -> Result<ForeignTableDetail, DatabaseError> {
     let s = sessions.get(&session_id, Some(&database)).await?;
     atlas_pg::foreign_table_detail(&s, &schema, &name).await
+}
+
+#[tauri::command]
+pub async fn pg_tablespace_detail(
+    sessions: State<'_, Sessions>,
+    session_id: String,
+    database: String,
+    name: String,
+) -> Result<TablespaceDetail, DatabaseError> {
+    let s = sessions.get(&session_id, Some(&database)).await?;
+    atlas_pg::tablespace_detail(&s, &name).await
 }
 
 #[tauri::command]
