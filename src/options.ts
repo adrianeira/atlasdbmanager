@@ -41,6 +41,11 @@ export interface AppOptions {
   systemLocale: boolean;
   /** Geral: permitir abrir o mesmo objeto em mais de uma aba. */
   multipleForms: boolean;
+  /** Ao iniciar: só a aba Objects, ou as consultas que estavam abertas. */
+  startup: "objects" | "continue";
+  /** Auto Recovery: guardar as consultas abertas a cada `autoSaveSeconds` segundos. */
+  autoSaveQueries: boolean;
+  autoSaveSeconds: number;
 }
 
 export const DEFAULT_OPTIONS: AppOptions = {
@@ -51,6 +56,7 @@ export const DEFAULT_OPTIONS: AppOptions = {
   limitRecords: true, rowShading: "every2",
   displayDate: "", displayTime: "", displayDateTime: "", showThousands: false, systemLocale: false,
   multipleForms: false,
+  startup: "objects", autoSaveQueries: true, autoSaveSeconds: 30,
 };
 
 export const OPTION_LIMITS = {
@@ -58,6 +64,7 @@ export const OPTION_LIMITS = {
   queryMaxRows: [10, 100_000],
   pageSize: [10, 100_000],
   tabWidth: [1, 16],
+  autoSaveSeconds: [5, 3600],
 } as const;
 
 type NumericKey = keyof typeof OPTION_LIMITS;
@@ -78,6 +85,9 @@ export function sanitizeOptions(raw: Partial<Record<keyof AppOptions, unknown>> 
     queryMaxRows: num("queryMaxRows"),
     pageSize: num("pageSize"),
     tabWidth: num("tabWidth"),
+    autoSaveSeconds: num("autoSaveSeconds"),
+    startup: raw?.startup === "continue" ? "continue" : "objects",
+    autoSaveQueries: bool(raw?.autoSaveQueries, d.autoSaveQueries),
     showLineNumbers: bool(raw?.showLineNumbers, d.showLineNumbers),
     codeFolding: bool(raw?.codeFolding, d.codeFolding),
     braceHighlight: bool(raw?.braceHighlight, d.braceHighlight),

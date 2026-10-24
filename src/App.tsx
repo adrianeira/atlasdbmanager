@@ -280,9 +280,13 @@ export default function App() {
   const t = useMemo(() => makeTranslator(layout.lang), [layout.lang]);
   // Opções da tela Ferramentas → Opções (guardadas no banco local; sem ele valem os padrões).
   const [appOptions, setAppOptions] = useState<AppOptions>(DEFAULT_OPTIONS);
+  const [optionsLoaded, setOptionsLoaded] = useState(!isDesktop);
   useEffect(() => {
     if (!isDesktop) return;
-    void local.getPref<Partial<AppOptions>>("ui.options").then((v) => setAppOptions(sanitizeOptions(v))).catch(() => undefined);
+    void local.getPref<Partial<AppOptions>>("ui.options")
+      .then((v) => setAppOptions(sanitizeOptions(v)))
+      .catch(() => undefined)
+      .finally(() => setOptionsLoaded(true));
   }, []);
   useEffect(() => {
     document.documentElement.style.setProperty("--editor-font-size", `${appOptions.editorFontSize}px`);
@@ -705,6 +709,8 @@ export default function App() {
 
   /* ---------- Documentos/abas ---------- */
   const [tabs, setTabs] = useState<DocTab[]>([OBJECTS_TAB]);
+  /** Texto atual de cada consulta aberta (o editor guarda o texto; aqui fica a cópia para o snapshot da sessão). */
+  const queryTexts = useRef(new Map<string, string>());
   const [activeTab, setActiveTab] = useState("objects");
   const [docStatus, setDocStatus] = useState<Record<string, StatusCell[]>>({});
   const queryActions = useRef<QueryActions | null>(null);
@@ -1271,6 +1277,65 @@ export default function App() {
     const idx = tabs.findIndex((x) => x.id === activeTab);
     setActiveTab(tabs[(idx + dir + tabs.length) % tabs.length].id);
   };
+
+  /* ---------- Sessão: consultas abertas (Opções → Tabs e Auto Recovery) ---------- */
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+  /** Só depois de decidir o que reabrir é que a sessão passa a ser gravada (senão a aba Objects sozinha apagaria a anterior). */
+  const sessionReady = useRef(false);
+  const lastSession = useRef("");
+  const saveSession = useCallback(() => {
+    if (!isDesktop || !sessionReady.current) return;
+    const queries = tabsRef.current.filter((x) => x.kind === "query");
+    const list = queries.map((x) => ({ title: x.title, connectionId: x.connectionId, database: x.database, schema: x.schema, sql: queryTexts.current.get(x.id) ?? x.sql ?? "" }));
+    const active = Math.max(0, queries.findIndex((x) => x.id === activeTabRef.current));
+    const json = JSON.stringify({ tabs: list, active });
+    if (json === lastSession.current) return;
+    lastSession.current = json;
+    void local.setPref("session.tabs", { tabs: list, active }).catch(() => undefined);
+  }, []);
+
+  // Ao iniciar: "Continue where you left off" reabre as consultas da sessão anterior.
+  useEffect(() => {
+    if (!isDesktop || !profilesLoaded || !optionsLoaded || sessionReady.current) return;
+    const done = () => { sessionReady.current = true; };
+    if (appOptions.startup !== "continue") return done();
+    void local.getPref<{ tabs?: { title: string; connectionId?: string; database?: string; schema?: string; sql: string }[]; active?: number }>("session.tabs")
+      .then((saved) => {
+        const known = new Set(connectionsRef.current.map((c) => c.id));
+        const restored: DocTab[] = (saved?.tabs ?? []).filter((x) => x && typeof x.sql === "string").map((x) => {
+          const keep = !!x.connectionId && known.has(x.connectionId);
+          const id = `doc${++tabSeq.current}`;
+          queryTexts.current.set(id, x.sql);
+          return { id, kind: "query", title: String(x.title || t("tab.untitledQuery")), windowTitle: String(x.title || t("tab.untitledQuery")), icon: "query", sql: x.sql,
+            connectionId: keep ? x.connectionId : undefined, database: keep ? x.database : undefined, schema: keep ? x.schema : undefined };
+        });
+        if (restored.length) {
+          setTabs((ts) => [...ts, ...restored]);
+          setActiveTab(restored[Math.min(Math.max(saved?.active ?? 0, 0), restored.length - 1)].id);
+        }
+      })
+      .catch(() => undefined)
+      .finally(done);
+    // Uma vez, quando perfis e opções já foram lidos.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profilesLoaded, optionsLoaded]);
+
+  useEffect(() => {
+    const id = window.setTimeout(saveSession, 600);
+    return () => window.clearTimeout(id);
+  }, [tabs, activeTab, saveSession]);
+  useEffect(() => {
+    if (!isDesktop || !appOptions.autoSaveQueries) return;
+    const id = window.setInterval(saveSession, appOptions.autoSaveSeconds * 1000);
+    return () => window.clearInterval(id);
+  }, [appOptions.autoSaveQueries, appOptions.autoSaveSeconds, saveSession]);
+  useEffect(() => {
+    window.addEventListener("beforeunload", saveSession);
+    return () => window.removeEventListener("beforeunload", saveSession);
+  }, [saveSession]);
 
   const setTabDirty = useCallback((id: string, dirty: boolean) => setTabs((ts) => (ts.some((x) => x.id === id && !!x.dirty !== dirty) ? ts.map((x) => (x.id === id ? { ...x, dirty } : x)) : ts)), []);
   const statusSetters = useRef<Record<string, (cells: StatusCell[]) => void>>({});
@@ -2519,6 +2584,8 @@ export default function App() {
           active={isActive}
           onStatus={statusFor(tab.id)}
           onDirty={(d) => setTabDirty(tab.id, d)}
+          onText={(text) => { queryTexts.current.set(tab.id, text); }}
+          onContext={(c) => setTabs((ts) => (ts.some((x) => x.id === tab.id && (x.connectionId !== c.connectionId || x.database !== c.database || x.schema !== c.schema)) ? ts.map((x) => (x.id === tab.id ? { ...x, connectionId: c.connectionId, database: c.database, schema: c.schema } : x)) : ts))}
           registerActions={(a) => { if (isActive) queryActions.current = a; }}
           backend={queryBackend}
           connecting={connecting}

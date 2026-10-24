@@ -31,6 +31,10 @@ interface Props {
   active: boolean;
   onStatus: (cells: StatusCell[]) => void;
   onDirty: (dirty: boolean) => void;
+  /** O texto do editor mudou (para guardar as consultas abertas). */
+  onText?: (text: string) => void;
+  /** Conexão, banco ou schema escolhidos na barra da consulta. */
+  onContext?: (ctx: QueryContext) => void;
   /** Permite que menus globais (Query/Format) acionem este documento. */
   registerActions: (a: QueryActions | null) => void;
   /** Acesso ao banco real; só é usado quando a conexão escolhida é real (senão, execução simulada). */
@@ -140,12 +144,13 @@ function mockExecute(sqlText: string, conn: ConnectionMock | undefined, database
 }
 
 export function QueryDoc({
-  connections, openConnections, initial, initialSql, autoRun, active, onStatus, onDirty, registerActions, backend: backendProp, connecting, onOpenConnection, onLoadSchemas, onRefreshSchemas, onExport, onExecuted,
+  connections, openConnections, initial, initialSql, autoRun, active, onStatus, onDirty, onText, onContext, registerActions, backend: backendProp, connecting, onOpenConnection, onLoadSchemas, onRefreshSchemas, onExport, onExecuted,
 }: Props) {
   const t = useT();
   const { queryMaxRows } = useOptions();
   const editor = useRef<SqlEditorHandle | null>(null);
   const [ctx, setCtx] = useState<QueryContext>(initial);
+  useEffect(() => { onContext?.(ctx); }, [ctx, onContext]);
   const [cursor, setCursor] = useState({ line: 1, col: 1 });
   const [running, setRunning] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -503,7 +508,7 @@ export function QueryDoc({
           <SqlEditor
             value={initialSql ?? ""}
             schema={completionSchema}
-            onChange={() => onDirty(true)}
+            onChange={(text) => { onDirty(true); onText?.(text); }}
             onCursor={(line, col) => setCursor({ line, col })}
             onRun={run}
             handleRef={(h) => { editor.current = h; }}

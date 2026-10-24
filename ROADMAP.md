@@ -301,10 +301,12 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       Number, Comment e Background, com botão para voltar à cor do tema; valem na hora, também nos temas claro e escuro
 - [x] **Table Data → Display Format**: padrões de **Date**, **Time** e **DateTime** (`yyyy yy MM dd HH hh mm ss tt f..`), com a prévia ao vivo, e
       **separador de milhar** / separador decimal do sistema; só a exibição muda (copiar, editar e exportar usam o valor real) *(`src/format.ts`)*
-- [ ] Da referência ainda sem equivalente: Tabs (onde abrir a aba nova, o que abrir ao iniciar), cores e fonte do editor, formatos de
-      data/hora e separador de milhar, "Auto begin transaction", fonte do grid, Auto Recovery (salvar consultas sozinho),
-      File Locations, Connectivity (proxy), Advanced e confirmações ao fechar. As categorias AI e Environment (SQL*Plus, Mongo,
-      OCI) dependem de recursos que o Atlas não tem
+- [x] **Tabs → On Startup** (abrir só a aba Objects, ou **continuar de onde parou**: reabre as consultas com o texto, a conexão, o banco e o
+      schema) e **Auto Recovery** (guardar o texto das consultas abertas a cada N segundos, 30 por padrão); a lista de abas também é
+      gravada a cada mudança e ao fechar *(`session.tabs` nas preferências locais)*
+- [ ] Da referência sem equivalente no Atlas: Tabs → "Open new tab in" (o Atlas tem uma só janela de abas), Connectivity (proxy: na referência vale
+      só para ativação, atualizador, nuvem e IA, que o Atlas não tem), File Locations (o Atlas guarda tudo numa pasta só, mostrada em "Local Data"),
+      Environment (SQL*Plus, Mongo, OCI) e AI. Ainda faltam: fonte do grid, "Auto begin transaction", confirmações ao fechar e Advanced
 - Padrão do sombreamento: a cada 2 linhas (a referência vem com "Every Third Row")
 
 ### Navegação / Árvore

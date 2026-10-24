@@ -26,14 +26,16 @@ interface Props {
   onClose: () => void;
 }
 
-type Tab = "general" | "completion" | "editor" | "data" | "history" | "storage";
-type NumKey = "editorFontSize" | "queryMaxRows" | "pageSize" | "tabWidth";
+type Tab = "general" | "tabs" | "completion" | "editor" | "data" | "history" | "recovery" | "storage";
+type NumKey = "editorFontSize" | "queryMaxRows" | "pageSize" | "tabWidth" | "autoSaveSeconds";
 type BoolKey = { [K in keyof AppOptions]: AppOptions[K] extends boolean ? K : never }[keyof AppOptions];
 const TABS: { id: Tab; label: MessageKey }[] = [
   { id: "general", label: "opt.general" },
+  { id: "tabs", label: "opt.tabs" },
   { id: "completion", label: "opt.completion" },
   { id: "editor", label: "opt.editor" },
   { id: "data", label: "opt.data" },
+  { id: "recovery", label: "opt.recovery" },
   { id: "history", label: "opt.history" },
   { id: "storage", label: "opt.storage" },
 ];
@@ -56,7 +58,7 @@ export function OptionsDialog({ options, appearance, onApply, onClose }: Props) 
   const [opts, setOpts] = useState<AppOptions>(options);
   const [look, setLook] = useState<AppearanceOptions>(appearance);
   // Os campos numéricos são texto enquanto se digita; viram número válido ao sair do campo.
-  const numbers = (o: AppOptions) => ({ editorFontSize: String(o.editorFontSize), queryMaxRows: String(o.queryMaxRows), pageSize: String(o.pageSize), tabWidth: String(o.tabWidth) });
+  const numbers = (o: AppOptions) => ({ editorFontSize: String(o.editorFontSize), queryMaxRows: String(o.queryMaxRows), pageSize: String(o.pageSize), tabWidth: String(o.tabWidth), autoSaveSeconds: String(o.autoSaveSeconds) });
   const [text, setText] = useState(numbers(options));
   const [recording, setRecording] = useState(true);
   const [keep, setKeep] = useState("2000");
@@ -147,6 +149,27 @@ export function OptionsDialog({ options, appearance, onApply, onClose }: Props) 
             ))}
             <label className="check-row"><input type="checkbox" checked={look.showCaptions} onChange={(e) => setLook({ ...look, showCaptions: e.target.checked })} /><span>{t("opt.captions")}</span></label>
             {check("multipleForms", "opt.multipleForms")}
+          </>
+        );
+      case "tabs":
+        return (
+          <>
+            <div className="opt-section">{t("opt.onStartup")}</div>
+            {(["objects", "continue"] as const).map((v) => (
+              <label key={v} className="check-row">
+                <input type="radio" name="opt-startup" checked={opts.startup === v} onChange={() => setOpts({ ...opts, startup: v })} />
+                <span>{t(v === "objects" ? "opt.startObjects" : "opt.startContinue")}</span>
+              </label>
+            ))}
+            <div className="muted exp-note">{t("opt.startNote")}</div>
+          </>
+        );
+      case "recovery":
+        return (
+          <>
+            {check("autoSaveQueries", "opt.recoveryQuery")}
+            {row("opt.recoverySeconds", num("autoSaveSeconds"), limit("autoSaveSeconds"))}
+            <div className="muted exp-note">{t("opt.recoveryNote")}</div>
           </>
         );
       case "completion":
