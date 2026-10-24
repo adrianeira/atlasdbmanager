@@ -39,3 +39,26 @@ export function beautifySql(sqlText: string): string {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
+
+/**
+ * "Minify SQL": tira os comentários e junta tudo numa linha só, com um espaço entre as palavras, sem espaço em volta de `,` `;` `(` `)`.
+ * Literais, identificadores entre aspas e blocos `$$ ... $$` ficam exatamente como estão.
+ */
+export function minifySql(sqlText: string): string {
+  const tokens = sqlText.match(/'(?:[^']|'')*'|"(?:[^"]|"")*"|--[^\n]*|\/\*[\s\S]*?\*\/|\$\w*\$[\s\S]*?\$\w*\$|\w+|\s+|./g) ?? [];
+  let out = "";
+  let pendingSpace = false;
+  const TIGHT = /^[,;()]$/;
+  for (const tok of tokens) {
+    if (/^\s+$/.test(tok) || tok.startsWith("--") || tok.startsWith("/*")) {
+      // Comentário vira o espaço que separa as palavras vizinhas.
+      pendingSpace = out !== "";
+      continue;
+    }
+    if (pendingSpace && !TIGHT.test(tok) && !/[(]$/.test(out) && !/[,;]$/.test(out)) out += " ";
+    // Depois de `)` uma palavra precisa de espaço (`) AS x`), mas `),` e `);` não.
+    out += tok;
+    pendingSpace = false;
+  }
+  return out.trim();
+}

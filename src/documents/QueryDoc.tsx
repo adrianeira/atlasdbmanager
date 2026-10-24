@@ -11,7 +11,7 @@ import { ProviderIcon, SmallIcon, type SmallIconName } from "../icons";
 import { FullscreenButton } from "../components/FullscreenButton";
 import { mockRows, type CellValue, type ConnectionMock } from "../model";
 import { columnType } from "../sql/ddl";
-import { beautifySql } from "../sql/format";
+import { beautifySql, minifySql } from "../sql/format";
 import { closeQueryBuilder, errorText, onQueryBuilderBuild, openQueryBuilder, toAtlasError, type QueryBuilderResult } from "../backend";
 import { useOptions } from "../options";
 
@@ -86,6 +86,9 @@ export interface QueryActions {
   stop: () => void;
   explain: () => void;
   beautify: () => void;
+  minify: () => void;
+  upper: () => void;
+  lower: () => void;
 }
 
 interface ResultSet {
@@ -163,6 +166,14 @@ export function QueryDoc({
   const [resultTab, setResultTab] = useState(0);
   const [activeRow, setActiveRow] = useState(0);
   const [split, setSplit] = useState(0.55);
+  /** Resultados abaixo do editor (padrão) ou ao lado dele. */
+  const [side, setSide] = useState(() => {
+    try { return localStorage.getItem("atlas.queryLayout") === "side"; } catch { return false; }
+  });
+  const chooseLayout = (next: boolean) => {
+    setSide(next);
+    try { localStorage.setItem("atlas.queryLayout", next ? "side" : "stacked"); } catch { /* sem armazenamento: vale só nesta sessão */ }
+  };
   const [runMenu, setRunMenu] = useState(false);
   const runTimer = useRef<number | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -283,10 +294,19 @@ export function QueryDoc({
     }
   }, [running, t, backend, conn, ctx.database]);
 
-  const beautify = useCallback(() => {
-    const text = editor.current?.getText() ?? "";
-    if (text.trim()) editor.current?.replaceAll(beautifySql(text));
+  /** Aplica `fn` à seleção (ou ao texto todo, se não houver seleção). */
+  const transform = useCallback((fn: (text: string) => string) => {
+    const ed = editor.current;
+    if (!ed) return;
+    const sel = ed.getSelection();
+    if (sel) return ed.replaceSelection(fn(sel));
+    const all = ed.getText();
+    if (all.trim()) ed.replaceAll(fn(all));
   }, []);
+  const beautify = useCallback(() => transform(beautifySql), [transform]);
+  const minify = useCallback(() => transform(minifySql), [transform]);
+  const upper = useCallback(() => transform((x) => x.toUpperCase()), [transform]);
+  const lower = useCallback(() => transform((x) => x.toLowerCase()), [transform]);
 
   const explain = useCallback(() => {
     const text = editor.current?.getSelection() || editor.current?.getText() || "";
@@ -335,8 +355,8 @@ export function QueryDoc({
   }, [autoRun, conn, run]);
 
   useEffect(() => {
-    registerActions(active ? { run, stop, explain, beautify } : null);
-  }, [active, run, stop, explain, beautify, registerActions]);
+    registerActions(active ? { run, stop, explain, beautify, minify, upper, lower } : null);
+  }, [active, run, stop, explain, beautify, minify, upper, lower, registerActions]);
 
   const current = outcome && resultTab > 0 ? outcome.results[resultTab - 1] : undefined;
 
@@ -369,13 +389,13 @@ export function QueryDoc({
     e.preventDefault();
     const rect = bodyRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const onMove = (ev: MouseEvent) => setSplit(Math.min(0.85, Math.max(0.15, (ev.clientY - rect.top) / rect.height)));
+    const onMove = (ev: MouseEvent) => setSplit(Math.min(0.85, Math.max(0.15, side ? (ev.clientX - rect.left) / rect.width : (ev.clientY - rect.top) / rect.height)));
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
-      document.body.classList.remove("is-resizing-v");
+      document.body.classList.remove(side ? "is-resizing-h" : "is-resizing-v");
     };
-    document.body.classList.add("is-resizing-v");
+    document.body.classList.add(side ? "is-resizing-h" : "is-resizing-v");
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   };
@@ -441,12 +461,13 @@ export function QueryDoc({
           }).catch((e) => setOutcome({ sql: "", ms: 0, results: [], message: "", error: errorText(toAtlasError(e)) }));
         } : undefined)}
         {tool("beautify", "query.beautify", beautify)}
+        {tool("beautify", "query.minify", minify)}
         {tool("history", "query.history", () => setHistoryOpen(true))}
         {tool("snippet", "query.snippet", () => setSnippets({ selection: editor.current?.getSelection() ?? "" }))}
         {tool("ai", "query.askAi")}
         <div className="ot-spacer" />
-        <button type="button" className="icon-button is-active" title={t("query.layoutStacked")}><SmallIcon name="splitH" /></button>
-        <button type="button" className="icon-button" title={t("notImplemented")} disabled><SmallIcon name="splitV" /></button>
+        <button type="button" className={`icon-button${side ? "" : " is-active"}`} title={t("query.layoutStacked")} aria-pressed={!side} onClick={() => chooseLayout(false)}><SmallIcon name="splitH" /></button>
+        <button type="button" className={`icon-button${side ? " is-active" : ""}`} title={t("query.layoutSide")} aria-pressed={side} onClick={() => chooseLayout(true)}><SmallIcon name="splitV" /></button>
         <FullscreenButton />
       </div>
 
@@ -503,7 +524,7 @@ export function QueryDoc({
         {running && <span className="spinner" />}
       </div>
 
-      <div className="query-body" ref={bodyRef}>
+      <div className={`query-body${side ? " is-side" : ""}`} ref={bodyRef}>
         <div className="query-editor" style={{ flexBasis: outcome ? `${split * 100}%` : "100%" }}>
           <SqlEditor
             value={initialSql ?? ""}
@@ -516,7 +537,7 @@ export function QueryDoc({
         </div>
         {outcome && (
           <>
-            <div className="hsplitter" role="separator" aria-orientation="horizontal" onMouseDown={startSplit} />
+            <div className={side ? "vsplitter" : "hsplitter"} role="separator" aria-orientation={side ? "vertical" : "horizontal"} onMouseDown={startSplit} />
             <div className="query-results">
               <div className="result-tabs" role="tablist">
                 <button type="button" role="tab" aria-selected={resultTab === 0} className={`result-tab${resultTab === 0 ? " is-active" : ""}`} onClick={() => setResultTab(0)}>{t("query.message")}</button>

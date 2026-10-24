@@ -2197,12 +2197,13 @@ export default function App() {
     stop: { id: "stop", label: "cmd.stop", run: active.kind === "query" ? () => qa()?.stop() : undefined },
     explain: { id: "explain", label: "cmd.explain", run: active.kind === "query" ? () => qa()?.explain() : undefined },
     beautify: { id: "beautify", label: "cmd.beautify", shortcut: "Ctrl+Shift+F", run: active.kind === "query" ? () => qa()?.beautify() : undefined },
+    minify: { id: "minify", label: "cmd.minify", run: active.kind === "query" ? () => qa()?.minify() : undefined },
     queryBuilder: { id: "queryBuilder", label: "cmd.queryBuilder" },
     indent: { id: "indent", label: "cmd.indent", shortcut: "Tab" },
     outdent: { id: "outdent", label: "cmd.outdent", shortcut: "Shift+Tab" },
     toggleComment: { id: "toggleComment", label: "cmd.comment", shortcut: "Ctrl+/" },
-    upper: { id: "upper", label: "cmd.upper" },
-    lower: { id: "lower", label: "cmd.lower" },
+    upper: { id: "upper", label: "cmd.upper", run: active.kind === "query" ? () => qa()?.upper() : undefined },
+    lower: { id: "lower", label: "cmd.lower", run: active.kind === "query" ? () => qa()?.lower() : undefined },
     addRecord: { id: "addRecord", label: "data.addRecord" },
     deleteRecord: { id: "deleteRecord", label: "data.deleteRecord" },
     applyChanges: { id: "applyChanges", label: "data.apply" },
@@ -2251,7 +2252,7 @@ export default function App() {
     label: "menu.view",
     items: entries("navigationPane", "informationPane", "toolbarCaptions", "-", "viewList", "viewDetail", "viewIcons", "viewEr", "-", sortSubmenu, "chooseColumns", "-", "showHidden", "-", "erShowGrid", "erSnapGrid", "erShowFkNames", "-", "themeSystem", "themeLight", "themeDark", "-", "langPt", "langEn", "-", "resetLayout"),
   };
-  const queryMenu: MenuDef = { label: "menu.query", items: entries("run", "runSelected", "stop", "-", "explain", "-", "beautify", "queryBuilder") };
+  const queryMenu: MenuDef = { label: "menu.query", items: entries("run", "runSelected", "stop", "-", "explain", "-", "beautify", "minify", "queryBuilder") };
   const formatMenu: MenuDef = { label: "menu.format", items: entries("indent", "outdent", "-", "toggleComment", "-", "upper", "lower") };
   const tableMenu: MenuDef = { label: "menu.table", items: entries("addRecord", "deleteRecord", "-", "applyChanges", "discardChanges", "-", "refreshData") };
   const tailMenus: MenuDef[] = [

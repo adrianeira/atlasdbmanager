@@ -559,10 +559,12 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 ## 4. Editor SQL
 - [x] Snippet manager (ver "Snippets" em Entregues)
 - [ ] Ask AI *(`query.askAi` sem handler)*
-- [ ] Split horizontal/vertical *(`src/documents/QueryDoc.tsx:292-293`)*
+- [x] **Divisão do editor**: os dois botões do canto da consulta alternam entre resultados **abaixo** (padrão) e **ao lado** do editor, com divisor
+      arrastável nos dois sentidos; a escolha fica lembrada
 - [x] Histórico de consultas e favoritos (ver "Histórico de consultas" em Entregues)
 - [ ] Transaction panel, Parameters window
-- [ ] Beautify / Minify além de "Formatar"
+- [x] **Minify SQL** (menu Query e barra da consulta): tira comentários e junta tudo numa linha, preservando textos, identificadores entre aspas e blocos
+      `$$`; Beautify e Minify valem para a seleção (ou o texto todo); **Converter para maiúsculas/minúsculas** do menu Format também passaram a funcionar
 - [ ] Plano de execução gráfico *(hoje `EXPLAIN` só em texto; **não confirmado na referência**)*
 
 ## 5. Designers

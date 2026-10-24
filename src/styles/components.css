@@ -19,6 +19,10 @@ body.is-resizing-v {
   cursor: row-resize;
 }
 
+body.is-resizing-h {
+  cursor: col-resize;
+}
+
 /* ---------- Cor e estrela da conexão ---------- */
 
 .tree-row.has-color {
@@ -2661,3 +2665,9 @@ select.et-input {
 .dg-summary-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dg-summary-arrow { flex: none; color: var(--c-text-muted); font-size: 9px; visibility: hidden; }
 .dg-summary-cell:hover .dg-summary-arrow, .dg-summary-cell.is-empty:focus-visible .dg-summary-arrow { visibility: visible; }
+
+/* Resultados ao lado do editor. */
+.query-body.is-side { flex-direction: row; }
+.query-body.is-side .query-editor { min-width: 160px; min-height: 0; }
+.query-body.is-side .query-results { min-width: 0; }
+.vsplitter { flex: none; width: 5px; cursor: col-resize; background: var(--c-surface-alt); border-left: 1px solid var(--c-border); border-right: 1px solid var(--c-border); }
