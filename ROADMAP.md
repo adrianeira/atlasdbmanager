@@ -639,7 +639,7 @@ Hoje o menu Exibir tem só Lista, Detalhe e Ícones (`viewMode` em `src/App.tsx`
       ponta** mostra os 4 pontos de ligação do cartão (topo, direita, base, esquerda) e a linha passa a sair/entrar pelo
       mais próximo, refazendo-se ao vivo; o lado escolhido também fica salvo. A rota não desvia de outros cartões que
       estejam no caminho. As
-      opções **Show Grid**, **Snap to Grid** (grade de 10 px) e **Show Foreign Key Names** ficam no menu Exibir e são lembradas; o botão
+      opções **Show Grid**, **Snap to Grid** (grade de 5 px) e **Show Foreign Key Names** ficam no menu Exibir e são lembradas; o botão
       Atualizar relê o schema. Os dados vêm de uma consulta só (`pg_schema_diagram`); sem servidor, usa as tabelas da
       demonstração. Não é a Modelagem da seção 10: aqui é a visão do schema como ele está no banco
       *(`src/components/ErDiagram.tsx`, `src/er.ts`, `crates/atlas-pg/src/meta.rs`)*
