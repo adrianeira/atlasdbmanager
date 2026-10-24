@@ -2012,6 +2012,15 @@ async fn console_runs_sql_and_backslash_commands_like_psql() {
     let out = run("\\d orders").await;
     assert!(out.text.contains("Check constraints:") && out.text.contains("CHECK (amount > 0::numeric)") && out.text.contains("Foreign-key constraints:"), "{}", out.text);
     assert_eq!(run("\\d nada_disso").await.text, "Did not find any relation named \"nada_disso\".\n");
+    // Variantes com `+`: tamanho, persistência, armazenamento e descrições.
+    let out = run("\\dt+").await;
+    assert!(out.text.contains("Persistence") && out.text.contains("Size") && out.text.contains("Description") && out.text.contains("permanent"), "{}", out.text);
+    let out = run("\\d+ clients").await;
+    assert!(out.text.contains("Storage") && out.text.contains("extended") && out.text.contains("Description") && out.text.contains("Size: "), "{}", out.text);
+    let out = run("\\l+").await;
+    assert!(out.text.contains("Tablespace") && out.text.contains("Size") && out.text.contains("pg_default"), "{}", out.text);
+    assert!(run("\\dn+").await.text.contains("Access privileges"));
+    assert!(run("\\du+").await.text.contains("Description"));
     let out = run("\\l").await;
     assert!(out.text.starts_with("                                 List of databases") || out.text.contains("List of databases"), "{}", out.text);
     assert!(out.text.contains(&s.server.current_database));

@@ -253,13 +253,20 @@ async fn query(s: &PgSession, sql: &str) -> Result<ResultSet, DatabaseError> {
 
 const HELP: &str = "General\n  \\q                     quit the console\n  \\?                     show this help\n  \\conninfo              display information about the current connection\n  \\c [DBNAME]            connect to another database\n\nInformational\n  \\l                     list databases\n  \\dn                    list schemas\n  \\dt                    list tables\n  \\dv                    list views\n  \\dm                    list materialized views\n  \\di                    list indexes\n  \\ds                    list sequences\n  \\df                    list functions\n  \\du                    list roles\n  \\d NAME                describe a table, view, index or sequence\n\nFormatting\n  \\timing [on|off]       toggle the time each command took\n  \\x [on|off]            toggle expanded output\n";
 
-fn relations(kinds: &str, title: &str, none: &str) -> (String, String, String) {
+fn relations(kinds: &str, title: &str, none: &str, plus: bool) -> (String, String, String) {
+    // `+`: persistência, tamanho e descrição.
+    let more = if plus {
+        ", CASE c.relpersistence WHEN 'p' THEN 'permanent' WHEN 'u' THEN 'unlogged' ELSE 'temporary' END AS \"Persistence\", \
+           pg_catalog.pg_size_pretty(pg_catalog.pg_table_size(c.oid)) AS \"Size\", pg_catalog.obj_description(c.oid, 'pg_class') AS \"Description\""
+    } else {
+        ""
+    };
     (
         format!(
             "SELECT n.nspname AS \"Schema\", c.relname AS \"Name\", \
                     CASE c.relkind WHEN 'r' THEN 'table' WHEN 'v' THEN 'view' WHEN 'm' THEN 'materialized view' WHEN 'i' THEN 'index' \
                          WHEN 'S' THEN 'sequence' WHEN 'f' THEN 'foreign table' WHEN 'p' THEN 'partitioned table' END AS \"Type\", \
-                    pg_catalog.pg_get_userbyid(c.relowner) AS \"Owner\" \
+                    pg_catalog.pg_get_userbyid(c.relowner) AS \"Owner\"{more} \
                FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
               WHERE c.relkind IN ({kinds}) AND n.nspname <> 'pg_catalog' AND n.nspname !~ '^pg_toast' AND n.nspname <> 'information_schema' \
                 AND pg_catalog.pg_table_is_visible(c.oid) ORDER BY 1, 2"
@@ -270,7 +277,7 @@ fn relations(kinds: &str, title: &str, none: &str) -> (String, String, String) {
 }
 
 /// `\d nome`: colunas e, depois, índices, restrições, chaves estrangeiras, referências e gatilhos.
-async fn describe(s: &PgSession, name: &str, expanded: bool) -> Result<String, DatabaseError> {
+async fn describe(s: &PgSession, name: &str, expanded: bool, plus: bool) -> Result<String, DatabaseError> {
     let found = query(s, &format!("SELECT c.oid::int8, n.nspname, c.relname, c.relkind::text FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE c.oid = pg_catalog.to_regclass({})::oid", quote(name))).await?;
     let Some(row) = found.rows.first() else { return Ok(format!("Did not find any relation named \"{name}\".\n")) };
     let (oid, schema, rel, kind) = (row[0].clone().unwrap_or_default(), row[1].clone().unwrap_or_default(), row[2].clone().unwrap_or_default(), row[3].clone().unwrap_or_default());
@@ -284,13 +291,20 @@ async fn describe(s: &PgSession, name: &str, expanded: bool) -> Result<String, D
         "p" => "Partitioned table",
         _ => "Relation",
     };
+    // `\d+`: armazenamento e descrição de cada coluna.
+    let more = if plus {
+        ", CASE a.attstorage WHEN 'p' THEN 'plain' WHEN 'e' THEN 'external' WHEN 'm' THEN 'main' WHEN 'x' THEN 'extended' END AS \"Storage\", \
+           pg_catalog.col_description(a.attrelid, a.attnum) AS \"Description\""
+    } else {
+        ""
+    };
     let columns = query(
         s,
         &format!(
             "SELECT a.attname AS \"Column\", pg_catalog.format_type(a.atttypid, a.atttypmod) AS \"Type\", \
                     (SELECT c.collname FROM pg_catalog.pg_collation c, pg_catalog.pg_type t WHERE c.oid = a.attcollation AND t.oid = a.atttypid AND a.attcollation <> t.typcollation) AS \"Collation\", \
                     CASE WHEN a.attnotnull THEN 'not null' ELSE '' END AS \"Nullable\", \
-                    COALESCE(pg_catalog.pg_get_expr(d.adbin, d.adrelid), '') AS \"Default\" \
+                    COALESCE(pg_catalog.pg_get_expr(d.adbin, d.adrelid), '') AS \"Default\"{more} \
                FROM pg_catalog.pg_attribute a LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum \
               WHERE a.attrelid = {oid} AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum"
         ),
@@ -341,6 +355,27 @@ async fn describe(s: &PgSession, name: &str, expanded: bool) -> Result<String, D
     out.push_str(&section("Foreign-key constraints:", &fks));
     out.push_str(&section("Referenced by:", &refs));
     out.push_str(&section("Triggers:", &triggers));
+    if plus {
+        // `\d+`: as opções de armazenamento e o tamanho da relação.
+        let extra = query(
+            s,
+            &format!(
+                "SELECT COALESCE(array_to_string(c.reloptions, ', '), ''), pg_catalog.pg_size_pretty(pg_catalog.pg_table_size(c.oid)), COALESCE(pg_catalog.obj_description(c.oid, 'pg_class'), '') \
+                   FROM pg_catalog.pg_class c WHERE c.oid = {oid}"
+            ),
+        )
+        .await?;
+        if let Some(r) = extra.rows.first() {
+            let get = |i: usize| r[i].clone().unwrap_or_default();
+            if !get(2).is_empty() {
+                out.push_str(&format!("Description: {}\n", get(2)));
+            }
+            if !get(0).is_empty() {
+                out.push_str(&format!("Options: {}\n", get(0)));
+            }
+            out.push_str(&format!("Size: {}\n", get(1)));
+        }
+    }
     Ok(out)
 }
 
@@ -364,6 +399,7 @@ pub async fn run(s: &PgSession, input: &str, options: ConsoleOptions) -> Console
     if let Some(meta) = trimmed.strip_prefix('\\') {
         let _ = meta;
         let (name, arg) = split_meta(trimmed);
+        let plus = name.ends_with('+');
         let result: Result<Option<(String, String, String)>, DatabaseError> = match name.as_str() {
             "q" | "quit" => {
                 out.quit = true;
@@ -398,6 +434,23 @@ pub async fn run(s: &PgSession, input: &str, options: ConsoleOptions) -> Console
                 }
                 Ok(None)
             }
+            "l+" | "list+" => Ok(Some((
+                "SELECT d.datname AS \"Name\", pg_catalog.pg_get_userbyid(d.datdba) AS \"Owner\", pg_catalog.pg_encoding_to_char(d.encoding) AS \"Encoding\", d.datcollate AS \"Collate\", d.datctype AS \"Ctype\", \
+                        CASE WHEN pg_catalog.has_database_privilege(d.datname, 'CONNECT') THEN pg_catalog.pg_size_pretty(pg_catalog.pg_database_size(d.datname)) ELSE 'No Access' END AS \"Size\", \
+                        t.spcname AS \"Tablespace\", pg_catalog.shobj_description(d.oid, 'pg_database') AS \"Description\" \
+                   FROM pg_catalog.pg_database d JOIN pg_catalog.pg_tablespace t ON t.oid = d.dattablespace ORDER BY 1"
+                    .into(),
+                "List of databases".into(),
+                String::new(),
+            ))),
+            "dn+" => Ok(Some((
+                "SELECT n.nspname AS \"Name\", pg_catalog.pg_get_userbyid(n.nspowner) AS \"Owner\", COALESCE(pg_catalog.array_to_string(n.nspacl, E'\\n'), '') AS \"Access privileges\", \
+                        pg_catalog.obj_description(n.oid, 'pg_namespace') AS \"Description\" \
+                   FROM pg_catalog.pg_namespace n WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema' ORDER BY 1"
+                    .into(),
+                "List of schemas".into(),
+                String::new(),
+            ))),
             "l" | "list" => Ok(Some((
                 "SELECT d.datname AS \"Name\", pg_catalog.pg_get_userbyid(d.datdba) AS \"Owner\", pg_catalog.pg_encoding_to_char(d.encoding) AS \"Encoding\", d.datcollate AS \"Collate\", d.datctype AS \"Ctype\" FROM pg_catalog.pg_database d ORDER BY 1".into(),
                 "List of databases".into(),
@@ -408,11 +461,11 @@ pub async fn run(s: &PgSession, input: &str, options: ConsoleOptions) -> Console
                 "List of schemas".into(),
                 String::new(),
             ))),
-            "dt" | "dt+" => Ok(Some(relations("'r','p'", "List of relations", "Did not find any relations."))),
-            "dv" | "dv+" => Ok(Some(relations("'v'", "List of relations", "Did not find any relations."))),
-            "dm" | "dm+" => Ok(Some(relations("'m'", "List of relations", "Did not find any relations."))),
-            "di" | "di+" => Ok(Some(relations("'i'", "List of relations", "Did not find any relations."))),
-            "ds" | "ds+" => Ok(Some(relations("'S'", "List of relations", "Did not find any relations."))),
+            "dt" | "dt+" => Ok(Some(relations("'r','p'", "List of relations", "Did not find any relations.", plus))),
+            "dv" | "dv+" => Ok(Some(relations("'v'", "List of relations", "Did not find any relations.", plus))),
+            "dm" | "dm+" => Ok(Some(relations("'m'", "List of relations", "Did not find any relations.", plus))),
+            "di" | "di+" => Ok(Some(relations("'i'", "List of relations", "Did not find any relations.", plus))),
+            "ds" | "ds+" => Ok(Some(relations("'S'", "List of relations", "Did not find any relations.", plus))),
             "df" | "df+" => {
                 let kinds = if s.server.version_num >= 110000 { "p.prokind IN ('f','p')" } else { "NOT p.proisagg AND NOT p.proiswindow" };
                 Ok(Some((
@@ -426,7 +479,17 @@ pub async fn run(s: &PgSession, input: &str, options: ConsoleOptions) -> Console
                     "Did not find any functions.".into(),
                 )))
             }
-            "du" | "dg" | "du+" => Ok(Some((
+            "du+" | "dg+" => Ok(Some((
+                "SELECT r.rolname AS \"Role name\", \
+                        trim(both ', ' from concat_ws(', ', CASE WHEN r.rolsuper THEN 'Superuser' END, CASE WHEN NOT r.rolinherit THEN 'No inheritance' END, \
+                             CASE WHEN r.rolcreaterole THEN 'Create role' END, CASE WHEN r.rolcreatedb THEN 'Create DB' END, CASE WHEN NOT r.rolcanlogin THEN 'Cannot login' END)) AS \"Attributes\", \
+                        pg_catalog.shobj_description(r.oid, 'pg_authid') AS \"Description\" \
+                   FROM pg_catalog.pg_roles r WHERE r.rolname !~ '^pg_' ORDER BY 1"
+                    .into(),
+                "List of roles".into(),
+                String::new(),
+            ))),
+            "du" | "dg" => Ok(Some((
                 "SELECT r.rolname AS \"Role name\", \
                         trim(both ', ' from concat_ws(', ', CASE WHEN r.rolsuper THEN 'Superuser' END, CASE WHEN NOT r.rolinherit THEN 'No inheritance' END, \
                              CASE WHEN r.rolcreaterole THEN 'Create role' END, CASE WHEN r.rolcreatedb THEN 'Create DB' END, CASE WHEN NOT r.rolcanlogin THEN 'Cannot login' END)) AS \"Attributes\" \
@@ -435,8 +498,8 @@ pub async fn run(s: &PgSession, input: &str, options: ConsoleOptions) -> Console
                 "List of roles".into(),
                 String::new(),
             ))),
-            "d" if arg.is_empty() => Ok(Some(relations("'r','v','m','S','f','p'", "List of relations", "Did not find any relations."))),
-            "d" | "d+" => match describe(s, &arg, options.expanded).await {
+            "d" if arg.is_empty() => Ok(Some(relations("'r','v','m','S','f','p'", "List of relations", "Did not find any relations.", plus))),
+            "d" | "d+" => match describe(s, &arg, options.expanded, plus).await {
                 Ok(text) => {
                     out.text.push_str(&text);
                     Ok(None)
