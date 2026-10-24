@@ -655,7 +655,7 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 ## 13. Toolbar / rodapé — itens menores
 - [ ] Conta (login do serviço em nuvem) *(`src/components/MainToolbar.tsx:100`)*
 - [ ] Beautify de célula
-- [ ] Hex / Binary editor próprio
+- [ ] Hex / Binary editor próprio *(a vista em hexa só de leitura já existe no Cell Editor; falta editar os bytes por ela)*
 
 ## 14. Área de objetos / menu Exibir
 Hoje o menu Exibir tem só Lista, Detalhe e Ícones (`viewMode` em `src/App.tsx`). O que falta para igualar o da referência:
