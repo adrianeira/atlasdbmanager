@@ -2326,7 +2326,7 @@ async fn table_profile_counts_structure_and_sizes() {
     assert_eq!((f.columns, f.primary_keys, f.foreign_keys, f.uniques, f.checks, f.triggers), (4, 1, 1, 0, 1, 1));
     assert_eq!(f.indexes, 2, "pk + filho_obs");
     assert!(f.total_bytes >= f.table_bytes + f.index_bytes && f.table_bytes > 0 && f.index_bytes > 0, "{f:?}");
-    assert_eq!(f.live_tuples.is_some(), true);
+    assert!(f.live_tuples.is_some());
     assert_eq!(f.comment.as_deref(), Some("perfil de teste"));
     let pai = atlas_pg::table_profile(&s, &ns, "pai").await.unwrap();
     assert_eq!((pai.primary_keys, pai.uniques, pai.indexes, pai.foreign_keys), (1, 1, 2, 0));
