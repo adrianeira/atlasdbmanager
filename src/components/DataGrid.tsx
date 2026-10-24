@@ -191,6 +191,8 @@ interface Props {
   onSortColumn?: (col: number, descending: boolean) => void;
   /** Idem: "Remove All Sorts" no menu do cabeçalho. */
   onClearSort?: () => void;
+  /** "Restaurar layout padrão" no menu do cabeçalho: ordem, largura e visibilidade das colunas e a ordenação das linhas. */
+  onResetLayout?: () => void;
   /** Idem: "Add Filter" no menu do cabeçalho. */
   onAddFilter?: (col: number) => void;
   /** Avisa qual é a célula ativa (linha/coluna) a cada mudança — usado pelo painel "Cell Editor". */
@@ -201,7 +203,7 @@ interface Props {
 
 export function DataGrid({
   columns, onColumnWidth, columnOrder, onColumnOrder, valueLabels, rows, readOnly, edited, deletedRows, newRows, activeRow, onActiveRow, onEdit, rowHeight = 23, simpleHeader, lookupCols, onLookup,
-  sqlTarget, onDeleteRow, onRefresh, findQuery, activeFind, highlightAll, onSaveAs, onSortColumn, onClearSort, onAddFilter, onActiveCell, onOpenCellEditor,
+  sqlTarget, onDeleteRow, onRefresh, findQuery, activeFind, highlightAll, onSaveAs, onSortColumn, onClearSort, onResetLayout, onAddFilter, onActiveCell, onOpenCellEditor,
 }: Props) {
   const t = useT();
   const opts = useOptions();
@@ -261,7 +263,8 @@ export function DataGrid({
   // Larguras que chegam de fora depois de montar (a visão lembrada da tabela) valem sobre as automáticas.
   const widthsKey = columns.map((c) => c.width ?? "").join("|");
   useEffect(() => {
-    setWidths((ws) => ws.map((w, i) => columns[i]?.width ?? w));
+    if (columns.length && columns.every((c) => c.width === undefined)) setWidths(columns.map((c) => autoWidth(c, font, fontBold)));
+    else setWidths((ws) => ws.map((w, i) => columns[i]?.width ?? w));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [widthsKey]);
 
@@ -519,6 +522,8 @@ export function DataGrid({
       item("grid.removeAllSorts", onClearSort ? () => onClearSort() : undefined),
       sep,
       item("grid.addFilter", onAddFilter ? () => onAddFilter(col) : undefined),
+      sep,
+      item("grid.resetLayout", onResetLayout ? () => onResetLayout() : undefined),
     ];
   };
 

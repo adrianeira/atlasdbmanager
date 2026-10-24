@@ -12,11 +12,13 @@ interface Props {
   onToggle: (name: string) => void;
   onShowAll: () => void;
   onHideAll: () => void;
+  /** Restaura o layout padrão (ordem, largura, visibilidade e ordenação). */
+  onReset?: () => void;
   onClose: () => void;
 }
 
 /** Botão "Columns" da toolbar: mostra/oculta colunas do grid (a ordem e os dados não mudam). */
-export function ColumnsDialog({ columns, hidden, onToggle, onShowAll, onHideAll, onClose }: Props) {
+export function ColumnsDialog({ columns, hidden, onToggle, onShowAll, onHideAll, onReset, onClose }: Props) {
   const t = useT();
   const visibleCount = columns.length - hidden.size;
 
@@ -39,6 +41,7 @@ export function ColumnsDialog({ columns, hidden, onToggle, onShowAll, onHideAll,
         <div className="modal-footer">
           <button type="button" className="btn" onClick={onShowAll}>{t("cols.showAll")}</button>
           <button type="button" className="btn" onClick={onHideAll}>{t("cols.hideAll")}</button>
+          {onReset && <button type="button" className="btn" title={t("cols.restoreHint")} onClick={onReset}>{t("cols.restore")}</button>}
           <span className="spacer" />
           <button type="button" className="btn btn-primary" onClick={onClose}>{t("common.close")}</button>
         </div>

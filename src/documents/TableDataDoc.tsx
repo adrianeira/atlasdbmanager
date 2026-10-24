@@ -623,6 +623,13 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   };
   // "Remove All Sorts": volta à ordenação padrão (pela chave primária).
   const clearSort = () => applyFilterSort(filter, []);
+  // "Restaurar layout padrão": ordem, largura e visibilidade das colunas e a ordenação das linhas voltam ao padrão (o filtro fica).
+  const resetLayout = () => {
+    setColOrder([]);
+    setWidths({});
+    setHiddenCols(new Set());
+    if (sort.length) applyFilterSort(filter, []);
+  };
   // "Add Filter": abre o diálogo já com uma regra para esta coluna.
   const addFilterForColumn = (col: number) => {
     setFilterColumn(cols[col]?.name);
@@ -753,6 +760,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
             onSaveAs={onExport ? openExport : undefined}
             onSortColumn={sortByColumn}
             onClearSort={clearSort}
+            onResetLayout={resetLayout}
             onAddFilter={addFilterForColumn}
             onActiveCell={(_, c) => setActiveCol(c)}
             onOpenCellEditor={(r, c) => { setActiveRow(r); setActiveCol(c); setCellEditorOpen(true); }}
@@ -940,6 +948,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
             return n.size >= cols.length ? s : n;
           })}
           onShowAll={() => setHiddenCols(new Set())}
+          onReset={resetLayout}
           onHideAll={() => setHiddenCols(new Set(cols.slice(1).map((c) => c.name)))}
           onClose={() => setColumnsOpen(false)}
         />

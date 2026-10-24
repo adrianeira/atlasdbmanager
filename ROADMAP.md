@@ -715,6 +715,7 @@ Hoje o menu Exibir tem só Lista, Detalhe e Ícones (`viewMode` em `src/App.tsx`
 - [x] **A tabela lembra a visão**: ao abrir de novo (inclusive depois de fechar o app), volta com a ordenação, o filtro, as colunas escondidas, as larguras ajustadas e o "Limitar registros"/registros por página que o usuário deixou, por conexão, banco, schema e tabela. Um filtro ou ordenação que não vale mais
       (coluna renomeada ou apagada) é descartado e a tabela abre normal; o botão Filter & Sort fica marcado enquanto há filtro ou ordenação *(`src/tableView.ts`, preferência `tv:<chave>`)*
 - [x] **Reordenar colunas** arrastando o cabeçalho (barra azul mostra onde cai); a ordem entra na visão lembrada da tabela e na exportação
+- [x] **Restaurar layout padrão** (menu ⋯ do cabeçalho e botão no diálogo Columns): ordem, largura e visibilidade das colunas e a ordenação das linhas voltam ao padrão; o filtro fica
 - [x] **Reordenar abas** arrastando na barra (Objects fica sempre primeira); a posição é gravada e a tabela volta no lugar ao reabrir o banco
 - [ ] Perfis nomeados da visão da tabela (provável conteúdo do menu `Table Profile ▾`): salvar, aplicar, renomear e excluir. Falta a captura do menu
 - [ ] Na referência o botão **Table Profile** tem uma seta (`Table Profile ▾`) que abre um menu; o conteúdo dele não aparece em nenhuma captura, então o Atlas abre a janela direto
