@@ -12,6 +12,7 @@ mod import;
 mod local;
 mod sessions;
 mod transfer;
+mod tunnel;
 mod tx;
 
 use std::time::{Duration, Instant};
@@ -231,6 +232,7 @@ pub fn run() {
             local::profiles_list,
             local::profile_save,
             local::profile_delete,
+            local::ssh_password_save,
             local::connections_export,
             local::connections_import,
             local::history_add,

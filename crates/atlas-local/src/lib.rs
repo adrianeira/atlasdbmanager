@@ -37,6 +37,7 @@ pub fn save_profile(store: &LocalStore, profile: &ProfileRecord, password: Passw
 /// Remove o perfil e a credencial correspondente.
 pub fn delete_profile(store: &LocalStore, id: &str) -> Result<(), DatabaseError> {
     secrets::delete_password(id)?;
+    secrets::delete_password(&format!("{id}:ssh"))?;
     store.delete_profile(id)
 }
 

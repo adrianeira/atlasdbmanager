@@ -3,7 +3,7 @@ import type { MessageKey } from "../i18n";
 import { useT } from "../i18n";
 import { PROVIDER_STYLE, ProviderIcon, ProviderTile, SmallIcon } from "../icons";
 import type { ConnectionMock, ProviderId } from "../model";
-import { errorText, isDesktop, pg, toAtlasError, type ConnectionParams, type SslMode } from "../backend";
+import { chooseOpenFile, errorText, isDesktop, pg, toAtlasError, type ConnectionParams, type SslMode } from "../backend";
 import { formatConnectionUri, parseConnectionUri } from "../connectionUri";
 
 /* ---------- Tipos de conexão ---------- */
@@ -101,6 +101,7 @@ export function formFromConnection(c: ConnectionMock): ConnectionForm {
     ...defaultForm(p), name: c.name, host: c.host, port: String(c.port), initialDatabase: c.initialDatabase, user: c.user,
     environment: (c.environment as Environment) ?? "development", useSsl: !!ssl, sslMode: ssl ? c.sslMode! : "verify-full",
     customDbList: !!c.customDbs, databases: c.customDbs ?? [], remarks: c.remarks ?? "",
+    ...(c.ssh ? { useSsh: true, sshHost: c.ssh.host, sshPort: String(c.ssh.port), sshUser: c.ssh.user, sshAuth: c.ssh.auth, sshKeyPath: c.ssh.keyPath, sshSavePassword: c.ssh.savePassword } : {}),
     // Marcado por padrão (como a referência). Com o campo de senha vazio, nada muda no cofre.
     savePassword: true,
   };
@@ -117,6 +118,7 @@ export function formToParams(f: ConnectionForm, fallbackPassword = ""): Connecti
     user: f.user,
     password: f.password || fallbackPassword,
     sslMode: f.useSsl ? (f.sslMode as SslMode) : "disable",
+    ssh: f.useSsh ? { host: f.sshHost.trim(), port: Number(f.sshPort) || 22, user: f.sshUser, password: f.sshPassword, keyPath: f.sshAuth === "publickey" ? f.sshKeyPath.trim() : "" } : undefined,
   };
 }
 
@@ -194,7 +196,13 @@ export function ConnectionDialog({ editing, recentProviders, knownPassword = "",
     if (test.kind !== "running") setTest({ kind: "idle" });
   };
 
+  const sshComplete = () => !form.useSsh || (form.sshHost.trim() !== "" && form.sshUser.trim() !== "" && (form.sshAuth === "password" || form.sshKeyPath.trim() !== ""));
+
   const runTest = async () => {
+    if (!sshComplete()) {
+      setTab("ssh");
+      return setTest({ kind: "fail", message: t("conn.sshInvalid") });
+    }
     setTest({ kind: "running" });
     setTest(isDesktop ? await liveTest(form, knownPassword, t("conn.providerNotYet"), editing?.id) : await mockTest(form));
   };
@@ -204,6 +212,11 @@ export function ConnectionDialog({ editing, recentProviders, knownPassword = "",
     if (form.provider !== "sqlite" && (!Number.isInteger(port) || port < 1 || port > 65535)) {
       setTab("general");
       setTest({ kind: "fail", message: t("conn.invalidPort") });
+      return;
+    }
+    if (!sshComplete()) {
+      setTab("ssh");
+      setTest({ kind: "fail", message: t("conn.sshInvalid") });
       return;
     }
     const name = form.name.trim() || form.host.trim();
@@ -359,10 +372,10 @@ export function ConnectionDialog({ editing, recentProviders, knownPassword = "",
       <span>{t(label)}</span>
     </label>
   );
-  const browse = (k: keyof ConnectionForm, disabled: boolean) => (
+  const browse = (k: keyof ConnectionForm, disabled: boolean, pick?: () => void) => (
     <div className="field-with-button">
       {text(k, { disabled })}
-      <button type="button" className="btn btn-ellipsis" disabled title={t("notImplemented")}>…</button>
+      <button type="button" className="btn btn-ellipsis" disabled={disabled || !pick} title={pick ? undefined : t("notImplemented")} onClick={pick}>…</button>
     </div>
   );
 
@@ -524,6 +537,7 @@ export function ConnectionDialog({ editing, recentProviders, knownPassword = "",
   );
 
   const sshOff = !form.useSsh;
+  const sshOk = sshOff || (form.sshHost.trim() !== "" && form.sshUser.trim() !== "" && (form.sshAuth === "password" || form.sshKeyPath.trim() !== ""));
   const sshTab = (
     <div className="form-grid">
       {check("useSsh", "conn.useSsh")}
@@ -538,9 +552,11 @@ export function ConnectionDialog({ editing, recentProviders, knownPassword = "",
       ), sshOff)}
       {form.sshAuth === "password"
         ? row("conn.password", text("sshPassword", { width: 200, type: "password", disabled: sshOff }), sshOff)
-        : row("conn.privateKey", browse("sshKeyPath", sshOff), sshOff)}
+        : row("conn.privateKey", browse("sshKeyPath", sshOff, () => { void chooseOpenFile(["pem", "key"]).then((f) => { if (f) set("sshKeyPath", f); }); }), sshOff)}
+      {form.sshAuth === "publickey" && row("conn.passphrase", text("sshPassword", { width: 200, type: "password", disabled: sshOff }), sshOff)}
       <div className="form-row"><label /><div className="form-control">{check("sshSavePassword", "conn.savePassword", sshOff)}</div></div>
       {!sshOff && <div className="form-note">{t("conn.sshHostKeyNote")}</div>}
+      {!sshOff && !sshOk && <div className="form-note form-note-warn">{t("conn.sshInvalid")}</div>}
     </div>
   );
 

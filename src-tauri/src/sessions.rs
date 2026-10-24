@@ -3,6 +3,7 @@
 
 use atlas_core::{ConnectionParams, DatabaseError, ErrorKind};
 use atlas_pg::PgSession;
+use atlas_ssh::Tunnel;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -11,6 +12,8 @@ struct LogicalSession {
     /// Mantido só em memória enquanto a sessão estiver aberta (inclui a senha).
     params: ConnectionParams,
     by_database: HashMap<String, Arc<PgSession>>,
+    /// Túnel SSH da conexão (vive enquanto a sessão existir; `params` já aponta para a porta local dele).
+    _tunnel: Option<Tunnel>,
 }
 
 #[derive(Default)]
@@ -19,11 +22,11 @@ pub struct Sessions {
 }
 
 impl Sessions {
-    pub async fn open(&self, id: &str, params: ConnectionParams) -> Result<Arc<PgSession>, DatabaseError> {
+    pub async fn open(&self, id: &str, params: ConnectionParams, tunnel: Option<Tunnel>) -> Result<Arc<PgSession>, DatabaseError> {
         let session = Arc::new(atlas_pg::connect(&params, None).await?);
         let db = session.server.current_database.clone();
         let mut map = self.inner.lock().await;
-        map.insert(id.to_string(), LogicalSession { params, by_database: HashMap::from([(db, session.clone())]) });
+        map.insert(id.to_string(), LogicalSession { params, by_database: HashMap::from([(db, session.clone())]), _tunnel: tunnel });
         Ok(session)
     }
 

@@ -26,6 +26,11 @@ impl Local {
         }
     }
 
+    /// Pasta dos dados do Atlas (onde ficam o `atlas.db` e o arquivo de chaves SSH conhecidas).
+    pub fn data_dir(&self) -> PathBuf {
+        self.path.parent().map(PathBuf::from).unwrap_or_default()
+    }
+
     pub fn with<T>(&self, f: impl FnOnce(&LocalStore) -> Result<T, DatabaseError>) -> Result<T, DatabaseError> {
         let guard = self.store.lock().map_err(|_| DatabaseError::new(ErrorKind::Internal, "local store lock poisoned"))?;
         match guard.as_ref() {
@@ -44,6 +49,13 @@ impl Local {
             && let Some(saved) = self.with(|s| atlas_local::saved_password(s, id))?
         {
             params.password = saved;
+        }
+        // Senha do servidor SSH salva no cofre (conta `<id>:ssh`).
+        if let (Some(ssh), Some(id)) = (params.ssh.as_mut(), profile_id)
+            && ssh.password.is_empty()
+            && let Some(saved) = atlas_local::secrets::read_password(&format!("{id}:ssh"))?
+        {
+            ssh.password = saved;
         }
         Ok(params)
     }
@@ -118,6 +130,17 @@ pub fn connections_import(path: String) -> Result<Vec<ProfileRecord>, DatabaseEr
         return Err(DatabaseError::new(ErrorKind::InvalidInput, "not an Atlas connections file"));
     }
     Ok(file.connections.into_iter().map(|p| ProfileRecord { has_password: false, ..p }).collect())
+}
+
+/// Senha (ou frase da chave) do servidor SSH do perfil: guardada no cofre; `save` falso a remove.
+#[tauri::command]
+pub fn ssh_password_save(id: String, password: Option<Secret>, save: bool) -> Result<(), DatabaseError> {
+    let account = format!("{id}:ssh");
+    match (&password, save) {
+        (_, false) => atlas_local::secrets::delete_password(&account),
+        (Some(p), true) if !p.is_empty() => atlas_local::secrets::store_password(&account, p),
+        _ => Ok(()),
+    }
 }
 
 #[tauri::command]

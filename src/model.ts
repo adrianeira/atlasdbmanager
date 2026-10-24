@@ -122,6 +122,8 @@ export interface ConnectionMock {
   customDbs?: { name: string; autoOpen: boolean }[];
   /** Observações da conexão (aba Remarks). */
   remarks?: string;
+  /** Túnel SSH (aba SSH); a senha fica no cofre, nunca aqui. */
+  ssh?: { host: string; port: number; user: string; auth: "password" | "publickey"; keyPath: string; savePassword: boolean };
 }
 
 export type ConnectionColor = "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "gray";

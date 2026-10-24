@@ -21,6 +21,7 @@ atlas-local.workspace = true
 atlas-export.workspace = true
 atlas-import.workspace = true
 atlas-docs.workspace = true
+atlas-ssh.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

@@ -20,6 +20,8 @@ export interface ConnectionParams {
   password: string;
   sslMode: SslMode;
   connectTimeoutSecs?: number;
+  /** Túnel SSH até o servidor do banco; com `keyPath` a autenticação é por chave (`password` vira a frase da chave). */
+  ssh?: { host: string; port: number; user: string; password: string; keyPath: string };
 }
 
 export interface ServerInfo {
@@ -942,6 +944,8 @@ export interface Snippet {
 export const local = {
   status: () => call<{ path: string; schemaVersion: number | null; error: string | null }>("local_status"),
   profiles: () => call<ProfileRecord[]>("profiles_list"),
+  /** Senha (ou frase da chave) do servidor SSH do perfil, guardada no cofre; `save` falso a remove. */
+  sshPasswordSave: (id: string, password: string | null, save: boolean) => call<void>("ssh_password_save", { id, password, save }),
   /** Grava as conexões num arquivo JSON (sem senhas); devolve quantas. */
   connectionsExport: (path: string, profiles: ProfileRecord[]) => call<number>("connections_export", { path, profiles }),
   /** Lê as conexões de um arquivo exportado. */

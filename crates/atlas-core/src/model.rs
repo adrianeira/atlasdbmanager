@@ -30,6 +30,22 @@ pub struct ConnectionParams {
     pub ssl_mode: SslMode,
     #[serde(default = "default_connect_timeout")]
     pub connect_timeout_secs: u64,
+    /// Túnel SSH até o servidor do banco; `host`/`port` acima são vistos a partir do servidor SSH.
+    #[serde(default)]
+    pub ssh: Option<SshParams>,
+}
+
+/// Servidor SSH do túnel. Com `key_path` a autenticação é por chave privada (`password` é então a senha da chave).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshParams {
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+    #[serde(default)]
+    pub password: Secret,
+    #[serde(default)]
+    pub key_path: String,
 }
 
 fn default_connect_timeout() -> u64 {

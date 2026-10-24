@@ -22,6 +22,7 @@ fn params() -> Option<ConnectionParams> {
         password: Secret::new(std::env::var("ATLAS_TEST_PG_PASSWORD").unwrap_or_default()),
         ssl_mode: SslMode::Disable,
         connect_timeout_secs: 10,
+        ssh: None,
     })
 }
 

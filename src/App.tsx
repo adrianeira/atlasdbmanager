@@ -156,6 +156,7 @@ function toRecord(c: ConnectionMock, sortOrder: number): ProfileRecord {
   if (c.starred) options.starred = true;
   if (c.customDbs) options.customDbs = c.customDbs;
   if (c.remarks) options.remarks = c.remarks;
+  if (c.ssh) options.ssh = c.ssh;
   return {
     id: c.id, name: c.name, provider: c.provider, host: c.host, port: c.port, initialDatabase: c.initialDatabase,
     user: c.user, environment: c.environment ?? "development", options, sortOrder, hasPassword: !!c.hasPassword,
@@ -175,6 +176,7 @@ function fromRecord(r: ProfileRecord): ConnectionMock {
     hasPassword: r.hasPassword,
     customDbs: Array.isArray(o.customDbs) ? (o.customDbs as { name: string; autoOpen: boolean }[]).filter((d) => d && typeof d.name === "string").map((d) => ({ name: d.name, autoOpen: d.autoOpen === true })) : undefined,
     remarks: typeof o.remarks === "string" ? o.remarks : undefined,
+    ssh: o.ssh && typeof o.ssh === "object" && typeof (o.ssh as { host?: unknown }).host === "string" ? (o.ssh as NonNullable<ConnectionMock["ssh"]>) : undefined,
   };
 }
 
@@ -197,6 +199,8 @@ function paramsFor(c: ConnectionMock): ConnectionParams {
   return {
     host: c.host, port: c.port, database: c.initialDatabase || "postgres", user: c.user,
     password: sessionPasswords.get(c.id) ?? "", sslMode: c.sslMode ?? "disable",
+    // Sem senha digitada nesta sessão, o núcleo usa a do cofre (`<id>:ssh`).
+    ssh: c.ssh ? { host: c.ssh.host, port: c.ssh.port, user: c.ssh.user, password: sessionPasswords.get(`${c.id}:ssh`) ?? "", keyPath: c.ssh.auth === "publickey" ? c.ssh.keyPath : "" } : undefined,
   };
 }
 
@@ -1304,6 +1308,7 @@ export default function App() {
       sslMode: (form.useSsl ? form.sslMode : "disable") as ConnectionMock["sslMode"],
       customDbs: form.customDbList ? form.databases : undefined,
       remarks: form.remarks.trim() ? form.remarks : undefined,
+      ssh: form.useSsh ? { host: form.sshHost.trim(), port: Number(form.sshPort) || 22, user: form.sshUser, auth: form.sshAuth, keyPath: form.sshKeyPath, savePassword: form.sshSavePassword } : undefined,
     };
     const id = editing?.id ?? `c${Date.now().toString(36)}`;
     // "Salvar senha" marcado: vai para o cofre do sistema (app desktop). Desmarcado: só na memória
@@ -1312,6 +1317,8 @@ export default function App() {
       if (!isDesktop && form.savePassword && form.password) sessionPasswords.set(id, form.password);
       else if (!form.savePassword && form.password) sessionPasswords.set(id, form.password);
       else sessionPasswords.delete(id);
+      if (form.useSsh && !form.sshSavePassword && form.sshPassword) sessionPasswords.set(`${id}:ssh`, form.sshPassword);
+      else sessionPasswords.delete(`${id}:ssh`);
     };
     const hasPassword = form.savePassword && (!!form.password || !!editing?.hasPassword);
     const apply = () => {
@@ -1338,6 +1345,8 @@ export default function App() {
     persistedProfiles.current.set(id, profileKey(record));
     void local
       .saveProfile(record, form.savePassword ? form.password || null : null, form.savePassword)
+      // Senha do túnel SSH: no cofre, ou só nesta sessão quando "Salvar senha" está desmarcado.
+      .then(() => local.sshPasswordSave(id, form.sshPassword || null, form.useSsh && form.sshSavePassword))
       .then(apply)
       .catch((e) => {
         persistedProfiles.current.delete(id);

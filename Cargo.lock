@@ -187,6 +187,7 @@ dependencies = [
  "atlas-import",
  "atlas-local",
  "atlas-pg",
+ "atlas-ssh",
  "log",
  "serde",
  "serde_json",

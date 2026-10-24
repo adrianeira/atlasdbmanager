@@ -26,7 +26,9 @@ pub async fn pg_test_connection(
     params: ConnectionParams,
     profile_id: Option<String>,
 ) -> Result<ServerInfo, DatabaseError> {
-    let params = local.resolve_password(params, profile_id.as_deref())?;
+    let mut params = local.resolve_password(params, profile_id.as_deref())?;
+    // O túnel só vive durante o teste.
+    let _tunnel = crate::tunnel::start(&local, &mut params).await?;
     let session = atlas_pg::connect(&params, None).await?;
     Ok(session.server.clone())
 }
@@ -39,8 +41,9 @@ pub async fn pg_open(
     params: ConnectionParams,
     profile_id: Option<String>,
 ) -> Result<ServerInfo, DatabaseError> {
-    let params = local.resolve_password(params, profile_id.as_deref())?;
-    let s = sessions.open(&session_id, params).await?;
+    let mut params = local.resolve_password(params, profile_id.as_deref())?;
+    let tunnel = crate::tunnel::start(&local, &mut params).await?;
+    let s = sessions.open(&session_id, params, tunnel).await?;
     Ok(s.server.clone())
 }
 

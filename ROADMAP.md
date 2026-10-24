@@ -499,7 +499,12 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 - [x] **Aba Databases** do diálogo de conexão: "Use custom database list", adicionar/remover banco da lista e **Auto Open**; com a lista
       ligada só esses bancos aparecem na árvore e os marcados abrem ao conectar. A aba **Remarks** também passou a ser guardada
       *(`src/components/ConnectionDialog.tsx`, opções do perfil)*
-- [ ] SSH tunnel
+- [x] **SSH tunnel** (aba SSH): senha ou **chave privada** (arquivo + frase), porta local aberta pelo túnel (`crates/atlas-ssh`, cliente `russh`);
+      a conexão com o banco, o backup/restore e todos os bancos abertos passam por ela. A **chave do servidor é guardada no primeiro uso** e uma
+      chave diferente depois bloqueia a conexão (`ssh_known_hosts` na pasta dos dados); a senha/frase fica no **cofre** (`<id>:ssh`), nunca no perfil
+      nem em arquivo. Testado com um servidor SSH em processo (5 testes: senha, chave, chave nova/alterada, erro, vários clientes) e pela tela
+      (teste de conexão, salvar, reconectar com a senha do cofre, segundo banco). `cargo run -p atlas-ssh --example dev_server` sobe um servidor
+      SSH só para desenvolvimento. Limite: com `verify-full` o nome do host do certificado é conferido contra `127.0.0.1`
 - [ ] HTTP tunnel
 - [ ] Autenticação Kerberos/GSSAPI
 - [ ] Grupos (pastas) de conexão na árvore
