@@ -2,6 +2,7 @@ mod backup;
 mod builder;
 mod commands;
 mod datagen;
+mod monitor;
 mod dictionary;
 mod datasync;
 mod structsync;
@@ -184,6 +185,8 @@ pub fn run() {
             builder::open_data_gen,
             builder::open_data_dictionary,
             dictionary::dict_generate,
+            monitor::monitor_snapshot,
+            monitor::monitor_end_process,
             dictionary::dict_cancel,
             dictionary::dict_defaults,
             dictionary::dict_preview,

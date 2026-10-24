@@ -1900,3 +1900,35 @@ async fn data_generation_describes_previews_and_runs() {
 
     atlas_pg::execute(&s, &format!("DROP SCHEMA {ns} CASCADE"), 1).await.unwrap();
 }
+
+#[tokio::test]
+async fn server_monitor_lists_processes_variables_status_and_ends_a_process() {
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    let snap = atlas_pg::monitor_snapshot(&s).await.expect("snapshot");
+    // Os processos incluem a própria conexão, com o comando e o bloqueio que ela segura.
+    let me: i32 = s.client.query_one("SELECT pg_backend_pid()", &[]).await.unwrap().get(0);
+    let mine: Vec<_> = snap.processes.iter().filter(|r| r.id == me).collect();
+    assert!(!mine.is_empty() && mine.iter().all(|r| r.user.as_deref() == Some(p.user.as_str())));
+    assert!(mine.iter().any(|r| r.info.as_deref().is_some_and(|i| i.starts_with("Locked "))), "{mine:?}");
+    // As variáveis começam por DateStyle, IntervalStyle e TimeZone e seguem em ordem.
+    let names: Vec<&str> = snap.variables.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(&names[..3], ["DateStyle", "IntervalStyle", "TimeZone"]);
+    assert!(names[3..].windows(2).all(|w| w[0] <= w[1]));
+    assert!(snap.variables.iter().any(|(n, v)| n == "max_connections" && v.parse::<i32>().is_ok()));
+    let status: Vec<&str> = snap.status.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(status, ["db_blocks_fetched", "db_blocks_hit", "db_numbackends", "db_xact_commit", "db_xact_rollback"]);
+    assert!(snap.status.iter().all(|(_, v)| v.parse::<i64>().is_ok()));
+
+    // End Process: encerra uma outra conexão.
+    let victim = atlas_pg::connect(&p, None).await.expect("victim");
+    let pid: i32 = victim.client.query_one("SELECT pg_backend_pid()", &[]).await.unwrap().get(0);
+    assert!(atlas_pg::monitor_end_process(&s, pid).await.expect("end"));
+    for _ in 0..20 {
+        if victim.client.is_closed() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(victim.client.is_closed(), "o processo encerrado perde a conexão");
+}

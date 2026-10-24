@@ -11,6 +11,7 @@ mod datasync;
 mod error;
 mod exec;
 mod meta;
+mod monitor;
 mod structsync;
 
 pub use apply::{PlannedStatement, apply_in_open_transaction, apply_in_transaction, begin_manual_transaction, end_manual_transaction};
@@ -22,6 +23,7 @@ pub use exec::{
 pub use dump::{DumpOptions, DumpPlan, DumpScope, DumpTable, begin_snapshot, copy_header, copy_table, data_select, end_snapshot, header as dump_header, plan as dump_plan};
 pub use datagen::{ColumnMeta as GenColumnMeta, ColumnSpec as GenColumnSpec, GenHooks, GenOptions, GenSpec, GenStats, Generator, Preview as GenPreview, TableMeta as GenTableMeta, TableSpec as GenTableSpec, TextStyle, describe as describe_generation, preview as preview_generation, run as run_generation};
 pub use datasync::{CompareHooks, Comparison, DeployHooks, DeployStats, DiffKind, DiffRow, SyncSpec, SyncTable, TableDiff, TableSelection, compare as compare_data, deploy as deploy_data, script as data_script};
+pub use monitor::{ProcessRow as MonitorProcess, Snapshot as MonitorSnapshot, end_process as monitor_end_process, snapshot as monitor_snapshot};
 pub use structsync::{Op as StructOp, ObjectDiff as StructObject, Part as StructPart, StructComparison, StructSelection, StructSpec, compare as compare_structure, script as structure_script};
 pub use transfer::{FieldMap, Hooks as TransferHooks, TableOverride, TransferSpec, TransferStats, rewrite_schema, run as run_transfer};
 pub use import::{Feed, Hooks as ImportHooks, ImportMode, ImportSpec, ImportStats, TargetColumn, run as run_import};
