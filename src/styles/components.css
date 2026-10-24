@@ -2678,3 +2678,12 @@ select.et-input {
 .par-dialog { width: min(560px, 94vw); }
 .par-table { display: grid; grid-template-columns: 140px 120px 1fr; gap: 6px 8px; align-items: center; }
 .par-table .par-head { color: var(--c-text-muted); }
+
+/* Table Profile. */
+.tp-dialog { width: min(720px, 94vw); }
+.tp-body { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; max-height: 70vh; overflow: auto; }
+.tp-section h4 { margin: 0 0 4px; font-size: 12px; font-weight: 600; border-bottom: 1px solid var(--c-border); padding-bottom: 2px; }
+.tp-section dl { margin: 0; }
+.tp-row { display: flex; gap: 8px; padding: 1px 0; }
+.tp-row dt { flex: none; width: 150px; color: var(--c-text-muted); }
+.tp-row dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

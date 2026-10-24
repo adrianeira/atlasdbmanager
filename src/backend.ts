@@ -106,6 +106,35 @@ export interface DiagramRelation {
 export interface SchemaDiagram { tables: DiagramTable[]; relations: DiagramRelation[] }
 
 /** Servidor estrangeiro (`CREATE SERVER`). */
+export interface TableProfile {
+  owner: string;
+  kind: string;
+  persistence: "permanent" | "unlogged" | "temporary";
+  tablespace: string;
+  estimatedRows: number;
+  tableBytes: number;
+  indexBytes: number;
+  totalBytes: number;
+  columns: number;
+  indexes: number;
+  primaryKeys: number;
+  foreignKeys: number;
+  uniques: number;
+  checks: number;
+  triggers: number;
+  rowSecurity: boolean;
+  replicaIdentity: string;
+  liveTuples: number | null;
+  deadTuples: number | null;
+  seqScans: number | null;
+  indexScans: number | null;
+  lastVacuum: string | null;
+  lastAutovacuum: string | null;
+  lastAnalyze: string | null;
+  lastAutoanalyze: string | null;
+  comment: string | null;
+}
+
 export interface TablespaceInfo { name: string; owner: string; location: string; comment: string | null }
 
 export interface TablespaceDetail {
@@ -1056,6 +1085,8 @@ export const pg = {
   foreignWrappers: (sessionId: string, database: string) => call<string[]>("pg_foreign_wrappers", { sessionId, database }),
   foreignTableDetail: (sessionId: string, database: string, schema: string, name: string) =>
     call<ForeignTableDetail>("pg_foreign_table_detail", { sessionId, database, schema, name }),
+  tableProfile: (sessionId: string, database: string, schema: string, table: string) =>
+    call<TableProfile>("pg_table_profile", { sessionId, database, schema, table }),
   tablespaceDetail: (sessionId: string, database: string, name: string) => call<TablespaceDetail>("pg_tablespace_detail", { sessionId, database, name }),
   foreignServerDetail: (sessionId: string, database: string, name: string) => call<ForeignServerDetail>("pg_foreign_server_detail", { sessionId, database, name }),
   extensionDetail: (sessionId: string, database: string, name: string) =>

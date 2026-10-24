@@ -7,7 +7,7 @@ use atlas_core::{
     AvailableExtension, ColumnInfo, ConstraintInfo, DatabaseDetail, DatabaseError, DatabaseList, DiagramColumn, DiagramRelation,
     DiagramTable, ErrorKind, ExtensionDetail, ExtensionInfo, IndexInfo, ObjectInfo, RoleInfo, RuleInfo, SchemaDiagram,
     FunctionDetail, RoleDetail, SchemaDetail, SchemaInfo, SchemaObjects, SequenceDetail, TableDetail, TypeAttribute, TypeCheck, TypeDetail,
-    TriggerInfo, ViewDetail, ForeignServerDetail, ForeignServerInfo, ForeignTableDetail, OptionPair, TablespaceDetail, TablespaceInfo, UserMappingInfo,
+    TriggerInfo, ViewDetail, ForeignServerDetail, ForeignServerInfo, ForeignTableDetail, OptionPair, TableProfile, TablespaceDetail, TablespaceInfo, UserMappingInfo,
 };
 
 /// `include_hidden`: lista também os bancos que a conexão normalmente oculta (templates e os que não aceitam conexão).
@@ -187,6 +187,73 @@ fn option_pairs(raw: Vec<String>) -> Vec<OptionPair> {
             None => OptionPair { key: o, value: String::new() },
         })
         .collect()
+}
+
+/// Perfil da tabela: dono, tamanhos, contagens de colunas e restrições e estatísticas de uso e de manutenção.
+pub async fn table_profile(s: &PgSession, schema: &str, name: &str) -> Result<TableProfile, DatabaseError> {
+    let v = s.server.version_num;
+    // Segurança por linha (9.5+) e identidade de réplica (9.4+).
+    let rls = if v >= 90500 { "c.relrowsecurity" } else { "false" };
+    let row = s
+        .client
+        .query_opt(
+            &format!(
+                "SELECT pg_get_userbyid(c.relowner)::text, c.relkind::text, \
+                        CASE c.relpersistence WHEN 'u' THEN 'unlogged' WHEN 't' THEN 'temporary' ELSE 'permanent' END, \
+                        COALESCE((SELECT t.spcname::text FROM pg_catalog.pg_tablespace t WHERE t.oid = c.reltablespace), 'pg_default'), \
+                        c.reltuples::bigint, pg_relation_size(c.oid), pg_indexes_size(c.oid), pg_total_relation_size(c.oid), \
+                        (SELECT count(*) FROM pg_catalog.pg_attribute a WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped), \
+                        (SELECT count(*) FROM pg_catalog.pg_index i WHERE i.indrelid = c.oid), \
+                        (SELECT count(*) FROM pg_catalog.pg_constraint k WHERE k.conrelid = c.oid AND k.contype = 'p'), \
+                        (SELECT count(*) FROM pg_catalog.pg_constraint k WHERE k.conrelid = c.oid AND k.contype = 'f'), \
+                        (SELECT count(*) FROM pg_catalog.pg_constraint k WHERE k.conrelid = c.oid AND k.contype = 'u'), \
+                        (SELECT count(*) FROM pg_catalog.pg_constraint k WHERE k.conrelid = c.oid AND k.contype = 'c'), \
+                        (SELECT count(*) FROM pg_catalog.pg_trigger g WHERE g.tgrelid = c.oid AND NOT g.tgisinternal), \
+                        {rls}, c.relreplident::text, \
+                        st.n_live_tup, st.n_dead_tup, st.seq_scan, st.idx_scan, \
+                        st.last_vacuum::text, st.last_autovacuum::text, st.last_analyze::text, st.last_autoanalyze::text, \
+                        obj_description(c.oid, 'pg_class') \
+                   FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+                   LEFT JOIN pg_catalog.pg_stat_all_tables st ON st.relid = c.oid \
+                  WHERE n.nspname = $1 AND c.relname = $2 AND c.relkind IN ('r','p','f','m')"
+            ),
+            &[&schema, &name],
+        )
+        .await
+        .map_err(|e| map_error(&e))?;
+    let Some(r) = row else {
+        let mut err = DatabaseError::new(ErrorKind::Server, format!("table \"{schema}\".\"{name}\" does not exist"));
+        err.code = Some("42P01".into());
+        return Err(err);
+    };
+    Ok(TableProfile {
+        owner: r.get(0),
+        kind: r.get(1),
+        persistence: r.get(2),
+        tablespace: r.get(3),
+        estimated_rows: r.get(4),
+        table_bytes: r.get(5),
+        index_bytes: r.get(6),
+        total_bytes: r.get(7),
+        columns: r.get(8),
+        indexes: r.get(9),
+        primary_keys: r.get(10),
+        foreign_keys: r.get(11),
+        uniques: r.get(12),
+        checks: r.get(13),
+        triggers: r.get(14),
+        row_security: r.get(15),
+        replica_identity: r.get(16),
+        live_tuples: r.get(17),
+        dead_tuples: r.get(18),
+        seq_scans: r.get(19),
+        index_scans: r.get(20),
+        last_vacuum: r.get(21),
+        last_autovacuum: r.get(22),
+        last_analyze: r.get(23),
+        last_autoanalyze: r.get(24),
+        comment: r.get(25),
+    })
 }
 
 /// Tablespace com dono, pasta, opções e comentário.

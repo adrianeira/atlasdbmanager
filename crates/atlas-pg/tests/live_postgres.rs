@@ -2298,3 +2298,40 @@ async fn tablespaces_are_listed_with_detail() {
     let err = atlas_pg::tablespace_detail(&s, "nao_existe_ts").await.expect_err("must fail");
     assert_eq!(err.code.as_deref(), Some("42704"));
 }
+
+#[tokio::test]
+async fn table_profile_counts_structure_and_sizes() {
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    let ns = format!("atlas_tp_{}", std::process::id());
+    atlas_pg::execute(
+        &s,
+        &format!(
+            "DROP SCHEMA IF EXISTS {ns} CASCADE; CREATE SCHEMA {ns}; \
+             CREATE TABLE {ns}.pai(id integer PRIMARY KEY, nome text UNIQUE); \
+             CREATE TABLE {ns}.filho(id integer PRIMARY KEY, pai_id integer REFERENCES {ns}.pai(id), qtd integer CHECK (qtd >= 0), obs text); \
+             CREATE INDEX filho_obs ON {ns}.filho(obs); \
+             CREATE FUNCTION {ns}.f() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$; \
+             CREATE TRIGGER t BEFORE INSERT ON {ns}.filho FOR EACH ROW EXECUTE PROCEDURE {ns}.f(); \
+             COMMENT ON TABLE {ns}.filho IS 'perfil de teste'; \
+             INSERT INTO {ns}.pai VALUES (1, 'a'); INSERT INTO {ns}.filho SELECT g, 1, g, repeat('x', 100) FROM generate_series(1, 50) g; \
+             CREATE UNLOGGED TABLE {ns}.rapida(id integer)"
+        ),
+        1,
+    )
+    .await
+    .unwrap();
+    let f = atlas_pg::table_profile(&s, &ns, "filho").await.expect("profile");
+    assert_eq!((f.kind.as_str(), f.persistence.as_str(), f.tablespace.as_str()), ("r", "permanent", "pg_default"));
+    assert_eq!((f.columns, f.primary_keys, f.foreign_keys, f.uniques, f.checks, f.triggers), (4, 1, 1, 0, 1, 1));
+    assert_eq!(f.indexes, 2, "pk + filho_obs");
+    assert!(f.total_bytes >= f.table_bytes + f.index_bytes && f.table_bytes > 0 && f.index_bytes > 0, "{f:?}");
+    assert_eq!(f.live_tuples.is_some(), true);
+    assert_eq!(f.comment.as_deref(), Some("perfil de teste"));
+    let pai = atlas_pg::table_profile(&s, &ns, "pai").await.unwrap();
+    assert_eq!((pai.primary_keys, pai.uniques, pai.indexes, pai.foreign_keys), (1, 1, 2, 0));
+    assert_eq!(atlas_pg::table_profile(&s, &ns, "rapida").await.unwrap().persistence, "unlogged");
+    let missing = atlas_pg::table_profile(&s, &ns, "nao_existe").await.expect_err("must fail");
+    assert_eq!(missing.code.as_deref(), Some("42P01"));
+    atlas_pg::execute(&s, &format!("DROP SCHEMA {ns} CASCADE"), 1).await.unwrap();
+}

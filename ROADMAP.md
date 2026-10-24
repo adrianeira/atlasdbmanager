@@ -689,4 +689,7 @@ Hoje o menu Exibir tem só Lista, Detalhe e Ícones (`viewMode` em `src/App.tsx`
 - [x] **Sort**: ordenação da lista de objetos por qualquer coluna, crescente ou decrescente (também pelo clique no cabeçalho)
 - [x] **Choose Columns**: escolher as colunas exibidas na lista de objetos (por categoria; o nome nunca some)
 - [x] **Show Hidden Items**: mostra os bancos que a conexão oculta (templates e sem permissão de conexão) e os schemas de sistema; relê a árvore ao alternar
-- [ ] **Show Table Profiles**: perfil de cada tabela (resumo) na lista de objetos
+- [x] **Table Profile** (botão da barra da tabela, que já existia na referência): janela só de leitura com dono, tipo, persistência, tablespace, segurança por
+      linha, identidade de réplica e comentário; linhas estimadas e tamanho da tabela, dos índices e total; quantas colunas, índices, chaves primárias e
+      estrangeiras, únicas, verificações e gatilhos; e uso e manutenção (linhas vivas e mortas, leituras, último vacuum e analyze). Testado nos PG 9.6 e 18
+      *(`pg_table_profile`, `TableProfileDialog.tsx`)*. O item "Show Table Profiles" do menu Exibir não aparece em nenhuma captura, então não foi feito à parte

@@ -190,6 +190,42 @@ pub struct ExtensionInfo {
     pub comment: Option<String>,
 }
 
+/// Perfil de uma tabela: o que o catálogo e as estatísticas dizem dela, num lugar só.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TableProfile {
+    pub owner: String,
+    /// `r` tabela, `p` particionada, `f` externa, `m` view materializada.
+    pub kind: String,
+    /// permanent | unlogged | temporary.
+    pub persistence: String,
+    pub tablespace: String,
+    /// Linhas estimadas pelo planejador (`reltuples`); -1 = nunca analisada.
+    pub estimated_rows: i64,
+    pub table_bytes: i64,
+    pub index_bytes: i64,
+    pub total_bytes: i64,
+    pub columns: i64,
+    pub indexes: i64,
+    pub primary_keys: i64,
+    pub foreign_keys: i64,
+    pub uniques: i64,
+    pub checks: i64,
+    pub triggers: i64,
+    pub row_security: bool,
+    /// d default | n nenhum | f tudo | i índice.
+    pub replica_identity: String,
+    pub live_tuples: Option<i64>,
+    pub dead_tuples: Option<i64>,
+    pub seq_scans: Option<i64>,
+    pub index_scans: Option<i64>,
+    pub last_vacuum: Option<String>,
+    pub last_autovacuum: Option<String>,
+    pub last_analyze: Option<String>,
+    pub last_autoanalyze: Option<String>,
+    pub comment: Option<String>,
+}
+
 /// Tablespace: a linha da lista de objetos.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

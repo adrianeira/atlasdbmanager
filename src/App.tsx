@@ -2436,6 +2436,7 @@ export default function App() {
     let txId: string | null = null;
     return (dataBackends.current[tab.id] ??= {
       loadDetail: async () => tableFromServer(base, await pg.tableDetail(connId, db, schema, tab.object ?? base.name)),
+      loadProfile: tab.objectKind === "view" ? undefined : () => pg.tableProfile(connId, db, schema, tab.object ?? base.name),
       beginTx: async () => { txId = await pg.txBegin(connId, db); },
       endTx: async (commit) => {
         const id = txId;

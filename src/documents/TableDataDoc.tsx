@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { errorText, toAtlasError, type OrderBy, type PlannedStatement, type TableFilter } from "../backend";
 import { CellEditorPanel } from "../components/CellEditorPanel";
+import { TableProfileDialog } from "../components/TableProfileDialog";
 import { ColumnsDialog } from "../components/ColumnsDialog";
 import { DataGrid, typeKind, type GridColumn } from "../components/DataGrid";
 import { FilterSortDialog } from "../components/FilterSortDialog";
@@ -18,6 +19,8 @@ import { useOptions } from "../options";
 /** Acesso ao banco real; ausente = modo de demonstração com dados fictícios. */
 export interface TableDataBackend {
   loadDetail: () => Promise<DbObject>;
+  /** Opcional: perfil da tabela (botão "Table Profile"). */
+  loadProfile?: () => Promise<import("../backend").TableProfile>;
   /** `limit = null`: sem LIMIT ("Limitar registros" desmarcado). */
   loadRows: (orderBy: OrderBy[], filter: TableFilter | null, limit: number | null, offset: number) => Promise<{ sql: string; rows: CellValue[][]; truncated: boolean }>;
   apply: (statements: PlannedStatement[]) => Promise<void>;
@@ -186,6 +189,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   const lookupCols = useMemo(() => new Set(fkByCol.keys()), [fkByCol]);
 
   // "Valor da FK": mostra a descrição da linha referenciada no lugar da chave (só chaves de uma coluna; só a exibição muda).
+  const [profileOpen, setProfileOpen] = useState(false);
   const [fkValues, setFkValues] = useState(() => {
     try { return localStorage.getItem("atlas.fkValues") === "1"; } catch { return false; }
   });
@@ -622,7 +626,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   return (
     <div className="doc">
       <div className="object-toolbar" role="toolbar">
-        {tool("table", "data.tableProfile")}
+        {tool("table", "data.tableProfile", backend?.loadProfile ? () => setProfileOpen(true) : undefined)}
         {tool("transaction", "data.beginTransaction", backend?.beginTx && !readOnly && !inTx && !txBusy ? () => void beginTx() : undefined, inTx)}
         {inTx && (
           <>
@@ -708,6 +712,8 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
           </div>
         )}
       </div>
+
+      {profileOpen && backend?.loadProfile && <TableProfileDialog table={table.name} load={backend.loadProfile} onClose={() => setProfileOpen(false)} />}
 
       {cellEditorOpen && view === "grid" && cols[activeCol] && (
         <CellEditorPanel
