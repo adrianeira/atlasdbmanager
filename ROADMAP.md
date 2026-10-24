@@ -646,7 +646,7 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 - [x] Query Builder visual (ver "Query Builder" em Entregues)
 - [ ] Pivot Table
 - [ ] Charts a partir de consulta
-- [x] Tema claro/escuro manual (menu Exibir e tela Opções; padrão: seguir o sistema)
+- [x] Tema claro/escuro manual (só na tela Opções → General, como na referência; padrão: seguir o sistema). Tema, idioma e legendas da barra saíram do menu Exibir para não haver duas portas para a mesma coisa
 - [x] Tela de Preferências / Options (ver "Opções" em Entregues)
 - [ ] Atalhos de teclado configuráveis
 - [x] **Tela cheia** do documento (botão no canto da barra de ferramentas de consultas, dados da tabela e todos os designers): o

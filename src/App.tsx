@@ -2284,7 +2284,7 @@ export default function App() {
   };
   const viewMenu: MenuDef = {
     label: "menu.view",
-    items: entries("navigationPane", "informationPane", "toolbarCaptions", "-", "viewList", "viewDetail", "viewIcons", "viewEr", "-", sortSubmenu, "chooseColumns", "-", "flatten", "showHidden", "-", "erShowGrid", "erSnapGrid", "erShowFkNames", "-", "themeSystem", "themeLight", "themeDark", "-", "langPt", "langEn", "-", "resetLayout"),
+    items: entries("navigationPane", "informationPane", "-", "viewList", "viewDetail", "viewIcons", "viewEr", "-", sortSubmenu, "chooseColumns", "-", "flatten", "showHidden", "-", "erShowGrid", "erSnapGrid", "erShowFkNames", "-", "resetLayout"),
   };
   const queryMenu: MenuDef = { label: "menu.query", items: entries("run", "runSelected", "stop", "-", "explain", "-", "beautify", "minify", "queryBuilder") };
   const formatMenu: MenuDef = { label: "menu.format", items: entries("indent", "outdent", "-", "toggleComment", "-", "upper", "lower") };
