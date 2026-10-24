@@ -2,9 +2,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEve
 import { createPortal } from "react-dom";
 import { copyToClipboard, readClipboard } from "../clipboard";
 import type { MenuEntry } from "../commands";
-import { useT, type MessageKey } from "../i18n";
+import { useT } from "../i18n";
 import { formatNumber, formatTemporal } from "../format";
-import { aggregate, type Aggregate } from "../summary";
 import { useOptions } from "../options";
 import { quoteIdent, type CellValue } from "../model";
 import { DateTimePopup, type DateTimeKind } from "./DateTimePopup";
@@ -152,13 +151,8 @@ function uuidV7(): string {
 
 const copyText = (text: string) => void copyToClipboard(text).catch(() => undefined);
 
-/** Altura da linha de resumo no rodapé. */
-const SUMMARY_H = 24;
-
 interface Props {
   columns: GridColumn[];
-  /** Linha de resumo no rodapé (contagem, soma, média, mínimo, máximo) sobre as linhas carregadas. */
-  summary?: boolean;
   /** Coluna → (valor → texto mostrado no lugar dele); só muda o que se vê (ex.: chave estrangeira mostrada pela descrição). */
   valueLabels?: Map<number, Map<string, string>>;
   rows: CellValue[][];
@@ -201,7 +195,7 @@ interface Props {
 }
 
 export function DataGrid({
-  columns, summary, valueLabels, rows, readOnly, edited, deletedRows, newRows, activeRow, onActiveRow, onEdit, rowHeight = 23, simpleHeader, lookupCols, onLookup,
+  columns, valueLabels, rows, readOnly, edited, deletedRows, newRows, activeRow, onActiveRow, onEdit, rowHeight = 23, simpleHeader, lookupCols, onLookup,
   sqlTarget, onDeleteRow, onRefresh, findQuery, activeFind, highlightAll, onSaveAs, onSortColumn, onClearSort, onAddFilter, onActiveCell, onOpenCellEditor,
 }: Props) {
   const t = useT();
@@ -217,9 +211,6 @@ export function DataGrid({
   /** Linhas sombreadas (Opções → Registros → Row Shading). */
   const shadeRow = (ri: number) => (rowShading === "every2" ? ri % 2 === 1 : rowShading === "every3" ? ri % 3 === 2 : false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  /** Resumo escolhido por coluna (pelo nome) e o menu aberto. */
-  const [aggs, setAggs] = useState<Record<string, Aggregate>>({});
-  const [summaryMenu, setSummaryMenu] = useState<{ x: number; y: number; col: number } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; row: number; col: number } | null>(null);
   const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number; col: number } | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -527,7 +518,7 @@ export function DataGrid({
       onKeyDown={onKeyDown}
       onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
     >
-      <div className="dg-inner" style={{ width: totalWidth, height: headerHeight + rows.length * rowHeight + (summary ? SUMMARY_H : 0) }}>
+      <div className="dg-inner" style={{ width: totalWidth, height: headerHeight + rows.length * rowHeight }}>
         <div className="dg-header" style={{ height: headerHeight }} role="row">
           <div className="dg-rowhead" style={{ width: rowHeadWidth }} />
           {visible.map((i) => {
@@ -660,39 +651,6 @@ export function DataGrid({
             </div>
           );
         })}
-
-        {summary && (
-          <>
-            {/* Espaço em fluxo do tamanho da lista: o rodapé fica logo depois dele e "gruda" na borda de baixo ao rolar. */}
-            <div style={{ height: rows.length * rowHeight }} aria-hidden="true" />
-            <div className="dg-summary" style={{ height: SUMMARY_H }} role="row">
-              <div className="dg-rowhead" style={{ width: rowHeadWidth }} />
-              {visible.map((ci) => {
-                const c = columns[ci];
-                const agg = aggs[c.name] ?? "none";
-                const raw = aggregate(rows.map((r) => r[ci]), agg, c.kind === "number");
-                const text = raw === null ? "" : `${t(("sum." + agg) as MessageKey)}: ${c.kind === "number" ? formatNumber(raw, showThousands, systemLocale) : raw}`;
-                return (
-                  <button
-                    key={c.name + ci}
-                    type="button"
-                    className={`dg-summary-cell${agg === "none" ? " is-empty" : ""}`}
-                    style={{ width: widths[ci] }}
-                    title={text ? `${text}
-${t("sum.hint", { n: rows.length })}` : t("sum.hint", { n: rows.length })}
-                    onClick={(e) => {
-                      const r = e.currentTarget.getBoundingClientRect();
-                      setSummaryMenu({ x: r.left, y: r.top, col: ci });
-                    }}
-                  >
-                    <span className="dg-summary-text">{text}</span>
-                    <span className="dg-summary-arrow" aria-hidden="true">▾</span>
-                  </button>
-                );
-              })}
-            </div>
-          </>
-        )}
       </div>
       {menu && rows[menu.row] && createPortal(
         <PopupMenu
@@ -701,23 +659,6 @@ ${t("sum.hint", { n: rows.length })}` : t("sum.hint", { n: rows.length })}
           onClose={() => { setMenu(null); scrollRef.current?.focus(); }}
           className="ctx-menu dg-menu"
           style={{ position: "fixed", left: Math.min(menu.x, window.innerWidth - 300), top: Math.min(menu.y, window.innerHeight - 470) }}
-        />,
-        document.body,
-      )}
-      {summaryMenu && createPortal(
-        <PopupMenu
-          items={([
-            ["none", "sum.none"], ["count", "sum.count"], ["distinct", "sum.distinct"],
-            ...(columns[summaryMenu.col]?.kind === "number" ? [["sum", "sum.sum"], ["avg", "sum.avg"]] : []),
-            ["min", "sum.min"], ["max", "sum.max"],
-          ] as [Aggregate, MessageKey][]).map(([agg, label]): MenuEntry => ({
-            kind: "item", text: t(label), checked: (aggs[columns[summaryMenu.col].name] ?? "none") === agg,
-            run: () => setAggs((a) => ({ ...a, [columns[summaryMenu.col].name]: agg })),
-          }))}
-          commands={{}}
-          onClose={() => setSummaryMenu(null)}
-          className="ctx-menu dg-menu"
-          style={{ position: "fixed", left: Math.min(summaryMenu.x, window.innerWidth - 200), top: Math.max(8, summaryMenu.y - 190) }}
         />,
         document.body,
       )}
