@@ -549,7 +549,9 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
       (PNG, JPEG, GIF, BMP, WEBP, ICO e SVG, também texto `data:image/...;base64`) ou HTML num quadro isolado (sem scripts); **Carregar...** coloca um
       arquivo na célula (colunas `bytea` guardam os bytes; colunas de texto aceitam arquivo UTF-8, até 64 MB) e **Salvar...** grava a célula em arquivo
       (idêntico ao original, conferido por MD5); `bytea` que é UTF-8 também se edita como texto *(`src/blob.ts`, `CellEditorPanel.tsx`)*
-- [ ] Modo "mostrar valor da FK em vez da chave" *(lookup já existe)*
+- [x] **Valor da chave estrangeira**: botão "FK Values" na barra da tabela troca a chave pela descrição da linha referenciada (coluna `nome`,
+      `name`, `descricao`... ou a primeira de texto que não pareça chave), só em chaves de uma coluna e só na exibição (editar, copiar e o lookup "…"
+      seguem com a chave); busca só as chaves da página, com parâmetros, e lembra a escolha *(`pg_fk_labels`, `crates/atlas-pg/src/exec.rs`)*
 - [ ] Agrupamento / sumário no rodapé do grid
 
 ## 4. Editor SQL

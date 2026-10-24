@@ -385,3 +385,93 @@ mod tests {
         assert_eq!(quote_ident("weird\"; DROP TABLE x; --"), "\"weird\"\"; DROP TABLE x; --\"");
     }
 }
+
+
+/// Rótulos de chaves estrangeiras: para cada chave pedida, o texto da coluna de descrição da tabela referenciada.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FkLabels {
+    /// Coluna usada como descrição; `None` se a tabela não tem uma que sirva (a tela mostra a chave mesmo).
+    pub label_column: Option<String>,
+    /// Pares `[chave, rótulo]` (só das chaves que existem na tabela).
+    pub labels: Vec<[String; 2]>,
+}
+
+/// Máximo de chaves por chamada (a grade mostra uma página por vez).
+const MAX_FK_KEYS: usize = 5_000;
+
+/// Escolhe a coluna de descrição: nomes típicos primeiro (`nome`, `name`, `descricao`...), depois a primeira coluna de texto
+/// que não seja a própria chave nem pareça outra chave (`..._id`, `id_...`, `codigo`).
+fn pick_label_column(columns: &[(String, String)], key: &str) -> Option<String> {
+    let textual = |t: &str| matches!(t, "text" | "varchar" | "bpchar" | "citext" | "name");
+    let candidates: Vec<&(String, String)> = columns.iter().filter(|(n, t)| n != key && textual(t)).collect();
+    const PREFERRED: [&str; 12] = ["nome", "name", "titulo", "title", "descricao", "description", "descr", "label", "razao_social", "fantasia", "apelido", "rotulo"];
+    for want in PREFERRED {
+        if let Some((n, _)) = candidates.iter().find(|(n, _)| n.to_lowercase() == want) {
+            return Some(n.clone());
+        }
+    }
+    for want in PREFERRED {
+        if let Some((n, _)) = candidates.iter().find(|(n, _)| n.to_lowercase().contains(want)) {
+            return Some(n.clone());
+        }
+    }
+    candidates
+        .iter()
+        .find(|(n, _)| {
+            let l = n.to_lowercase();
+            !(l.ends_with("_id") || l.starts_with("id_") || l.starts_with("cod") || l == "id")
+        })
+        .map(|(n, _)| n.clone())
+}
+
+pub async fn fk_labels(s: &PgSession, schema: &str, table: &str, key_column: &str, keys: &[String]) -> Result<FkLabels, DatabaseError> {
+    let none = FkLabels { label_column: None, labels: Vec::new() };
+    if keys.is_empty() {
+        return Ok(none);
+    }
+    let cols = s
+        .client
+        .query(
+            "SELECT a.attname::text, t.typname::text FROM pg_catalog.pg_attribute a \
+               JOIN pg_catalog.pg_class c ON c.oid = a.attrelid JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+               JOIN pg_catalog.pg_type t ON t.oid = a.atttypid \
+              WHERE n.nspname = $1 AND c.relname = $2 AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum",
+            &[&schema, &table],
+        )
+        .await
+        .map_err(|e| map_error(&e))?;
+    let columns: Vec<(String, String)> = cols.iter().map(|r| (r.get(0), r.get(1))).collect();
+    let Some(label) = pick_label_column(&columns, key_column) else { return Ok(none) };
+    let keys: Vec<&str> = keys.iter().take(MAX_FK_KEYS).map(String::as_str).collect();
+    let target = format!("{}.{}", quote_ident(schema), quote_ident(table));
+    let sql = format!(
+        "SELECT {k}::text, {l}::text FROM {target} WHERE {k}::text = ANY($1) AND {l} IS NOT NULL",
+        k = quote_ident(key_column),
+        l = quote_ident(&label),
+    );
+    let started = Instant::now();
+    let rows = s.client.query(&sql, &[&keys]).await.map_err(|e| map_error(&e))?;
+    s.client.log_command(&sql, started.elapsed().as_secs_f64(), None);
+    Ok(FkLabels { label_column: Some(label), labels: rows.iter().map(|r| [r.get(0), r.get(1)]).collect() })
+}
+
+#[cfg(test)]
+mod label_tests {
+    use super::pick_label_column;
+
+    fn cols(list: &[(&str, &str)]) -> Vec<(String, String)> {
+        list.iter().map(|(n, t)| (n.to_string(), t.to_string())).collect()
+    }
+
+    #[test]
+    fn picks_a_description_column() {
+        assert_eq!(pick_label_column(&cols(&[("id", "int4"), ("name", "varchar"), ("code", "text")]), "id").as_deref(), Some("name"));
+        assert_eq!(pick_label_column(&cols(&[("id", "int4"), ("cod", "text"), ("descricao_longa", "text")]), "id").as_deref(), Some("descricao_longa"));
+        // Sem nome típico: a primeira de texto que não parece chave.
+        assert_eq!(pick_label_column(&cols(&[("id", "int4"), ("cliente_id", "text"), ("observacao", "text")]), "id").as_deref(), Some("observacao"));
+        // Nada que sirva.
+        assert_eq!(pick_label_column(&cols(&[("id", "int4"), ("qtd", "int4")]), "id"), None);
+        assert_eq!(pick_label_column(&cols(&[("id", "text")]), "id"), None);
+    }
+}

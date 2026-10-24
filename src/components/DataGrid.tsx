@@ -153,6 +153,8 @@ const copyText = (text: string) => void copyToClipboard(text).catch(() => undefi
 
 interface Props {
   columns: GridColumn[];
+  /** Coluna → (valor → texto mostrado no lugar dele); só muda o que se vê (ex.: chave estrangeira mostrada pela descrição). */
+  valueLabels?: Map<number, Map<string, string>>;
   rows: CellValue[][];
   readOnly?: boolean;
   /** Chaves "linha:coluna" de células alteradas e ainda não aplicadas. */
@@ -193,13 +195,15 @@ interface Props {
 }
 
 export function DataGrid({
-  columns, rows, readOnly, edited, deletedRows, newRows, activeRow, onActiveRow, onEdit, rowHeight = 23, simpleHeader, lookupCols, onLookup,
+  columns, valueLabels, rows, readOnly, edited, deletedRows, newRows, activeRow, onActiveRow, onEdit, rowHeight = 23, simpleHeader, lookupCols, onLookup,
   sqlTarget, onDeleteRow, onRefresh, findQuery, activeFind, highlightAll, onSaveAs, onSortColumn, onClearSort, onAddFilter, onActiveCell, onOpenCellEditor,
 }: Props) {
   const t = useT();
   const { rowShading, displayDate, displayTime, displayDateTime, showThousands, systemLocale } = useOptions();
   /** Texto da célula com os formatos de data/hora e de número das Opções. */
-  const shown = (v: string, c: GridColumn): string => {
+  const shown = (v: string, c: GridColumn, ci: number): string => {
+    const label = valueLabels?.get(ci)?.get(v);
+    if (label !== undefined) return label;
     const dk = dtKind(c.type);
     if (dk) return formatTemporal(v, dk, dk === "date" ? displayDate : dk === "time" ? displayTime : displayDateTime);
     return c.kind === "number" ? formatNumber(v, showThousands, systemLocale) : display(v, c.kind);
@@ -617,7 +621,7 @@ export function DataGrid({
                     ) : v === null ? (
                       <span className="dg-null">(Null)</span>
                     ) : (
-                      shown(v, c)
+                      shown(v, c, ci)
                     )}
                     {/* Ícone discreto à direita em colunas de data/hora/timestamp (como na referência). */}
                     {!isEditing && dtKind(c.type) && (

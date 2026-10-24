@@ -11,6 +11,8 @@ export interface FkLookupSource {
   columns: (schema: string, table: string) => Promise<{ name: string; type: string }[]>;
   /** Primeiras `limit` linhas com as colunas pedidas, ordenadas pelas colunas da chave. */
   rows: (schema: string, table: string, columns: string[], orderBy: string[], limit: number) => Promise<CellValue[][]>;
+  /** Descrição de cada chave pedida (só com banco real); sem ela o grid não troca a chave pelo valor. */
+  labels?: (schema: string, table: string, keyColumn: string, keys: string[]) => Promise<{ labelColumn: string | null; labels: [string, string][] }>;
 }
 
 const LIMIT = 1000;

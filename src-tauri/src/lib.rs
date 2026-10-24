@@ -173,6 +173,7 @@ pub fn run() {
             commands::pg_execute,
             commands::pg_cancel,
             commands::pg_table_rows,
+            commands::pg_fk_labels,
             commands::pg_table_count,
             commands::pg_apply,
             tx::pg_tx_begin,

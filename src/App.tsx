@@ -2442,6 +2442,7 @@ export default function App() {
             const out = await pg.execute(conn.id, db, sql, limit);
             return out.statements[0]?.result?.rows ?? [];
           },
+          labels: (schema, table, keyColumn, keys) => pg.fkLabels(conn.id, db, schema, table, keyColumn, keys),
         }
       : {
           columns: async (schema, table) => {

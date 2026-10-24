@@ -340,6 +340,21 @@ pub async fn pg_table_rows(
     Ok(TableRows { sql, outcome })
 }
 
+/// Rótulos das chaves estrangeiras visíveis no grid ("mostrar o valor da chave estrangeira").
+#[tauri::command]
+pub async fn pg_fk_labels(
+    sessions: State<'_, Sessions>,
+    session_id: String,
+    database: String,
+    schema: String,
+    table: String,
+    key_column: String,
+    keys: Vec<String>,
+) -> Result<atlas_pg::FkLabels, DatabaseError> {
+    let s = sessions.get(&session_id, Some(&database)).await?;
+    atlas_pg::fk_labels(&s, &schema, &table, &key_column, &keys).await
+}
+
 #[tauri::command]
 pub async fn pg_table_count(
     sessions: State<'_, Sessions>,

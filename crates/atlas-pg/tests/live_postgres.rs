@@ -2242,3 +2242,34 @@ async fn foreign_servers_are_listed_and_described_with_options_and_mappings() {
         atlas_pg::execute(&s, "DROP EXTENSION postgres_fdw", 1).await.unwrap();
     }
 }
+
+#[tokio::test]
+async fn fk_labels_use_the_description_column() {
+    let p = require_server!();
+    let s = atlas_pg::connect(&p, None).await.expect("connect");
+    let ns = format!("atlas_fl_{}", std::process::id());
+    atlas_pg::execute(
+        &s,
+        &format!(
+            "DROP SCHEMA IF EXISTS {ns} CASCADE; CREATE SCHEMA {ns}; \
+             CREATE TABLE {ns}.cidade(id integer PRIMARY KEY, cod text, nome text); \
+             INSERT INTO {ns}.cidade VALUES (1, 'A', 'Estreito'), (2, 'B', 'São Luís'), (3, 'C', NULL); \
+             CREATE TABLE {ns}.sem_texto(id integer PRIMARY KEY, qtd integer); INSERT INTO {ns}.sem_texto VALUES (1, 5)"
+        ),
+        1,
+    )
+    .await
+    .unwrap();
+    let keys = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+    let r = atlas_pg::fk_labels(&s, &ns, "cidade", "id", &keys(&["1", "2", "3", "99", "o';drop"])).await.unwrap();
+    assert_eq!(r.label_column.as_deref(), Some("nome"));
+    let mut labels = r.labels.clone();
+    labels.sort();
+    // A chave 3 tem rótulo nulo e a 99 não existe: ficam de fora; o texto malicioso é só um valor.
+    assert_eq!(labels, vec![["1".to_string(), "Estreito".to_string()], ["2".to_string(), "São Luís".to_string()]]);
+    // Sem coluna de texto que sirva: sem rótulo, a tela mostra a chave.
+    let none = atlas_pg::fk_labels(&s, &ns, "sem_texto", "id", &keys(&["1"])).await.unwrap();
+    assert!(none.label_column.is_none() && none.labels.is_empty());
+    assert!(atlas_pg::fk_labels(&s, &ns, "cidade", "id", &[]).await.unwrap().labels.is_empty());
+    atlas_pg::execute(&s, &format!("DROP SCHEMA {ns} CASCADE"), 1).await.unwrap();
+}

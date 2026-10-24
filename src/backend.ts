@@ -1030,6 +1030,9 @@ export const pg = {
   backupCancel: (jobId: string) => call<void>("pg_backup_cancel", { jobId }),
   backupList: (sessionId: string, database: string, schema: string) => call<BackupEntry[]>("pg_backup_list", { sessionId, database, schema }),
   backupDelete: (path: string, metaPath: string) => call<void>("pg_backup_delete", { path, metaPath }),
+  /** Rótulos (coluna de descrição da tabela referenciada) das chaves pedidas; `labelColumn` nulo = a tabela não tem uma que sirva. */
+  fkLabels: (sessionId: string, database: string, schema: string, table: string, keyColumn: string, keys: string[]) =>
+    call<{ labelColumn: string | null; labels: [string, string][] }>("pg_fk_labels", { sessionId, database, schema, table, keyColumn, keys }),
   find: (sessionId: string, database: string, options: FindOptions) => call<FindResult>("pg_find", { sessionId, database, options }),
   /** `findId` identifica a busca para o `exportCancel` (botão Parar). */
   findData: (sessionId: string, database: string, findId: string, options: FindOptions) =>

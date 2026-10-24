@@ -184,6 +184,47 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
     return m;
   }, [table, cols]);
   const lookupCols = useMemo(() => new Set(fkByCol.keys()), [fkByCol]);
+
+  // "Valor da FK": mostra a descrição da linha referenciada no lugar da chave (só chaves de uma coluna; só a exibição muda).
+  const [fkValues, setFkValues] = useState(() => {
+    try { return localStorage.getItem("atlas.fkValues") === "1"; } catch { return false; }
+  });
+  const toggleFkValues = () => setFkValues((on) => {
+    try { localStorage.setItem("atlas.fkValues", on ? "0" : "1"); } catch { /* sem armazenamento: vale só nesta sessão */ }
+    return !on;
+  });
+  const [valueLabels, setValueLabels] = useState<Map<number, Map<string, string>>>(new Map());
+  /** Rótulos já lidos por FK (nome da FK → chave → texto), para não repetir a consulta ao paginar. */
+  const labelCache = useRef(new Map<string, { column: string | null; map: Map<string, string>; asked: Set<string> }>());
+  const canLabel = !!lookup?.labels && [...fkByCol.values()].some((fk) => !fk.fields.includes(","));
+  useEffect(() => {
+    const labelsOf = lookup?.labels;
+    if (!fkValues || !labelsOf) return void setValueLabels((m) => (m.size ? new Map() : m));
+    let alive = true;
+    void (async () => {
+      const next = new Map<number, Map<string, string>>();
+      for (const [ci, fk] of fkByCol) {
+        if (fk.fields.includes(",")) continue;
+        const cacheKey = `${fk.refSchema}.${fk.refTable}.${fk.refFields}`;
+        const entry = labelCache.current.get(cacheKey) ?? { column: null, map: new Map<string, string>(), asked: new Set<string>() };
+        labelCache.current.set(cacheKey, entry);
+        const wanted = [...new Set(rows.map((r) => r[ci]).filter((v): v is string => v !== null && v !== undefined && !entry.asked.has(v)))];
+        if (wanted.length) {
+          try {
+            const got = await labelsOf(fk.refSchema, fk.refTable, fk.refFields.trim(), wanted);
+            entry.column = got.labelColumn;
+            for (const [k, label] of got.labels) entry.map.set(k, label);
+            for (const k of wanted) entry.asked.add(k);
+          } catch {
+            // Sem permissão na tabela referenciada: a coluna continua mostrando a chave.
+          }
+        }
+        if (entry.map.size) next.set(ci, entry.map);
+      }
+      if (alive) setValueLabels(next);
+    })();
+    return () => { alive = false; };
+  }, [fkValues, rows, fkByCol, lookup]);
   const fkColumnIndexes = (fk: ForeignKeyDef) => fk.fields.split(",").map((f) => cols.findIndex((c) => c.name === f.trim()));
 
   const resetEdits = () => {
@@ -595,6 +636,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
             </button>
           </>
         )}
+        {canLabel && tool("link", "data.fkValues", toggleFkValues, fkValues)}
         {tool("cellEditor", "data.cellEditor", () => setCellEditorOpen((v) => !v), cellEditorOpen)}
         {tool("filterSort", "data.filterSort", () => { setFilterColumn(undefined); setFilterOpen(true); })}
         {tool("columns", "data.columns", () => setColumnsOpen(true))}
@@ -630,6 +672,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
             onDeleteRow={readOnly ? undefined : (r) => { setActiveRow(r); deleteRow(r); }}
             onRefresh={dirty || loading ? undefined : refresh}
             lookupCols={lookup ? lookupCols : undefined}
+            valueLabels={fkValues ? valueLabels : undefined}
             onLookup={(row, col, anchor) => {
               const fk = fkByCol.get(col);
               if (fk) setFkOpen({ row, fk, anchor });

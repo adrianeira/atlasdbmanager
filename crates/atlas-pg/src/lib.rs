@@ -21,7 +21,7 @@ pub use apply::{PlannedStatement, apply_in_open_transaction, apply_in_transactio
 pub use connect::{PgSession, connect};
 pub use error::map_error;
 pub use exec::{
-    execute, execute_in_schema, is_single_statement, quote_ident, search_path_for, select_sql, stream_rows, table_count, table_rows, wrap_query,
+    FkLabels, execute, fk_labels, execute_in_schema, is_single_statement, quote_ident, search_path_for, select_sql, stream_rows, table_count, table_rows, wrap_query,
 };
 pub use dump::{DumpOptions, DumpPlan, DumpScope, DumpTable, begin_snapshot, copy_header, copy_table, data_select, end_snapshot, header as dump_header, plan as dump_plan};
 pub use console::{Completion as ConsoleCompletion, ConsoleOptions, ConsoleOutput, complete as console_complete, is_complete as console_is_complete, run as console_run};
