@@ -1992,6 +1992,10 @@ async fn console_runs_sql_and_backslash_commands_like_psql() {
     assert_eq!(out.text, " id | name\n----+-------\n  1 | Ana\n  2 | Bruno\n(2 rows)\n\n");
     let out = run("UPDATE clients SET nota = 'y' WHERE id = 1;").await;
     assert_eq!(out.text, "UPDATE 1\n\n");
+    // `\g` termina o comando no lugar do `;` e `\gx` mostra o resultado expandido só desta vez.
+    assert_eq!(run("SELECT 1 AS a \\g").await.text, " a\n---\n 1\n(1 row)\n\n");
+    assert!(run("SELECT 1 AS a \\gx").await.text.starts_with("-[ RECORD 1 ]+"));
+    assert!(run("SELECT 1 AS a \\g").await.text.starts_with(" a\n"), "o \\gx não deixa o modo expandido ligado");
 
     // Erro: posição e dica, como no psql; o console continua utilizável.
     let out = run("SELECT\n  nao_existe FROM clients;").await;

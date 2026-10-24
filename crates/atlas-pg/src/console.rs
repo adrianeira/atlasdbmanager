@@ -113,7 +113,20 @@ pub fn is_complete(buffer: &str) -> bool {
             }
         }
     }
-    ended
+    ended || split_go(buffer).is_some()
+}
+
+/// `comando \g` ou `comando \gx` (resultado expandido só desta vez): o texto sem o sufixo e se é o `\gx`.
+fn split_go(buffer: &str) -> Option<(&str, bool)> {
+    let t = buffer.trim_end();
+    for (suffix, expanded) in [("\\gx", true), ("\\g", false)] {
+        if let Some(head) = t.strip_suffix(suffix)
+            && !head.trim().is_empty()
+        {
+            return Some((head, expanded));
+        }
+    }
+    None
 }
 
 fn is_numeric_type(t: Option<&str>) -> bool {
@@ -447,6 +460,12 @@ pub async fn run(s: &PgSession, input: &str, options: ConsoleOptions) -> Console
         return out;
     }
 
+    // `\g` e `\gx` fecham o comando no lugar do `;`.
+    let (input, once_expanded) = match split_go(input) {
+        Some((head, expanded)) => (head, expanded),
+        None => (input, false),
+    };
+    let expanded = options.expanded || once_expanded;
     match execute(s, input, 10_000).await {
         Ok(outcome) => {
             // O servidor devolve um resultado por comando; as etiquetas dependem do texto de cada um, então separa os comandos
@@ -456,7 +475,7 @@ pub async fn run(s: &PgSession, input: &str, options: ConsoleOptions) -> Console
                 let sql = tags.next().unwrap_or_default();
                 match &st.result {
                     Some(rs) => {
-                        out.text.push_str(&format_table(rs, None, options.expanded));
+                        out.text.push_str(&format_table(rs, None, expanded));
                         if rs.truncated {
                             out.text.push_str("(output truncated)\n");
                         }
@@ -562,6 +581,13 @@ mod tests {
         assert!(!is_complete("SELECT 1; SELECT 2"));
         assert!(is_complete("\\dt"));
         assert!(!is_complete("   "));
+        // `\g` e `\gx` terminam o comando no lugar do `;`.
+        assert!(is_complete("SELECT 1 \\g"));
+        assert!(is_complete("SELECT 1\n\\gx"));
+        assert!(!is_complete("SELECT '\\g"));
+        assert_eq!(split_go("SELECT 1 \\g"), Some(("SELECT 1 ", false)));
+        assert_eq!(split_go("SELECT 1 \\gx "), Some(("SELECT 1 ", true)));
+        assert_eq!(split_go("SELECT 1;"), None);
     }
 
     #[test]
