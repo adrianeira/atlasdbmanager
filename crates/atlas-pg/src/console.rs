@@ -7,14 +7,19 @@ use crate::connect::PgSession;
 use crate::exec::execute;
 use crate::history::format_atlas_error;
 use atlas_core::{DatabaseError, ResultSet};
+use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// Ajustes da sessão do console (`\timing` e `\x`).
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsoleOptions {
     pub timing: bool,
     pub expanded: bool,
+    /// Variáveis do `\set`, usadas como `:nome`, `:'nome'` e `:"nome"`.
+    #[serde(default)]
+    pub vars: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -25,6 +30,8 @@ pub struct ConsoleOutput {
     pub switch_db: Option<String>,
     /// `\q`.
     pub quit: bool,
+    /// `\watch [segundos]`: a tela repete o último comando neste intervalo até o Ctrl+C.
+    pub watch: Option<f64>,
     pub options: ConsoleOptions,
 }
 
@@ -251,7 +258,7 @@ async fn query(s: &PgSession, sql: &str) -> Result<ResultSet, DatabaseError> {
     Ok(out.statements.into_iter().find_map(|st| st.result).unwrap_or(ResultSet { columns: vec![], rows: vec![], truncated: false }))
 }
 
-const HELP: &str = "General\n  \\q                     quit the console\n  \\?                     show this help\n  \\conninfo              display information about the current connection\n  \\c [DBNAME]            connect to another database\n\nInformational\n  \\l                     list databases\n  \\dn                    list schemas\n  \\dt                    list tables\n  \\dv                    list views\n  \\dm                    list materialized views\n  \\di                    list indexes\n  \\ds                    list sequences\n  \\df                    list functions\n  \\du                    list roles\n  \\d NAME                describe a table, view, index or sequence\n\nFormatting\n  \\timing [on|off]       toggle the time each command took\n  \\x [on|off]            toggle expanded output\n";
+const HELP: &str = include_str!("console_help.txt");
 
 fn relations(kinds: &str, title: &str, none: &str, plus: bool) -> (String, String, String) {
     // `+`: persistência, tamanho e descrição.
@@ -379,6 +386,223 @@ async fn describe(s: &PgSession, name: &str, expanded: bool, plus: bool) -> Resu
     Ok(out)
 }
 
+/// Troca `:nome`, `:'nome'` (como texto) e `:"nome"` (como identificador) pelas variáveis do console, fora de aspas, `$tag$` e
+/// comentários. `::` (cast) e nomes sem variável ficam como estão.
+pub fn interpolate(sql: &str, vars: &BTreeMap<String, String>) -> String {
+    if vars.is_empty() || !sql.contains(':') {
+        return sql.to_string();
+    }
+    let chars: Vec<char> = sql.chars().collect();
+    let mut out = String::with_capacity(sql.len());
+    let mut i = 0;
+    let at = |k: usize| chars.get(k).copied();
+    while i < chars.len() {
+        let c = chars[i];
+        match c {
+            '\'' | '"' => {
+                // Trecho entre aspas, com as aspas dobradas como escape.
+                let start = i;
+                i += 1;
+                while i < chars.len() {
+                    if chars[i] == c {
+                        if at(i + 1) == Some(c) {
+                            i += 2;
+                            continue;
+                        }
+                        break;
+                    }
+                    i += 1;
+                }
+                i = (i + 1).min(chars.len());
+                out.extend(&chars[start..i]);
+            }
+            '-' if at(i + 1) == Some('-') => {
+                let start = i;
+                while i < chars.len() && chars[i] != '\n' {
+                    i += 1;
+                }
+                out.extend(&chars[start..i]);
+            }
+            '/' if at(i + 1) == Some('*') => {
+                let start = i;
+                i += 2;
+                while i + 1 < chars.len() && !(chars[i] == '*' && chars[i + 1] == '/') {
+                    i += 1;
+                }
+                i = (i + 2).min(chars.len());
+                out.extend(&chars[start..i]);
+            }
+            '$' => {
+                // `$tag$ ... $tag$` fica como está.
+                let mut j = i + 1;
+                while j < chars.len() && (chars[j].is_alphanumeric() || chars[j] == '_') {
+                    j += 1;
+                }
+                if at(j) == Some('$') {
+                    let tag: String = chars[i..=j].iter().collect();
+                    let rest: String = chars[j + 1..].iter().collect();
+                    let end = rest.find(&tag).map(|p| j + 1 + rest[..p].chars().count() + tag.chars().count()).unwrap_or(chars.len());
+                    out.extend(&chars[i..end]);
+                    i = end;
+                } else {
+                    out.push('$');
+                    i += 1;
+                }
+            }
+            ':' if at(i + 1) == Some(':') => {
+                out.push_str("::");
+                i += 2;
+            }
+            ':' if matches!(at(i + 1), Some('\'' | '"')) => {
+                let quote = chars[i + 1];
+                let end = chars[i + 2..].iter().position(|x| *x == quote);
+                let name: Option<String> = end.map(|e| chars[i + 2..i + 2 + e].iter().collect());
+                match (name.as_ref().and_then(|n| vars.get(n)), end) {
+                    (Some(v), Some(e)) => {
+                        out.push(quote);
+                        out.push_str(&v.replace(quote, &format!("{quote}{quote}")));
+                        out.push(quote);
+                        i += e + 3;
+                    }
+                    _ => {
+                        out.push(':');
+                        i += 1;
+                    }
+                }
+            }
+            ':' if at(i + 1).is_some_and(|x| x.is_alphabetic() || x == '_') => {
+                let mut j = i + 1;
+                while j < chars.len() && (chars[j].is_alphanumeric() || chars[j] == '_') {
+                    j += 1;
+                }
+                let name: String = chars[i + 1..j].iter().collect();
+                match vars.get(&name) {
+                    Some(v) => {
+                        out.push_str(v);
+                        i = j;
+                    }
+                    None => {
+                        out.push(':');
+                        i += 1;
+                    }
+                }
+            }
+            _ => {
+                out.push(c);
+                i += 1;
+            }
+        }
+    }
+    out
+}
+
+/// `\copy`: lê ou grava um arquivo local com `COPY ... FROM STDIN` / `TO STDOUT`.
+///
+/// Formas aceitas: `\copy tabela [(colunas)] from|to 'arquivo' [opções]` e `\copy (consulta) to 'arquivo' [opções]`.
+async fn copy_meta(s: &PgSession, arg: &str) -> Result<String, DatabaseError> {
+    let bad = |message: &str| DatabaseError::new(atlas_core::ErrorKind::InvalidInput, message.to_string());
+    let usage = "\\copy {table [(columns)] | (query)} {from | to} 'filename' [options]";
+    // O primeiro `from` ou `to` fora de aspas e parênteses separa o objeto da direção.
+    let lower = arg.to_ascii_lowercase();
+    let b = lower.as_bytes();
+    let (mut depth, mut i, mut quote) = (0i32, 0usize, 0u8);
+    let mut found: Option<(usize, usize, bool)> = None;
+    while i < b.len() {
+        let c = b[i];
+        if quote != 0 {
+            if c == quote {
+                quote = 0;
+            }
+        } else if c == b'\'' || c == b'"' {
+            quote = c;
+        } else if c == b'(' {
+            depth += 1;
+        } else if c == b')' {
+            depth -= 1;
+        } else if depth == 0 && c.is_ascii_alphabetic() && (i == 0 || !b[i - 1].is_ascii_alphanumeric()) {
+            for (word, from) in [("from", true), ("to", false)] {
+                if lower[i..].starts_with(word) && !b.get(i + word.len()).is_some_and(|x| x.is_ascii_alphanumeric() || *x == b'_') {
+                    found = Some((i, i + word.len(), from));
+                    break;
+                }
+            }
+            if found.is_some() {
+                break;
+            }
+        }
+        i += 1;
+    }
+    let Some((at, end, from)) = found else { return Err(bad(usage)) };
+    let (spec, rest) = (arg[..at].trim(), arg[end..].trim());
+    if spec.is_empty() {
+        return Err(bad(usage));
+    }
+    let (path, options) = match rest.strip_prefix('\'') {
+        Some(body) => {
+            let mut path = String::new();
+            let mut chars = body.char_indices().peekable();
+            let mut close = None;
+            while let Some((k, c)) = chars.next() {
+                if c == '\'' {
+                    if chars.peek().map(|(_, n)| *n) == Some('\'') {
+                        path.push('\'');
+                        chars.next();
+                        continue;
+                    }
+                    close = Some(k);
+                    break;
+                }
+                path.push(c);
+            }
+            let Some(close) = close else { return Err(bad("unterminated quoted string")) };
+            (path, body[close + 1..].trim().to_string())
+        }
+        None => return Err(bad("\\copy needs a quoted file name ('stdin' and 'stdout' are not available in this console)")),
+    };
+    let flags = options.to_ascii_lowercase();
+    let csv = flags.contains("csv");
+    let header = flags.contains("header") && !flags.contains("header false") && !flags.contains("header 0") && !flags.contains("header off");
+    let started = std::time::Instant::now();
+    let sql = if from { format!("COPY {spec} FROM STDIN {options}") } else { format!("COPY {spec} TO STDOUT {options}") };
+    let io = |e: std::io::Error| DatabaseError::new(atlas_core::ErrorKind::Internal, format!("{path}: {e}"));
+    let result: Result<u64, DatabaseError> = async {
+        if from {
+            let mut file = std::fs::File::open(&path).map_err(io)?;
+            let sink = s.client.copy_in::<_, bytes::Bytes>(sql.trim_end()).await.map_err(|e| crate::error::map_error(&e))?;
+            futures_util::pin_mut!(sink);
+            let mut buf = vec![0u8; 256 * 1024];
+            loop {
+                let n = std::io::Read::read(&mut file, &mut buf).map_err(io)?;
+                if n == 0 {
+                    break;
+                }
+                sink.send(bytes::Bytes::copy_from_slice(&buf[..n])).await.map_err(|e| crate::error::map_error(&e))?;
+            }
+            sink.finish().await.map_err(|e| crate::error::map_error(&e))
+        } else {
+            let mut file = std::fs::File::create(&path).map_err(io)?;
+            let stream = s.client.copy_out(sql.trim_end()).await.map_err(|e| crate::error::map_error(&e))?;
+            futures_util::pin_mut!(stream);
+            let (mut rows, mut in_quotes) = (0u64, false);
+            while let Some(chunk) = stream.next().await {
+                let bytes = chunk.map_err(|e| crate::error::map_error(&e))?;
+                std::io::Write::write_all(&mut file, &bytes).map_err(io)?;
+                for byte in bytes.iter() {
+                    match byte {
+                        b'"' if csv => in_quotes = !in_quotes,
+                        b'\n' if !in_quotes => rows += 1,
+                        _ => {}
+                    }
+                }
+            }
+            Ok(if header { rows.saturating_sub(1) } else { rows })
+        }
+    }
+    .await;
+    s.client.log_command(&sql, started.elapsed().as_secs_f64(), result.as_ref().err());
+    Ok(format!("COPY {}\n", result?))
+}
+
 fn timing_line(ms: f64) -> String {
     format!("Time: {ms:.3} ms\n")
 }
@@ -393,7 +617,7 @@ fn flag(arg: &str, current: bool) -> bool {
 
 /// Executa um comando completo (SQL ou com `\`) e devolve o texto a imprimir.
 pub async fn run(s: &PgSession, input: &str, options: ConsoleOptions) -> ConsoleOutput {
-    let mut out = ConsoleOutput { options, ..Default::default() };
+    let mut out = ConsoleOutput { options: options.clone(), ..Default::default() };
     let started = std::time::Instant::now();
     let trimmed = input.trim();
     if let Some(meta) = trimmed.strip_prefix('\\') {
@@ -506,6 +730,58 @@ pub async fn run(s: &PgSession, input: &str, options: ConsoleOptions) -> Console
                 }
                 Err(e) => Err(e),
             },
+            "set" => {
+                let mut parts = arg.splitn(2, char::is_whitespace);
+                let key = parts.next().unwrap_or("").trim();
+                if key.is_empty() {
+                    for (k, v) in &options.vars {
+                        out.text.push_str(&format!("{k} = '{v}'\n"));
+                    }
+                } else {
+                    let raw = parts.next().unwrap_or("").trim();
+                    let value = match raw.strip_prefix('\'').and_then(|r| r.strip_suffix('\'')) {
+                        Some(inner) => inner.replace("''", "'"),
+                        None => raw.to_string(),
+                    };
+                    out.options.vars.insert(key.to_string(), value);
+                }
+                Ok(None)
+            }
+            "unset" => {
+                out.options.vars.remove(arg.trim());
+                Ok(None)
+            }
+            "echo" => {
+                out.text.push_str(&format!("{}\n", interpolate(&arg, &options.vars)));
+                Ok(None)
+            }
+            "watch" => {
+                out.watch = Some(arg.trim().parse::<f64>().ok().filter(|v| *v > 0.0).unwrap_or(2.0));
+                Ok(None)
+            }
+            "copy" => match copy_meta(s, &interpolate(&arg, &options.vars)).await {
+                Ok(text) => {
+                    out.text.push_str(&text);
+                    Ok(None)
+                }
+                Err(e) => Err(e),
+            },
+            "i" | "include" => {
+                let path = interpolate(&arg, &options.vars);
+                let path = path.trim().trim_matches('\'').to_string();
+                match std::fs::read_to_string(&path) {
+                    Ok(content) => {
+                        let sql = interpolate(&content, &options.vars);
+                        run_sql(s, &sql, options.expanded, &mut out).await;
+                        if options.timing {
+                            out.text.push_str(&timing_line(started.elapsed().as_secs_f64() * 1000.0));
+                        }
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => out.text.push_str(&format!("{path}: No such file or directory\n")),
+                    Err(e) => out.text.push_str(&format!("{path}: {e}\n")),
+                }
+                Ok(None)
+            }
             other => {
                 out.text.push_str(&format!("invalid command \\{other}\nTry \\? for help.\n"));
                 Ok(None)
@@ -529,6 +805,16 @@ pub async fn run(s: &PgSession, input: &str, options: ConsoleOptions) -> Console
         None => (input, false),
     };
     let expanded = options.expanded || once_expanded;
+    let sql = interpolate(input, &options.vars);
+    run_sql(s, &sql, expanded, &mut out).await;
+    if options.timing {
+        out.text.push_str(&timing_line(started.elapsed().as_secs_f64() * 1000.0));
+    }
+    out
+}
+
+/// Executa o texto (um ou vários comandos) e acrescenta à saída as tabelas, as etiquetas ou o erro.
+async fn run_sql(s: &PgSession, input: &str, expanded: bool, out: &mut ConsoleOutput) {
     match execute(s, input, 10_000).await {
         Ok(outcome) => {
             // O servidor devolve um resultado por comando; as etiquetas dependem do texto de cada um, então separa os comandos
@@ -552,10 +838,6 @@ pub async fn run(s: &PgSession, input: &str, options: ConsoleOptions) -> Console
             out.text.push_str(&format!("{}\n", format_atlas_error(&e, input)));
         }
     }
-    if options.timing {
-        out.text.push_str(&timing_line(started.elapsed().as_secs_f64() * 1000.0));
-    }
-    out
 }
 
 /// Divide o texto nos `;` de fora de aspas, `$tag$` e comentários (só para dar nome às etiquetas dos comandos).
@@ -683,6 +965,17 @@ mod tests {
         assert_eq!(command_tag("-- nota\nDROP TABLE t", 0), "DROP TABLE");
         assert_eq!(command_tag("BEGIN", 0), "BEGIN");
         assert_eq!(command_tag("set search_path = x", 0), "SET");
+    }
+
+    #[test]
+    fn variables_are_interpolated_outside_quotes_comments_and_casts() {
+        let vars: BTreeMap<String, String> = [("t", "clients"), ("n", "O'Brien"), ("c", "a\"b")].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        assert_eq!(interpolate("SELECT * FROM :t WHERE n = :'n'", &vars), "SELECT * FROM clients WHERE n = 'O''Brien'");
+        assert_eq!(interpolate("SELECT :\"c\"", &vars), "SELECT \"a\"\"b\"");
+        // Dentro de texto, comentário e `$$` não troca; `::` é cast; o que não tem variável fica como está.
+        assert_eq!(interpolate("SELECT ':t', \"x:t\", $$:t$$ -- :t\n, 1::int, :nada /* :t */", &vars), "SELECT ':t', \"x:t\", $$:t$$ -- :t\n, 1::int, :nada /* :t */");
+        assert_eq!(interpolate("SELECT :t", &BTreeMap::new()), "SELECT :t");
+        assert_eq!(interpolate("SELECT ':n' || :'n' || :n", &vars), "SELECT ':n' || 'O''Brien' || O'Brien");
     }
 
     #[test]

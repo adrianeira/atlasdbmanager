@@ -1975,17 +1975,20 @@ async fn console_runs_sql_and_backslash_commands_like_psql() {
     let opts = ConsoleOptions::default();
     let run = |input: &'static str| {
         let s = &s;
-        async move { console_run(s, input, opts).await }
+        let o = opts.clone();
+        async move { console_run(s, input, o).await }
     };
     let setup = format!(
         "CREATE SCHEMA {ns}; SET search_path TO {ns}; \
          CREATE TABLE clients(id serial PRIMARY KEY, name varchar(30) NOT NULL, nota text DEFAULT 'x'); \
          CREATE UNIQUE INDEX clients_name_key ON clients(name); \
          CREATE TABLE orders(id int PRIMARY KEY, client_id int REFERENCES clients(id), amount numeric CHECK (amount > 0)); \
-         INSERT INTO clients(name) VALUES ('Ana'), ('Bruno');"
+         INSERT INTO clients(name) VALUES ('Ana'), ('Bruno'); \
+         CREATE TABLE copyt(a int, b text); \
+         INSERT INTO copyt VALUES (1, 'x'), (2, 'y,z'), (3, 'linha1' || E'\\n' || 'linha2');"
     );
     assert!(console_is_complete(&setup));
-    let out = console_run(&s, &setup, opts).await;
+    let out = console_run(&s, &setup, opts.clone()).await;
     assert!(out.text.contains("CREATE SCHEMA") && out.text.contains("SET\n") && out.text.contains("CREATE TABLE") && out.text.contains("CREATE INDEX") && out.text.contains("INSERT 0 2"), "{}", out.text);
 
     let out = run("SELECT id, name FROM clients ORDER BY id;").await;
@@ -2003,7 +2006,7 @@ async fn console_runs_sql_and_backslash_commands_like_psql() {
     assert!(out.text.contains('^'));
 
     let out = run("\\dt").await;
-    assert!(out.text.contains("List of relations") && out.text.contains(&ns) && out.text.contains("clients") && out.text.contains("orders") && out.text.contains("(2 rows)"), "{}", out.text);
+    assert!(out.text.contains("List of relations") && out.text.contains(&ns) && out.text.contains("clients") && out.text.contains("orders") && out.text.contains("(3 rows)"), "{}", out.text);
     let out = run("\\d clients").await;
     assert!(out.text.contains(&format!("Table \"{ns}.clients\"")), "{}", out.text);
     assert!(out.text.contains("Indexes:") && out.text.contains("\"clients_pkey\" PRIMARY KEY, btree (id)") && out.text.contains("\"clients_name_key\" UNIQUE, btree (name)"), "{}", out.text);
@@ -2033,10 +2036,51 @@ async fn console_runs_sql_and_backslash_commands_like_psql() {
     assert!(out.options.timing && out.text == "Timing is on.\n");
     let timed = console_run(&s, "SELECT 1;", out.options).await;
     assert!(timed.text.contains("Time: "), "{}", timed.text);
-    let x = console_run(&s, "\\x", opts).await;
+    let x = console_run(&s, "\\x", opts.clone()).await;
     assert!(x.options.expanded);
     let rec = console_run(&s, "SELECT 1 AS a, 'b' AS bb;", x.options).await;
     assert!(rec.text.starts_with("-[ RECORD 1 ]+"), "{}", rec.text);
+
+    // Variáveis: \set, :nome, :'nome', \echo, \set sem argumentos e \unset.
+    let v = console_run(&s, "\\set tabela clients", opts.clone()).await;
+    let v = console_run(&s, "\\set nome 'Ana'", v.options).await;
+    let sel = console_run(&s, "SELECT name FROM :tabela WHERE name = :'nome';", v.options.clone()).await;
+    assert!(sel.text.contains(" Ana\n") && sel.text.contains("(1 row)"), "{}", sel.text);
+    assert_eq!(console_run(&s, "\\echo tabela=:tabela", v.options.clone()).await.text, "tabela=clients\n");
+    assert!(console_run(&s, "\\set", v.options.clone()).await.text.contains("nome = 'Ana'"));
+    let gone = console_run(&s, "\\unset nome", v.options.clone()).await;
+    assert!(!gone.options.vars.contains_key("nome") && gone.options.vars.contains_key("tabela"));
+
+    // \i: roda um arquivo; um arquivo que não existe diz isso.
+    let dir = std::env::temp_dir();
+    let script = dir.join(format!("atlas_console_{}.sql", std::process::id()));
+    std::fs::write(&script, "SELECT 7 AS sete;\nSELECT 8 AS oito;\n").unwrap();
+    let out = console_run(&s, &format!("\\i {}", script.display()), opts.clone()).await;
+    assert!(out.text.contains("sete") && out.text.contains("oito") && out.text.contains(" 7\n") && out.text.contains(" 8\n"), "{}", out.text);
+    assert!(console_run(&s, "\\i /nao/existe.sql", opts.clone()).await.text.ends_with("/nao/existe.sql: No such file or directory\n"));
+    std::fs::remove_file(&script).ok();
+
+    // \copy: para arquivo (com a quebra de linha dentro de um campo) e de volta; a contagem é a do servidor.
+    let csv = dir.join(format!("atlas_console_{}.csv", std::process::id()));
+    let to = console_run(&s, &format!("\\copy copyt to '{}' csv header", csv.display()), opts.clone()).await;
+    assert_eq!(to.text, "COPY 3\n", "{}", to.text);
+    let text = std::fs::read_to_string(&csv).unwrap();
+    assert!(text.starts_with("a,b\n1,x\n2,\"y,z\"\n3,\"linha1\nlinha2\"\n"), "{text:?}");
+    let back = console_run(&s, &format!("\\copy copyt from '{}' csv header", csv.display()), opts.clone()).await;
+    assert_eq!(back.text, "COPY 3\n", "{}", back.text);
+    assert!(console_run(&s, "SELECT count(*) AS n FROM copyt;", opts.clone()).await.text.contains(" 6\n"));
+    let query_out = dir.join(format!("atlas_console_q_{}.txt", std::process::id()));
+    let q = console_run(&s, &format!("\\copy (SELECT a FROM copyt WHERE a < 3 ORDER BY a) to '{}'", query_out.display()), opts.clone()).await;
+    assert_eq!(q.text, "COPY 4\n", "{}", q.text);
+    let bad = console_run(&s, "\\copy copyt from '/nao/existe.csv'", opts.clone()).await;
+    assert!(!bad.text.starts_with("COPY"), "{}", bad.text);
+    assert!(console_run(&s, "\\copy copyt to stdout", opts.clone()).await.text.contains("quoted file name"));
+    std::fs::remove_file(&csv).ok();
+    std::fs::remove_file(&query_out).ok();
+
+    // \watch só devolve o intervalo (a tela repete o último comando).
+    assert_eq!(console_run(&s, "\\watch", opts.clone()).await.watch, Some(2.0));
+    assert_eq!(console_run(&s, "\\watch 0.5", opts.clone()).await.watch, Some(0.5));
 
     atlas_pg::execute(&s, &format!("DROP SCHEMA {ns} CASCADE"), 1).await.unwrap();
 }

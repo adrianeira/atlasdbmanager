@@ -1,0 +1,38 @@
+General
+  \q                     quit the console
+  \?                     show this help
+  \conninfo              display information about the current connection
+  \c [DBNAME]            connect to another database
+
+Query buffer
+  \g                     end the command (like ;) and run it
+  \gx                    end the command and show the result expanded, once
+  \watch [SEC]           run the last command every SEC seconds (default 2) until Ctrl+C
+  \i FILE                run the commands in a file
+  \copy ...              import/export a file: \copy {table [(columns)] | (query)} {from | to} 'file' [options]
+
+Variables
+  \set [NAME [VALUE]]    set a variable, or list them all (use :NAME, :'NAME' or :"NAME" in commands)
+  \unset NAME            unset a variable
+  \echo TEXT             print text (variables are expanded)
+
+Informational (add + for more detail)
+  \l[+]                  list databases
+  \dn[+]                 list schemas
+  \dt[+]                 list tables
+  \dv[+]                 list views
+  \dm[+]                 list materialized views
+  \di[+]                 list indexes
+  \ds[+]                 list sequences
+  \df                    list functions
+  \du[+]                 list roles
+  \d[+] [NAME]           list relations, or describe a table, view, index or sequence
+
+Formatting
+  \timing [on|off]       toggle the time each command took
+  \x [on|off]            toggle expanded output
+
+Editing
+  Tab                    complete commands, keywords, schemas, tables and columns
+  Up/Down                browse the command history
+  Ctrl+C                 cancel what is being typed, or stop \watch

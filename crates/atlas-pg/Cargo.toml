@@ -16,6 +16,7 @@ postgres-native-tls.workspace = true
 native-tls.workspace = true
 futures-util.workspace = true
 log.workspace = true
+bytes = "1.12.1"
 
 [dev-dependencies]
 bytes = "1.12.1"
