@@ -2295,6 +2295,6 @@ async fn tablespaces_are_listed_with_detail() {
         assert_eq!(with.comment.as_deref(), Some("atlas-test"));
         assert_eq!(listed.comment.as_deref(), Some("atlas-test"));
     }
-    let err = atlas_pg::tablespace_detail(&s, "nao_existe_ts").await.err().expect("must fail");
+    let err = atlas_pg::tablespace_detail(&s, "nao_existe_ts").await.expect_err("must fail");
     assert_eq!(err.code.as_deref(), Some("42704"));
 }
