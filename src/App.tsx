@@ -291,13 +291,22 @@ type Dialog =
   | { kind: "deleteBackup"; connId: string; database: string; schema: string; names: string[]; files: { path: string; metaPath: string }[] }
   | { kind: "about" };
 
-/** Tabela, view ou view materializada aberta na sessão anterior. */
+/** Aba de tabela, view ou consulta ligada a um banco, na forma em que fica gravada (e guardada ao fechar o banco). */
+function savedFromTab(x: DocTab, all: DocTab[], activeId: string, texts: Map<string, string>): SavedTable {
+  const base = { connectionId: x.connectionId!, database: x.database!, schema: x.schema ?? "", title: x.title, active: x.id === activeId, pos: all.indexOf(x) };
+  if (x.kind === "query") return { ...base, object: "", kind: "query", sql: texts.get(x.id) ?? x.sql ?? "" };
+  return { ...base, object: x.object!, kind: (x.objectKind === "view" || x.objectKind === "matview" ? x.objectKind : "table") as SavedTable["kind"] };
+}
+
+/** Tabela, view, view materializada ou consulta aberta na sessão anterior. */
 interface SavedTable {
   connectionId: string;
   database: string;
   schema: string;
   object: string;
-  kind: "table" | "view" | "matview";
+  kind: "table" | "view" | "matview" | "query";
+  /** Consulta: o texto do editor. */
+  sql?: string;
   title: string;
   /** Era a aba aberta ao fechar. */
   active?: boolean;
@@ -1425,12 +1434,13 @@ export default function App() {
   const restoring = useRef(new Set<string>());
   const saveSession = useCallback(() => {
     if (!isDesktop || !sessionReady.current) return;
-    const queries = tabsRef.current.filter((x) => x.kind === "query");
+    // Consultas ligadas a um banco se comportam como as tabelas (voltam quando o banco é aberto); as sem banco voltam ao iniciar.
+    const queries = tabsRef.current.filter((x) => x.kind === "query" && !(x.connectionId && x.database));
     const list = queries.map((x) => ({ title: x.title, connectionId: x.connectionId, database: x.database, schema: x.schema, sql: queryTexts.current.get(x.id) ?? x.sql ?? "" }));
     const active = Math.max(0, queries.findIndex((x) => x.id === activeTabRef.current));
-    const openTables = tabsRef.current.filter((x) => x.kind === "data" && x.connectionId && x.database && x.schema && x.object);
+    const dbTabs = tabsRef.current.filter((x) => (x.kind === "data" && x.connectionId && x.database && x.schema && x.object) || (x.kind === "query" && x.connectionId && x.database));
     const tables: SavedTable[] = [
-      ...openTables.map((x) => ({ connectionId: x.connectionId!, database: x.database!, schema: x.schema!, object: x.object!, kind: (x.objectKind === "view" || x.objectKind === "matview" ? x.objectKind : "table") as SavedTable["kind"], title: x.title, active: x.id === activeTabRef.current, pos: tabsRef.current.indexOf(x) })),
+      ...dbTabs.map((x) => savedFromTab(x, tabsRef.current, activeTabRef.current, queryTexts.current)),
       ...pendingTables.current,
     ];
     const activeTable = tables.findIndex((x) => x.active);
@@ -1451,6 +1461,16 @@ export default function App() {
     restoring.current.add(key);
     for (const saved of mine) {
       pendingTables.current = pendingTables.current.filter((x) => x !== saved);
+      if (saved.kind === "query") {
+        const id = `doc${++tabSeq.current}`;
+        queryTexts.current.set(id, saved.sql ?? "");
+        const tab: DocTab = { id, kind: "query", title: saved.title, windowTitle: saved.title, icon: "query", sql: saved.sql ?? "", connectionId: connId, database: saved.database, schema: saved.schema || undefined };
+        const at = Math.min(Math.max(saved.pos ?? tabsRef.current.length, 1), tabsRef.current.length);
+        tabsRef.current = [...tabsRef.current.slice(0, at), tab, ...tabsRef.current.slice(at)];
+        setTabs((ts) => { const i = Math.min(at, ts.length); return [...ts.slice(0, i), tab, ...ts.slice(i)]; });
+        if (saved.active) setActiveTab(id);
+        continue;
+      }
       // O estado novo só chega às refs depois de renderizar: espera o schema aparecer (e depois ficar lido) antes de olhar.
       const schemaNow = () => connectionsRef.current.find((c) => c.id === connId)?.databases.find((d) => d.name === saved.database)?.schemas.find((s) => s.name === saved.schema);
       const until = async (done: () => boolean) => { for (let i = 0; i < 40 && !done(); i++) await new Promise((r) => setTimeout(r, 50)); };
@@ -1499,14 +1519,13 @@ export default function App() {
    * só o X da própria aba faz a tabela ser esquecida. Com alterações não gravadas, pergunta antes. `then` roda em seguida.
    */
   const parkTables = (connId: string, dbName: string | undefined, then: () => void) => {
-    const mine = tabsRef.current.filter((x) => x.kind === "data" && x.connectionId === connId && x.database && x.schema && x.object && (!dbName || x.database === dbName));
+    const mine = tabsRef.current.filter((x) => x.connectionId === connId && x.database && (!dbName || x.database === dbName)
+      && ((x.kind === "data" && x.schema && x.object) || x.kind === "query"));
     const run = () => {
       for (const x of mine) {
-        const entry: SavedTable = {
-          connectionId: connId, database: x.database!, schema: x.schema!, object: x.object!,
-          kind: (x.objectKind === "view" || x.objectKind === "matview" ? x.objectKind : "table") as SavedTable["kind"], title: x.title, active: x.id === activeTabRef.current, pos: tabsRef.current.indexOf(x),
-        };
-        pendingTables.current = [...pendingTables.current.filter((p) => !(p.connectionId === connId && p.database === entry.database && p.schema === entry.schema && p.object === entry.object)), entry];
+        const entry = savedFromTab(x, tabsRef.current, activeTabRef.current, queryTexts.current);
+        // Consultas sempre entram (podem ter o mesmo título); tabelas iguais não se repetem.
+        pendingTables.current = [...pendingTables.current.filter((p) => x.kind === "query" || !(p.connectionId === connId && p.database === entry.database && p.schema === entry.schema && p.object === entry.object)), entry];
       }
       if (mine.length) {
         const ids = new Set(mine.map((x) => x.id));
@@ -1515,7 +1534,8 @@ export default function App() {
       }
       then();
     };
-    if (mine.some((x) => x.dirty)) setDialog({ kind: "closeDbDirty", run });
+    // Tabela com edições não gravadas ou consulta com transação aberta: pergunta (o texto da consulta fica guardado, não conta).
+    if (mine.some((x) => (x.kind === "query" ? txTabs.current.has(x.id) : x.dirty))) setDialog({ kind: "closeDbDirty", run });
     else run();
   };
 
@@ -1528,8 +1548,8 @@ export default function App() {
       .then((saved) => {
         const known = new Set(connectionsRef.current.map((c) => c.id));
         pendingTables.current = (Array.isArray(saved?.tables) ? saved.tables : [])
-          .filter((x) => x && known.has(x.connectionId) && typeof x.database === "string" && typeof x.schema === "string" && typeof x.object === "string" && typeof x.title === "string")
-          .map((x, i) => ({ ...x, kind: x.kind === "view" || x.kind === "matview" ? x.kind : "table", active: i === saved?.activeTable }));
+          .filter((x) => x && known.has(x.connectionId) && typeof x.database === "string" && typeof x.schema === "string" && typeof x.object === "string" && typeof x.title === "string" && (x.kind !== "query" || typeof x.sql === "string"))
+          .map((x, i) => ({ ...x, kind: x.kind === "view" || x.kind === "matview" || x.kind === "query" ? x.kind : "table", active: i === saved?.activeTable }));
         const restored: DocTab[] = (saved?.tabs ?? []).filter((x) => x && typeof x.sql === "string").map((x) => {
           const keep = !!x.connectionId && known.has(x.connectionId);
           const id = `doc${++tabSeq.current}`;
