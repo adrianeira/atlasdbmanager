@@ -155,6 +155,8 @@ interface Props {
   columns: GridColumn[];
   /** Coluna → (valor → texto mostrado no lugar dele); só muda o que se vê (ex.: chave estrangeira mostrada pela descrição). */
   valueLabels?: Map<number, Map<string, string>>;
+  /** O usuário terminou de ajustar a largura de uma coluna (arrastando a borda ou com duplo clique). */
+  onColumnWidth?: (name: string, width: number) => void;
   rows: CellValue[][];
   readOnly?: boolean;
   /** Chaves "linha:coluna" de células alteradas e ainda não aplicadas. */
@@ -195,7 +197,7 @@ interface Props {
 }
 
 export function DataGrid({
-  columns, valueLabels, rows, readOnly, edited, deletedRows, newRows, activeRow, onActiveRow, onEdit, rowHeight = 23, simpleHeader, lookupCols, onLookup,
+  columns, onColumnWidth, valueLabels, rows, readOnly, edited, deletedRows, newRows, activeRow, onActiveRow, onEdit, rowHeight = 23, simpleHeader, lookupCols, onLookup,
   sqlTarget, onDeleteRow, onRefresh, findQuery, activeFind, highlightAll, onSaveAs, onSortColumn, onClearSort, onAddFilter, onActiveCell, onOpenCellEditor,
 }: Props) {
   const t = useT();
@@ -237,6 +239,13 @@ export function DataGrid({
     setEditing(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [structureKey]);
+
+  // Larguras que chegam de fora depois de montar (a visão lembrada da tabela) valem sobre as automáticas.
+  const widthsKey = columns.map((c) => c.width ?? "").join("|");
+  useEffect(() => {
+    setWidths((ws) => ws.map((w, i) => columns[i]?.width ?? w));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [widthsKey]);
 
   // Se a coluna ativa for ocultada, pula para a primeira coluna visível.
   useEffect(() => {
@@ -376,10 +385,15 @@ export function DataGrid({
     e.stopPropagation();
     const startX = e.clientX;
     const startW = widths[i];
-    const onMove = (ev: MouseEvent) => setWidths((w) => w.map((x, j) => (j === i ? Math.max(40, startW + ev.clientX - startX) : x)));
+    let last = startW;
+    const onMove = (ev: MouseEvent) => {
+      last = Math.max(40, startW + ev.clientX - startX);
+      setWidths((w) => w.map((x, j) => (j === i ? last : x)));
+    };
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      if (last !== startW) onColumnWidth?.(columns[i].name, Math.round(last));
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -507,7 +521,9 @@ export function DataGrid({
       const t = v === null ? "(Null)" : display(v, c.kind);
       w = Math.max(w, textWidth(t, font) + 14);
     }
-    setWidths((ws) => ws.map((x, j) => (j === i ? Math.min(600, Math.ceil(w)) : x)));
+    const fitted = Math.min(600, Math.ceil(w));
+    setWidths((ws) => ws.map((x, j) => (j === i ? fitted : x)));
+    onColumnWidth?.(c.name, fitted);
   };
 
   return (

@@ -39,6 +39,7 @@ import { ForeignTableDesignerDoc, type ForeignTableBackend } from "./documents/F
 import { TablespaceDesignerDoc, type TablespaceBackend } from "./documents/TablespaceDesignerDoc";
 import { dropTablespaceStatement } from "./sql/tablespace";
 import { TasksDialog } from "./components/TasksDialog";
+import { viewKeyOf } from "./tableView";
 import { runTask } from "./taskRun";
 import { isDue, type ScheduledTask } from "./tasks";
 import { HistoryLogDoc } from "./documents/HistoryLogDoc";
@@ -2771,6 +2772,7 @@ export default function App() {
           lookup={tab.objectKind === "view" || tab.objectKind === "matview" ? undefined : lookupSourceFor(tab, conn)}
           isView={tab.objectKind === "view" || tab.objectKind === "matview"}
           onDirty={(d) => setTabDirty(tab.id, d)}
+          viewKey={isDesktop && conn?.live && tab.database ? viewKeyOf(conn.id, tab.database, tab.schema ?? "", tab.object ?? base.name) : undefined}
           onExport={conn?.live && tab.database ? (scope) => {
             const table = tab.object ?? base.name;
             const sc = conn.databases.find((d) => d.name === tab.database)?.schemas.find((x) => x.name === tab.schema);

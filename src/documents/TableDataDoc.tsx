@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { errorText, toAtlasError, type OrderBy, type PlannedStatement, type TableFilter } from "../backend";
+import { errorText, local, toAtlasError, type OrderBy, type PlannedStatement, type TableFilter } from "../backend";
 import { CellEditorPanel } from "../components/CellEditorPanel";
 import { TableProfileDialog } from "../components/TableProfileDialog";
 import { ColumnsDialog } from "../components/ColumnsDialog";
@@ -15,6 +15,7 @@ import { plannedStatements } from "../live";
 import { mockRows, quoteIdent, type CellValue, type DbObject, type ForeignKeyDef } from "../model";
 import { columnType, selectSql } from "../sql/ddl";
 import { useOptions } from "../options";
+import { isDefaultView, prefKey, sanitizeView } from "../tableView";
 
 /** Acesso ao banco real; ausente = modo de demonstração com dados fictícios. */
 export interface TableDataBackend {
@@ -46,13 +47,15 @@ interface Props {
   isView?: boolean;
   /** Há alterações não gravadas (a aba pergunta antes de fechar). */
   onDirty?: (dirty: boolean) => void;
+  /** Chave da tabela (conexão/banco/schema/nome): com ela a aba lembra ordenação, filtro, colunas e larguras entre aberturas. */
+  viewKey?: string;
   /** Abre o assistente de exportação com o filtro, a ordenação e as colunas visíveis do grid. Só com banco real. */
   onExport?: (scope: { orderBy: OrderBy[]; filter: TableFilter | null; allColumns: string[]; visibleColumns: string[] }) => void;
 }
 
 const MAX_PAGE_SIZE = 1_000_000;
 
-export function TableDataDoc({ schema, table: tableProp, active, production, onStatus, backend, lookup, isView, onDirty, onExport }: Props) {
+export function TableDataDoc({ schema, table: tableProp, active, production, onStatus, backend, lookup, isView, onDirty, viewKey, onExport }: Props) {
   const t = useT();
   const { pageSize: DEFAULT_PAGE_SIZE, limitRecords, autoBeginTransaction } = useOptions();
   const [table, setTable] = useState<DbObject>(tableProp);
@@ -63,6 +66,8 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   // "Columns" da toolbar: colunas ocultas do grid, por nome (os dados continuam carregados).
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
   const [columnsOpen, setColumnsOpen] = useState(false);
+  /** Larguras ajustadas pelo usuário, por nome de coluna. */
+  const [widths, setWidths] = useState<Record<string, number>>({});
 
   const columns: GridColumn[] = useMemo(
     () => cols.map((c) => ({
@@ -76,8 +81,9 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
       // Bloqueia edição em colunas geradas pelo banco: GENERATED ALWAYS AS IDENTITY ou STORED.
       generated: c.identity === "a" || c.generated === "s",
       hidden: hiddenCols.has(c.name),
+      width: widths[c.name],
     })),
-    [cols, hiddenCols],
+    [cols, hiddenCols, widths],
   );
 
   const [original, setOriginal] = useState<CellValue[][]>(() => (backend ? [] : mockRows(tableProp)));
@@ -280,12 +286,26 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
       setPageText(String(p + 1));
       setActiveRow(Math.max(0, Math.min(keepRow ?? 0, res.rows.length - 1)));
       setRefreshedAt(new Date());
+      return true;
     } catch (e) {
       setLoadError(errorText(toAtlasError(e)));
+      return false;
     } finally {
       setLoading(false);
     }
   }, [backend, sort, filter]);
+
+  /** Só grava a visão depois de lida a anterior (senão a padrão a apagaria). */
+  const [viewLoaded, setViewLoaded] = useState(false);
+  // Grava a visão (com uma pausa, para não gravar a cada pixel arrastado).
+  useEffect(() => {
+    if (!viewKey || !backend || !viewLoaded) return;
+    const timer = window.setTimeout(() => {
+      const state = { sort, filter: filter?.expr ?? "", hidden: [...hiddenCols], widths, limitOn, pageSize };
+      void local.setPref(prefKey(viewKey), isDefaultView(state, { limitOn: limitRecords, pageSize: DEFAULT_PAGE_SIZE }) ? null : state).catch(() => undefined);
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [viewKey, backend, viewLoaded, sort, filter, hiddenCols, widths, limitOn, pageSize, limitRecords, DEFAULT_PAGE_SIZE]);
 
   // Conexão real: lê a estrutura (colunas/PK) e a primeira página.
   useEffect(() => {
@@ -293,10 +313,40 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
     let alive = true;
     backend
       .loadDetail()
-      .then((obj) => {
+      .then(async (obj) => {
         if (!alive) return;
+        // A visão que o usuário deixou da última vez (ordenação, filtro, colunas, larguras, limite).
+        let saved: ReturnType<typeof sanitizeView> | null = null;
+        if (viewKey) {
+          try {
+            const raw = await local.getPref<unknown>(prefKey(viewKey));
+            if (raw) saved = sanitizeView(raw, (obj.columns ?? []).map((c) => c.name), { limitOn, pageSize });
+          } catch { /* sem preferência: abre com a visão padrão */ }
+        }
+        if (!alive) return;
+        if (!saved) {
+          setTable(obj);
+          setViewLoaded(true);
+          return loadPage(0, obj, limit);
+        }
+        const savedFilter = saved.filter.trim() ? { expr: saved.filter } : null;
+        // As larguras entram junto com as colunas (o grid só as lê quando a estrutura muda).
+        setWidths(saved.widths);
         setTable(obj);
-        return loadPage(0, obj, limit);
+        setSort(saved.sort);
+        setFilter(savedFilter);
+        setHiddenCols(new Set(saved.hidden));
+        setLimitOn(saved.limitOn);
+        setPageSize(saved.pageSize);
+        setSizeText(String(saved.pageSize));
+        const ok = await loadPage(0, obj, saved.limitOn ? saved.pageSize : null, undefined, saved.sort, savedFilter);
+        // O filtro lembrado pode não valer mais (coluna renomeada, tipo mudado): volta à visão padrão em vez de ficar com erro.
+        if (!ok && alive && (saved.sort.length || savedFilter)) {
+          setSort([]);
+          setFilter(null);
+          await loadPage(0, obj, saved.limitOn ? saved.pageSize : null, undefined, [], null);
+        }
+        setViewLoaded(true);
       })
       .catch((e) => {
         if (!alive) return;
@@ -652,7 +702,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
         )}
         {canLabel && tool("link", "data.fkValues", toggleFkValues, fkValues)}
         {tool("cellEditor", "data.cellEditor", () => setCellEditorOpen((v) => !v), cellEditorOpen)}
-        {tool("filterSort", "data.filterSort", () => { setFilterColumn(undefined); setFilterOpen(true); })}
+        {tool("filterSort", "data.filterSort", () => { setFilterColumn(undefined); setFilterOpen(true); }, !!filter || sort.length > 0)}
         {tool("columns", "data.columns", () => setColumnsOpen(true))}
         {tool("profiling", "data.profiling")}
         {tool("import", "data.import")}
@@ -674,6 +724,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
         ) : view === "grid" ? (
           <DataGrid
             columns={columns}
+            onColumnWidth={(name, w) => setWidths((ws) => ({ ...ws, [name]: w }))}
             rows={rows}
             readOnly={readOnly}
             edited={edited}
