@@ -4,7 +4,7 @@ import { copyToClipboard, readClipboard } from "../clipboard";
 import type { MenuEntry } from "../commands";
 import { useT } from "../i18n";
 import { formatNumber, formatTemporal } from "../format";
-import { useOptions } from "../options";
+import { gridFontCss, useOptions } from "../options";
 import { quoteIdent, type CellValue } from "../model";
 import { DateTimePopup, type DateTimeKind } from "./DateTimePopup";
 import { PopupMenu } from "./PopupMenu";
@@ -107,9 +107,9 @@ function textWidth(text: string, font: string): number {
   measureCtx.font = font;
   return measureCtx.measureText(text).width;
 }
-function autoWidth(c: GridColumn): number {
-  const name = textWidth(c.name, "600 12px Segoe UI, sans-serif") + 18;
-  const type = c.type ? textWidth(c.type, "12px Segoe UI, sans-serif") + 34 : 0;
+function autoWidth(c: GridColumn, font = "12px Segoe UI, sans-serif", bold = "600 12px Segoe UI, sans-serif"): number {
+  const name = textWidth(c.name, bold) + 18;
+  const type = c.type ? textWidth(c.type, font) + 34 : 0;
   return Math.ceil(Math.min(320, Math.max(BASE_WIDTH[c.kind], name, type)));
 }
 
@@ -199,6 +199,9 @@ export function DataGrid({
   sqlTarget, onDeleteRow, onRefresh, findQuery, activeFind, highlightAll, onSaveAs, onSortColumn, onClearSort, onAddFilter, onActiveCell, onOpenCellEditor,
 }: Props) {
   const t = useT();
+  const opts = useOptions();
+  const font = gridFontCss(opts);
+  const fontBold = gridFontCss(opts, "600");
   const { rowShading, displayDate, displayTime, displayDateTime, showThousands, systemLocale } = useOptions();
   /** Texto da célula com os formatos de data/hora e de número das Opções. */
   const shown = (v: string, c: GridColumn, ci: number): string => {
@@ -228,7 +231,7 @@ export function DataGrid({
   // cada mostrar/ocultar coluna — senão o diálogo "Columns" resetaria larguras ajustadas manualmente.
   const structureKey = useMemo(() => columns.map((c) => `${c.name}:${c.type}`).join("|"), [columns]);
   useEffect(() => {
-    setWidths(columns.map((c) => c.width ?? autoWidth(c)));
+    setWidths(columns.map((c) => c.width ?? autoWidth(c, font, fontBold)));
     const firstVisible = columns.findIndex((c) => !c.hidden);
     setActiveCol(firstVisible >= 0 ? firstVisible : 0);
     setEditing(null);
@@ -498,11 +501,11 @@ export function DataGrid({
   // Duplo clique na borda do cabeçalho ajusta a coluna ao conteúdo visível.
   const fitColumn = (i: number) => {
     const c = columns[i];
-    let w = autoWidth(c);
+    let w = autoWidth(c, font, fontBold);
     for (const r of rows.slice(first, last)) {
       const v = r[i];
       const t = v === null ? "(Null)" : display(v, c.kind);
-      w = Math.max(w, textWidth(t, "12px Segoe UI, sans-serif") + 14);
+      w = Math.max(w, textWidth(t, font) + 14);
     }
     setWidths((ws) => ws.map((x, j) => (j === i ? Math.min(600, Math.ceil(w)) : x)));
   };
@@ -510,6 +513,7 @@ export function DataGrid({
   return (
     <div
       className="dg"
+      style={{ font }}
       ref={scrollRef}
       tabIndex={0}
       role="grid"

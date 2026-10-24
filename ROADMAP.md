@@ -308,7 +308,8 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       gravada a cada mudança e ao fechar *(`session.tabs` nas preferências locais)*
 - [ ] Da referência sem equivalente no Atlas: Tabs → "Open new tab in" (o Atlas tem uma só janela de abas), Connectivity (proxy: na referência vale
       só para ativação, atualizador, nuvem e IA, que o Atlas não tem), File Locations (o Atlas guarda tudo numa pasta só, mostrada em "Local Data"),
-      Environment (SQL*Plus, Mongo, OCI) e AI. Ainda faltam: fonte do grid, "Auto begin transaction", confirmações ao fechar e Advanced
+      Environment (SQL*Plus, Mongo, OCI) e AI. Advanced (log de diagnóstico, várias instâncias, registrar "Abrir com" e protocolo URI) também fica de fora: são integrações com o Windows que não dá para testar aqui e não têm função no Atlas
+- [x] **Records → Grid Font** (fonte e tamanho da grade; a largura automática das colunas acompanha), **Auto begin transaction** (a tabela abre já dentro de uma transação, com Commit/Rollback) e **General → perguntar antes de fechar uma consulta com texto não guardado** (desligado, fecha direto; com transação aberta sempre pergunta) *(`src/options.ts`)*
 - Padrão do sombreamento: a cada 2 linhas (a referência vem com "Every Third Row")
 
 ### Navegação / Árvore

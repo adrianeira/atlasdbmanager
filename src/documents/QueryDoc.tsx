@@ -33,6 +33,8 @@ interface Props {
   active: boolean;
   onStatus: (cells: StatusCell[]) => void;
   onDirty: (dirty: boolean) => void;
+  /** Há (ou deixou de haver) uma transação aberta na aba. */
+  onTransaction?: (open: boolean) => void;
   /** O texto do editor mudou (para guardar as consultas abertas). */
   onText?: (text: string) => void;
   /** Conexão, banco ou schema escolhidos na barra da consulta. */
@@ -153,7 +155,7 @@ function mockExecute(sqlText: string, conn: ConnectionMock | undefined, database
 }
 
 export function QueryDoc({
-  connections, openConnections, initial, initialSql, autoRun, active, onStatus, onDirty, onText, onContext, registerActions, backend: backendProp, connecting, onOpenConnection, onLoadSchemas, onRefreshSchemas, onExport, onExecuted,
+  connections, openConnections, initial, initialSql, autoRun, active, onStatus, onDirty, onTransaction, onText, onContext, registerActions, backend: backendProp, connecting, onOpenConnection, onLoadSchemas, onRefreshSchemas, onExport, onExecuted,
 }: Props) {
   const t = useT();
   const { queryMaxRows } = useOptions();
@@ -332,6 +334,7 @@ export function QueryDoc({
   // A aba não pode fechar com a transação aberta: sai desfazendo (e a aba pergunta antes, pois fica "alterada").
   useEffect(() => () => { if (txRef.current) void backend?.endTx?.(txRef.current, false).catch(() => undefined); }, [backend]);
   useEffect(() => { if (txId) onDirty(true); }, [txId, onDirty]);
+  useEffect(() => { onTransaction?.(!!txId); }, [txId, onTransaction]);
 
   const stop = useCallback(() => {
     if (backend && conn && running) {

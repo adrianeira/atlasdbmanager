@@ -54,7 +54,7 @@ const MAX_PAGE_SIZE = 1_000_000;
 
 export function TableDataDoc({ schema, table: tableProp, active, production, onStatus, backend, lookup, isView, onDirty, onExport }: Props) {
   const t = useT();
-  const { pageSize: DEFAULT_PAGE_SIZE, limitRecords } = useOptions();
+  const { pageSize: DEFAULT_PAGE_SIZE, limitRecords, autoBeginTransaction } = useOptions();
   const [table, setTable] = useState<DbObject>(tableProp);
   const cols = useMemo(() => table.columns ?? [], [table]);
   const keyCols = cols.map((c, i) => ({ c, i })).filter((x) => x.c.key).sort((a, b) => (a.c.key ?? 0) - (b.c.key ?? 0));
@@ -486,6 +486,16 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
       setTxBusy(false);
     }
   };
+
+  // Opções → Registros → Iniciar transação automaticamente: a tabela já abre dentro de uma transação (uma vez por aba).
+  const autoBegun = useRef(false);
+  useEffect(() => {
+    if (autoBegun.current || !autoBeginTransaction || readOnly || !backend?.beginTx) return;
+    autoBegun.current = true;
+    void beginTx();
+    // `beginTx` lê o estado atual; as colunas (e com elas `readOnly`) podem chegar depois da abertura.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoBeginTransaction, readOnly, backend]);
 
   /** Confirma (COMMIT) ou desfaz (ROLLBACK) a transação e relê a página. */
   const endTx = async (commit: boolean) => {

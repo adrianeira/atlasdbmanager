@@ -1319,9 +1319,12 @@ export default function App() {
     });
   };
 
+  /** Abas de consulta com transação aberta (fechar sempre pergunta: a transação seria desfeita). */
+  const txTabs = useRef(new Set<string>());
   const closeTab = (id: string) => {
     const tab = tabs.find((x) => x.id === id);
-    if (tab?.dirty) setDialog({ kind: "closeDirty", tabId: id });
+    const skipAsk = tab?.kind === "query" && !appOptions.confirmCloseQueries && !txTabs.current.has(id);
+    if (tab?.dirty && !skipAsk) setDialog({ kind: "closeDirty", tabId: id });
     else doCloseTab(id);
   };
 
@@ -2726,6 +2729,7 @@ export default function App() {
           active={isActive}
           onStatus={statusFor(tab.id)}
           onDirty={(d) => setTabDirty(tab.id, d)}
+          onTransaction={(open) => { if (open) txTabs.current.add(tab.id); else txTabs.current.delete(tab.id); }}
           onText={(text) => { queryTexts.current.set(tab.id, text); }}
           onContext={(c) => setTabs((ts) => (ts.some((x) => x.id === tab.id && (x.connectionId !== c.connectionId || x.database !== c.database || x.schema !== c.schema)) ? ts.map((x) => (x.id === tab.id ? { ...x, connectionId: c.connectionId, database: c.database, schema: c.schema } : x)) : ts))}
           registerActions={(a) => { if (isActive) queryActions.current = a; }}

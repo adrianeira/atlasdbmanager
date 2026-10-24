@@ -33,6 +33,10 @@ export interface AppOptions {
   /** Registros: abrir tabelas com "Limitar registros" ligado e o sombreamento das linhas. */
   limitRecords: boolean;
   rowShading: RowShading;
+  /** Fonte da grade (vazio = Segoe UI) e tamanho em px; "Auto begin transaction": abrir tabelas já dentro de uma transação. */
+  gridFont: string;
+  gridFontSize: number;
+  autoBeginTransaction: boolean;
   /** Formato de exibição de data, hora e data/hora (vazio = como vem do servidor) e separadores dos números. */
   displayDate: string;
   displayTime: string;
@@ -41,6 +45,8 @@ export interface AppOptions {
   systemLocale: boolean;
   /** Geral: permitir abrir o mesmo objeto em mais de uma aba. */
   multipleForms: boolean;
+  /** Geral: perguntar antes de fechar uma consulta com texto não guardado (transação aberta sempre pergunta). */
+  confirmCloseQueries: boolean;
   /** Ao iniciar: só a aba Objects, ou as consultas que estavam abertas. */
   startup: "objects" | "continue";
   /** Auto Recovery: guardar as consultas abertas a cada `autoSaveSeconds` segundos. */
@@ -53,14 +59,15 @@ export const DEFAULT_OPTIONS: AppOptions = {
   showLineNumbers: true, codeFolding: true, braceHighlight: true, syntaxHighlight: true, wordWrap: false, tabWidth: 2, insertSpaces: true,
   codeCompletion: true, autoSelectFirst: true,
   editorFont: "", editorColors: NO_EDITOR_COLORS,
-  limitRecords: true, rowShading: "every2",
+  limitRecords: true, rowShading: "every2", gridFont: "", gridFontSize: 12, autoBeginTransaction: false,
   displayDate: "", displayTime: "", displayDateTime: "", showThousands: false, systemLocale: false,
-  multipleForms: false,
+  multipleForms: false, confirmCloseQueries: true,
   startup: "objects", autoSaveQueries: true, autoSaveSeconds: 30,
 };
 
 export const OPTION_LIMITS = {
   editorFontSize: [9, 28],
+  gridFontSize: [9, 20],
   queryMaxRows: [10, 100_000],
   pageSize: [10, 100_000],
   tabWidth: [1, 16],
@@ -82,6 +89,9 @@ export function sanitizeOptions(raw: Partial<Record<keyof AppOptions, unknown>> 
   const num = (k: NumericKey) => clamp(raw?.[k], OPTION_LIMITS[k], d[k]);
   return {
     editorFontSize: num("editorFontSize"),
+    gridFontSize: num("gridFontSize"),
+    gridFont: typeof raw?.gridFont === "string" ? raw.gridFont.replace(/[;{}"\\]/g, "").slice(0, 80) : d.gridFont,
+    autoBeginTransaction: bool(raw?.autoBeginTransaction, d.autoBeginTransaction),
     queryMaxRows: num("queryMaxRows"),
     pageSize: num("pageSize"),
     tabWidth: num("tabWidth"),
@@ -101,6 +111,7 @@ export function sanitizeOptions(raw: Partial<Record<keyof AppOptions, unknown>> 
     limitRecords: bool(raw?.limitRecords, d.limitRecords),
     rowShading: raw?.rowShading === "none" || raw?.rowShading === "every2" || raw?.rowShading === "every3" ? raw.rowShading : d.rowShading,
     multipleForms: bool(raw?.multipleForms, d.multipleForms),
+    confirmCloseQueries: bool(raw?.confirmCloseQueries, d.confirmCloseQueries),
     displayDate: pattern(raw?.displayDate),
     displayTime: pattern(raw?.displayTime),
     displayDateTime: pattern(raw?.displayDateTime),
@@ -121,6 +132,10 @@ function sanitizeColors(raw: unknown): EditorColors {
   }
   return out;
 }
+
+/** Valor da propriedade CSS `font` da grade (também usado para medir a largura das colunas). */
+export const gridFontCss = (o: Pick<AppOptions, "gridFont" | "gridFontSize">, weight = ""): string =>
+  `${weight ? weight + " " : ""}${o.gridFontSize}px ${o.gridFont ? `"${o.gridFont}", ` : ""}Segoe UI, sans-serif`;
 
 export const OptionsContext = createContext<AppOptions>(DEFAULT_OPTIONS);
 export const useOptions = (): AppOptions => useContext(OptionsContext);
