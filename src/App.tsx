@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  appReady, chooseExportPath, chooseOpenFile, errorText, isDesktop, local, onOpenScript, openDataDictionary, openDataGen, openDataSync, openDataTransfer, openStructSync, pg, toAtlasError, type OpenScriptRequest,
+  appReady, chooseExportPath, chooseOpenFile, errorText, isDesktop, local, onOpenScript, onSessionOpened, openDataDictionary, openDataGen, openDataSync, openDataTransfer, openStructSync, pg, toAtlasError, type OpenScriptRequest,
   type ConnectionParams, type DatabaseDetail, type DumpScope, type ProfileRecord, type SchemaDetail,
 } from "./backend";
 import { entries, matchesShortcut, sub, type CommandMap, type MenuDef, type MenuEntry } from "./commands";
@@ -513,12 +513,24 @@ export default function App() {
   };
 
   /** Abre a sessão no servidor e lê bancos/roles. Rejeita se a senha ainda não é conhecida. */
+  /** Conexões que esta janela está abrindo agora (o aviso `session-opened` da própria abertura não deve ser tratado de novo). */
+  const openingRef = useRef(new Set<string>());
   const openSession = async (connId: string) => {
     if (openRef.current.has(connId)) return;
     const conn = connectionsRef.current.find((c) => c.id === connId);
     if (!conn) return;
-    // Sem senha digitada nesta sessão, o núcleo usa a do cofre (profileId); ela não vem para a UI.
-    const info = await pg.open(connId, paramsFor(conn), conn.id);
+    openingRef.current.add(connId);
+    try {
+      // Sem senha digitada nesta sessão, o núcleo usa a do cofre (profileId); ela não vem para a UI.
+      const info = await pg.open(connId, paramsFor(conn), conn.id);
+      await adoptSession(connId, info);
+    } finally {
+      openingRef.current.delete(connId);
+    }
+  };
+
+  /** Marca a conexão como aberta e lê bancos e papéis (a sessão já existe no servidor). */
+  const adoptSession = async (connId: string, info: { version: string; versionNum: number }) => {
     const dbs = await fetchDatabases(connId, showHiddenRef.current);
     const roles = await pg.listRoles(connId).catch(() => []);
     updateConn(connId, (c) => ({
@@ -785,6 +797,22 @@ export default function App() {
     let alive = true;
     void onOpenScript((r) => openScript.current(r)).then((f) => { if (alive) off = f; else f(); });
     return () => { alive = false; off?.(); };
+  }, []);
+
+  // Uma ferramenta em outra janela (Data Transfer) abriu uma conexão: esta janela passa a mostrá-la como aberta.
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    let alive = true;
+    void onSessionOpened((e) => {
+      if (openRef.current.has(e.id) || openingRef.current.has(e.id)) return;
+      const conn = connectionsRef.current.find((c) => c.id === e.id);
+      if (!conn?.live) return;
+      openingRef.current.add(e.id);
+      void adoptSession(e.id, e).catch(() => undefined).finally(() => openingRef.current.delete(e.id));
+    }).then((f) => { if (alive) off = f; else f(); });
+    return () => { alive = false; off?.(); };
+    // O ouvinte é criado uma vez; as funções que ele chama leem o estado mais recente por refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /** Abre o console (estilo psql) da conexão; a mesma conexão e o mesmo banco reaproveitam a aba. */

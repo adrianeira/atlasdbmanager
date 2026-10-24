@@ -123,11 +123,12 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       desfaz a tabela em andamento; 1,5 milhão de linhas em 14 s
 - [x] As janelas do sistema à parte (Data Transfer e Query Builder) nascem ocultas, com o fundo na cor do tema, e só aparecem
       quando a página termina de carregar: sem a tela preta inicial
-- [ ] Destino Arquivo só grava SQL (as opções avançadas por tabela não valem nele); outros formatos de arquivo
+- [ ] Destino Arquivo só grava SQL *(as opções avançadas por tabela não valem nele; **outros formatos de arquivo não estão confirmados na referência**: a captura mostra só o rádio "File", sem os formatos, então não foram feitos)*
 - [ ] Objetos de bancos em outras versões que o planejador não cobre (partições, identidade e colunas geradas no 9.6, privilégios)
 - [x] Escolher uma conexão **fechada** na própria janela: ela abre sozinha (senha do cofre; pede a senha só se não houver ou for
       recusada), lista os bancos e schemas e mostra a versão do servidor; a janela principal não precisa estar com ela aberta
-- [ ] A janela principal ainda mostra fechada a conexão que o Data Transfer abriu (o contrário não acontece)
+- [x] A janela principal passa a mostrar **aberta** a conexão que o Data Transfer (ou outra janela) abriu: o Rust avisa (`session-opened`) e ela lê bancos e papéis sem
+      reabrir a sessão; testado abrindo uma sessão sem passar pela janela principal (o ícone da conexão muda e as outras seguem fechadas)
 
 ### Importação de dados
 - [x] **Assistente de importação em 7 etapas** (formato → arquivos → opções da origem → tabela de destino →

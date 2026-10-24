@@ -11,7 +11,7 @@ use atlas_core::{
 use serde::Serialize;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use tauri::State;
+use tauri::{Emitter, State};
 
 /// Limite de linhas por result set no editor (o resto é descartado e sinalizado como truncado).
 const MAX_ROWS_CAP: usize = 100_000;
@@ -35,6 +35,7 @@ pub async fn pg_test_connection(
 
 #[tauri::command]
 pub async fn pg_open(
+    app: tauri::AppHandle,
     sessions: State<'_, Sessions>,
     local: State<'_, Local>,
     session_id: String,
@@ -44,6 +45,8 @@ pub async fn pg_open(
     let mut params = local.resolve_password(params, profile_id.as_deref())?;
     let tunnel = crate::tunnel::start(&local, &mut params).await?;
     let s = sessions.open(&session_id, params, tunnel).await?;
+    // Avisa as outras janelas (a principal mostra a conexão como aberta quando uma ferramenta, como o Data Transfer, a abre).
+    let _ = app.emit("session-opened", serde_json::json!({ "id": session_id, "version": s.server.version, "versionNum": s.server.version_num }));
     Ok(s.server.clone())
 }
 

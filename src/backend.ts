@@ -349,6 +349,11 @@ export const closeQueryBuilder = (id: string) => call<void>("close_query_builder
 
 /** A janela do Query Builder devolveu um SELECT (Build / Build and Run). */
 /** A janela principal ouve os pedidos das ferramentas para abrir um script numa aba de consulta. */
+/** Uma sessão foi aberta (por esta ou por outra janela, como o Data Transfer); a janela principal marca a conexão como aberta. */
+export async function onSessionOpened(cb: (e: { id: string; version: string; versionNum: number }) => void): Promise<() => void> {
+  return listen<{ id: string; version: string; versionNum: number }>("session-opened", (e) => cb(e.payload));
+}
+
 export async function onOpenScript(cb: (r: OpenScriptRequest) => void): Promise<() => void> {
   return listen<OpenScriptRequest>("tool-open-query", (e) => cb(e.payload));
 }
