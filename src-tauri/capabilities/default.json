@@ -9,12 +9,14 @@
     "ds-*",
     "ss-*",
     "dg-*",
-    "dd-*"
+    "dd-*",
+    "tab-*"
   ],
   "permissions": [
     "core:default",
     "core:window:allow-set-theme",
     "core:window:allow-close",
+    "core:window:allow-destroy",
     "core:window:allow-set-title",
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-write-text",

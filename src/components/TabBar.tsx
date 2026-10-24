@@ -34,9 +34,11 @@ interface Props {
   onClose: (id: string) => void;
   /** Arrastou a aba `id` para antes (ou depois) da aba `targetId`. */
   onReorder?: (id: string, targetId: string, after: boolean) => void;
+  /** Dois cliques na aba: abre numa janela própria. */
+  onDetach?: (id: string) => void;
 }
 
-export function TabBar({ tabs, activeId, onActivate, onClose, onReorder }: Props) {
+export function TabBar({ tabs, activeId, onActivate, onClose, onReorder, onDetach }: Props) {
   const t = useT();
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropAt, setDropAt] = useState<{ id: string; after: boolean } | null>(null);
@@ -54,6 +56,7 @@ export function TabBar({ tabs, activeId, onActivate, onClose, onReorder }: Props
             className={`tab${active ? " is-active" : ""}${dropAt?.id === tab.id && dragId !== tab.id ? (dropAt.after ? " is-drop-after" : " is-drop-before") : ""}`}
             title={tab.title}
             draggable={!!onReorder && closable}
+            onDoubleClick={() => { if (closable) onDetach?.(tab.id); }}
             onDragStart={(e) => {
               setDragId(tab.id);
               e.dataTransfer.effectAllowed = "move";

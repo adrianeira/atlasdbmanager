@@ -196,6 +196,7 @@ pub fn run() {
             builder::open_struct_sync,
             builder::open_data_gen,
             builder::open_data_dictionary,
+            builder::open_tab_window,
             dictionary::dict_generate,
             monitor::monitor_snapshot,
             monitor::monitor_end_process,

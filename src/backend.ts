@@ -3,6 +3,7 @@
  * Dentro do app desktop tudo vai ao banco real; no navegador (`npm run dev` puro)
  * a interface continua no modo de demonstração com dados fictícios.
  */
+import { TAB_EVENT, type TabEvent } from "./tabWindow";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { desktopDir, homeDir, sep } from "@tauri-apps/api/path";
@@ -634,6 +635,14 @@ export interface GenSpec { schema: string; tables: GenTableSpec[]; options: GenO
 export interface GenPreview { columns: string[]; rows: (string | null)[][] }
 export interface GenStats { objects: number; generated: number; inserted: number; errors: number }
 export interface GenResult extends GenStats { elapsedMs: number }
+
+/** Abre a janela de uma aba de tabela ou de consulta destacada (uma por aba). */
+export const openTabWindow = (id: string, title: string, params: unknown) => call<void>("open_tab_window", { id, req: { title, params } });
+
+/** Avisos das janelas de abas destacadas (anexar de volta, fechar, última versão) para a janela principal. */
+export async function onTabWindow(cb: (e: TabEvent) => void): Promise<() => void> {
+  return listen<TabEvent>(TAB_EVENT, (e) => cb(e.payload));
+}
 
 /** Abre (ou traz para a frente) a janela do Data Generation. */
 export const openDataGen = (title: string, params: DataTransferParams) => call<void>("open_data_gen", { req: { title, params: { ...params, title } } });

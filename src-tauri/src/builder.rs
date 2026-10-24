@@ -133,6 +133,15 @@ pub async fn open_data_dictionary(app: AppHandle, args: State<'_, WebviewArgs>, 
     open_tool(&app, &args, "dd-main", "__ATLAS_DD__", &req)
 }
 
+/// Aba de tabela ou de consulta destacada numa janela própria. Cada aba tem a sua (`tab-<id>`); a sessão do banco é a mesma da janela principal.
+#[tauri::command]
+pub async fn open_tab_window(app: AppHandle, args: State<'_, WebviewArgs>, id: String, req: DataTransferOpen) -> Result<(), String> {
+    if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return Err("invalid tab id".into());
+    }
+    open_tool(&app, &args, &format!("tab-{id}"), "__ATLAS_TAB__", &req)
+}
+
 /// Structure Synchronization.
 #[tauri::command]
 pub async fn open_struct_sync(app: AppHandle, args: State<'_, WebviewArgs>, req: DataTransferOpen) -> Result<(), String> {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  appReady, chooseExportPath, chooseOpenFile, errorText, isDesktop, local, onOpenScript, onSessionOpened, openDataDictionary, openDataGen, openDataSync, openDataTransfer, openStructSync, pg, toAtlasError, type OpenScriptRequest,
+  appReady, chooseExportPath, chooseOpenFile, errorText, isDesktop, local, onOpenScript, onSessionOpened, onTabWindow, openDataDictionary, openDataGen, openDataSync, openDataTransfer, openStructSync, openTabWindow, pg, toAtlasError, type OpenScriptRequest,
   type ConnectionParams, type DatabaseDetail, type DumpScope, type ProfileRecord, type SchemaDetail,
 } from "./backend";
 import { entries, matchesShortcut, sub, type CommandMap, type MenuDef, type MenuEntry } from "./commands";
@@ -39,6 +39,8 @@ import { ForeignTableDesignerDoc, type ForeignTableBackend } from "./documents/F
 import { TablespaceDesignerDoc, type TablespaceBackend } from "./documents/TablespaceDesignerDoc";
 import { dropTablespaceStatement } from "./sql/tablespace";
 import { TasksDialog } from "./components/TasksDialog";
+import { liveLookupSource, makeTableBackend } from "./docBackends";
+import type { SavedTable } from "./tabWindow";
 import { viewKeyOf } from "./tableView";
 import { runTask } from "./taskRun";
 import { isDue, type ScheduledTask } from "./tasks";
@@ -296,22 +298,6 @@ function savedFromTab(x: DocTab, all: DocTab[], activeId: string, texts: Map<str
   const base = { connectionId: x.connectionId!, database: x.database!, schema: x.schema ?? "", title: x.title, active: x.id === activeId, pos: all.indexOf(x) };
   if (x.kind === "query") return { ...base, object: "", kind: "query", sql: texts.get(x.id) ?? x.sql ?? "" };
   return { ...base, object: x.object!, kind: (x.objectKind === "view" || x.objectKind === "matview" ? x.objectKind : "table") as SavedTable["kind"] };
-}
-
-/** Tabela, view, view materializada ou consulta aberta na sessão anterior. */
-interface SavedTable {
-  connectionId: string;
-  database: string;
-  schema: string;
-  object: string;
-  kind: "table" | "view" | "matview" | "query";
-  /** Consulta: o texto do editor. */
-  sql?: string;
-  title: string;
-  /** Era a aba aberta ao fechar. */
-  active?: boolean;
-  /** Posição na barra de abas (0 é Objects). */
-  pos?: number;
 }
 
 export default function App() {
@@ -1432,6 +1418,8 @@ export default function App() {
   /** Tabelas, views e views materializadas da sessão anterior que esperam a conexão abrir (continuam gravadas enquanto esperam). */
   const pendingTables = useRef<SavedTable[]>([]);
   const restoring = useRef(new Set<string>());
+  /** Abas que estão em janelas próprias: contam na sessão (voltam como abas ao reabrir o app) e na posição de quando saíram. */
+  const detachedRef = useRef(new Map<string, SavedTable>());
   const saveSession = useCallback(() => {
     if (!isDesktop || !sessionReady.current) return;
     // Consultas ligadas a um banco se comportam como as tabelas (voltam quando o banco é aberto); as sem banco voltam ao iniciar.
@@ -1441,6 +1429,7 @@ export default function App() {
     const dbTabs = tabsRef.current.filter((x) => (x.kind === "data" && x.connectionId && x.database && x.schema && x.object) || (x.kind === "query" && x.connectionId && x.database));
     const tables: SavedTable[] = [
       ...dbTabs.map((x) => savedFromTab(x, tabsRef.current, activeTabRef.current, queryTexts.current)),
+      ...detachedRef.current.values(),
       ...pendingTables.current,
     ];
     const activeTable = tables.findIndex((x) => x.active);
@@ -1513,6 +1502,46 @@ export default function App() {
     // `restoreTables` lê o estado atual por refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openDbKey]);
+
+  /** Dois cliques numa aba de tabela ou de consulta: ela passa a uma janela própria (e volta pelo botão da janela). */
+  const detachTab = (tabId: string) => {
+    const x = tabsRef.current.find((tt) => tt.id === tabId);
+    if (!x || (x.kind !== "data" && x.kind !== "query")) return;
+    const info = (message: string) => setDialog({ kind: "info", title: t("tab.detach"), message });
+    const conn = connections.find((c) => c.id === x.connectionId);
+    if (x.kind === "query" && !(x.connectionId && x.database)) return info(t("tab.detachNoDb"));
+    if (!conn?.live || !x.connectionId || !x.database || !openConnections.has(x.connectionId)) return info(t("tab.detachClosed"));
+    if (x.kind === "data" && (!x.schema || !x.object)) return;
+    if (x.kind === "data" && x.dirty) return info(t("tab.detachBusyData"));
+    if (x.kind === "query" && txTabs.current.has(x.id)) return info(t("tab.detachBusyTx"));
+    const entry: SavedTable = { ...savedFromTab(x, tabsRef.current, activeTabRef.current, queryTexts.current), active: false };
+    detachedRef.current.set(x.id, entry);
+    void openTabWindow(x.id, x.title, { id: x.id, title: x.title, conn: { ...conn, databases: [] }, entry })
+      .then(() => {
+        setTabs((ts) => ts.filter((tt) => tt.id !== x.id));
+        if (activeTabRef.current === x.id) setActiveTab("objects");
+      })
+      .catch((e) => { detachedRef.current.delete(x.id); showError(t("tab.detach"), e); });
+  };
+  // Avisos das janelas das abas destacadas: anexar de volta, fechar sem anexar, ou a última versão (para a sessão).
+  useEffect(() => {
+    if (!isDesktop) return;
+    let off: (() => void) | undefined;
+    void onTabWindow((e) => {
+      if (e.type === "update") {
+        if (detachedRef.current.has(e.id)) detachedRef.current.set(e.id, e.entry);
+        return;
+      }
+      detachedRef.current.delete(e.id);
+      if (e.type === "attach") {
+        pendingTables.current = [...pendingTables.current, { ...e.entry, active: true }];
+        void restoreTables(e.entry.connectionId, e.entry.database);
+      }
+    }).then((u) => { off = u; });
+    return () => off?.();
+    // `restoreTables` lê o estado atual por refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /**
    * Fechar a conexão (ou um banco) fecha as abas de tabela dele, mas elas ficam guardadas e voltam quando o banco for aberto de novo;
@@ -2663,40 +2692,8 @@ export default function App() {
   }).current;
 
   const dataBackends = useRef<Record<string, TableDataBackend>>({});
-  const tableBackendFor = (tab: DocTab, base: DbObject): TableDataBackend => {
-    const connId = tab.connectionId ?? "";
-    const db = tab.database ?? "";
-    const schema = tab.schema ?? "";
-    // Transação manual da aba: enquanto aberta, gravação, leitura e contagem usam a conexão dedicada dela.
-    let txId: string | null = null;
-    return (dataBackends.current[tab.id] ??= {
-      loadDetail: async () => tableFromServer(base, await pg.tableDetail(connId, db, schema, tab.object ?? base.name)),
-      loadProfile: tab.objectKind === "view" ? undefined : () => pg.tableProfile(connId, db, schema, tab.object ?? base.name),
-      beginTx: async () => { txId = await pg.txBegin(connId, db); },
-      endTx: async (commit) => {
-        const id = txId;
-        txId = null;
-        if (id) await pg.txEnd(id, commit);
-      },
-      loadRows: async (orderBy, filter, limit, offset) => {
-        const r = txId
-          ? await pg.txRows(txId, schema, tab.object ?? base.name, orderBy, filter, limit, offset)
-          : await pg.tableRows(connId, db, schema, tab.object ?? base.name, orderBy, filter, limit, offset);
-        const rs = r.outcome.statements[0]?.result;
-        return { sql: r.sql, rows: rs?.rows ?? [], truncated: !!rs?.truncated };
-      },
-      apply: async (statements) => {
-        if (txId) await pg.txApply(txId, statements);
-        else await pg.apply(connId, db, statements);
-      },
-      cancel: async () => {
-        await pg.cancel(connId, db);
-      },
-      count: async (filter) => (txId
-        ? pg.txCount(txId, schema, tab.object ?? base.name, filter)
-        : pg.tableCount(connId, db, schema, tab.object ?? base.name, filter)),
-    });
-  };
+  const tableBackendFor = (tab: DocTab, base: DbObject): TableDataBackend =>
+    (dataBackends.current[tab.id] ??= makeTableBackend(tab.connectionId ?? "", tab.database ?? "", tab.schema ?? "", tab.object ?? base.name, tab.objectKind, base));
 
   /** Fonte do lookup de FK por aba: banco real (SELECT só de leitura) ou dados de demonstração. */
   const lookupSources = useRef<Record<string, FkLookupSource>>({});
@@ -2704,18 +2701,7 @@ export default function App() {
     if (!conn) return undefined;
     const db = tab.database ?? "";
     return (lookupSources.current[tab.id] ??= conn.live
-      ? {
-          columns: async (schema, table) =>
-            (await pg.tableDetail(conn.id, db, schema, table)).columns.map((c) => ({ name: c.name, type: c.dataType })),
-          rows: async (schema, table, columns, orderBy, limit) => {
-            // Só identificadores (com aspas) e um limite numérico entram no texto; nenhum valor do usuário.
-            const sql = `SELECT ${columns.map(quoteIdent).join(", ")} FROM ${quoteIdent(schema)}.${quoteIdent(table)}`
-              + (orderBy.length ? ` ORDER BY ${orderBy.map(quoteIdent).join(", ")}` : "") + ` LIMIT ${limit}`;
-            const out = await pg.execute(conn.id, db, sql, limit);
-            return out.statements[0]?.result?.rows ?? [];
-          },
-          labels: (schema, table, keyColumn, keys) => pg.fkLabels(conn.id, db, schema, table, keyColumn, keys),
-        }
+      ? liveLookupSource(conn.id, db)
       : {
           columns: async (schema, table) => {
             const obj = connectionsRef.current.find((c) => c.id === conn.id)?.databases.find((d) => d.name === db)
@@ -3224,7 +3210,7 @@ export default function App() {
             </>
           )}
           <main className="center">
-            <TabBar tabs={tabsForBar} activeId={activeTab} onActivate={setActiveTab} onClose={closeTab} onReorder={reorderTab} />
+            <TabBar tabs={tabsForBar} activeId={activeTab} onActivate={setActiveTab} onClose={closeTab} onReorder={reorderTab} onDetach={detachTab} />
             <div className="tab-content">
               <div className={`doc-host${activeTab === "objects" ? "" : " is-hidden"}`}>
                 <ObjectsView
