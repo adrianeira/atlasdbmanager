@@ -1083,6 +1083,4 @@ input {
 
 /* Janela de uma aba destacada. */
 .tw-root { height: 100%; display: flex; flex-direction: column; background: var(--c-surface); color: var(--c-text); }
-.tw-bar { flex: none; display: flex; align-items: center; gap: 8px; padding: 4px 8px; background: var(--c-surface-alt); border-bottom: 1px solid var(--c-border); }
-.tw-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tw-doc { flex: 1; min-height: 0; display: flex; flex-direction: column; }

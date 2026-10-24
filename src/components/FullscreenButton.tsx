@@ -10,10 +10,21 @@ export interface DocFullscreen {
 
 export const DocFullscreenContext = createContext<DocFullscreen>({ on: false, toggle: () => {} });
 
+/** Numa janela de aba destacada: o que o botão do canto faz (devolver a aba à janela principal), no lugar da tela cheia, que a própria janela já tem. */
+export const DocAttachContext = createContext<(() => void) | null>(null);
+
 /** O botão do canto da barra de ferramentas dos documentos. */
 export function FullscreenButton() {
   const t = useT();
   const { on, toggle } = useContext(DocFullscreenContext);
+  const attach = useContext(DocAttachContext);
+  if (attach) {
+    return (
+      <button type="button" className="icon-button" title={t("tab.attachHint")} aria-label={t("tab.attach")} onClick={attach}>
+        <SmallIcon name="attach" />
+      </button>
+    );
+  }
   const label = t(on ? "er.exitFullscreen" : "er.fullscreen");
   return (
     <button type="button" className="icon-button" title={label} aria-label={label} onClick={toggle}>

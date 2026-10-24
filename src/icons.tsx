@@ -438,6 +438,12 @@ const small: Record<string, ReactElement> = {
       <path d="M4 5.5h3M8.5 5.5h4M4 8h3M8.5 8h4M4 10.5h3M8.5 10.5h4" stroke="currentColor" />
     </>
   ),
+  attach: (
+    <>
+      <rect x="2.5" y="2.5" width="11" height="11" rx="1" fill="none" stroke="currentColor" />
+      <path d="M10.5 5.5L6.2 9.8M6 6.8v3.2h3.2" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />
+    </>
+  ),
   fullscreen: <path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" />,
   splitH: (
     <>

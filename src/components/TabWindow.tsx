@@ -12,6 +12,7 @@ import type { ConnectionMock } from "../model";
 import { TAB_EVENT, type SavedTable, type TabEvent, type TabWindowParams } from "../tabWindow";
 import type { SnapshotRef, TabSnapshot } from "../tabState";
 import { viewKeyOf } from "../tableView";
+import { DocAttachContext } from "./FullscreenButton";
 import { MessageDialog } from "./MessageDialog";
 import { ToolWindow } from "./ToolWindow";
 import type { StatusCell } from "./StatusBar";
@@ -127,11 +128,8 @@ function TabWindowBody({ params }: { params: TabWindowParams }) {
   };
 
   return (
+    <DocAttachContext.Provider value={attach}>
     <div className="tw-root">
-      <div className="tw-bar">
-        <span className="tw-title" title={params.title}>{params.title}</span>
-        <button type="button" className="btn" title={t("tab.attachHint")} onClick={attach}>{t("tab.attach")}</button>
-      </div>
       <div className="tw-doc doc-host">
         {!ready ? null : isQuery
           ? <QueryPart params={params} entry={entry} initialState={initial.current} stateRef={stateRef} onStatus={setCells} onDirty={(d) => { dirty.current = d; }} onTx={(o) => { txOpen.current = o; }} onChange={sendUpdate} />
@@ -156,6 +154,7 @@ function TabWindowBody({ params }: { params: TabWindowParams }) {
         />
       )}
     </div>
+    </DocAttachContext.Provider>
   );
 }
 
