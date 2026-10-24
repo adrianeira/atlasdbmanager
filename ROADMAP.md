@@ -561,7 +561,7 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 
 ## 4. Editor SQL
 - [x] Snippet manager (ver "Snippets" em Entregues)
-- [ ] Ask AI *(`query.askAi` sem handler)*
+- [ ] Ask AI *(botão **oculto** da barra da consulta a pedido, enquanto não houver IA integrada; o texto `query.askAi` segue nas traduções)*
 - [x] **Divisão do editor**: os dois botões do canto da consulta alternam entre resultados **abaixo** (padrão) e **ao lado** do editor, com divisor
       arrastável nos dois sentidos; a escolha fica lembrada
 - [x] Histórico de consultas e favoritos (ver "Histórico de consultas" em Entregues)

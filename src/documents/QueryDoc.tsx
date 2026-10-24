@@ -573,7 +573,6 @@ export function QueryDoc({
         )}
         {tool("history", "query.history", () => setHistoryOpen(true))}
         {tool("snippet", "query.snippet", () => setSnippets({ selection: editor.current?.getSelection() ?? "" }))}
-        {tool("ai", "query.askAi")}
         <div className="ot-spacer" />
         <button type="button" className={`icon-button${side ? "" : " is-active"}`} title={t("query.layoutStacked")} aria-pressed={!side} onClick={() => chooseLayout(false)}><SmallIcon name="splitH" /></button>
         <button type="button" className={`icon-button${side ? " is-active" : ""}`} title={t("query.layoutSide")} aria-pressed={side} onClick={() => chooseLayout(true)}><SmallIcon name="splitV" /></button>
