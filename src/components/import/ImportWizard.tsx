@@ -73,6 +73,7 @@ export function ImportWizard({ target, onClose, onDone }: Props) {
   const [menu, setMenu] = useState<"profiles" | null>(null);
   const [profiles, setProfiles] = useState<ImportProfile[]>([]);
   const [namePrompt, setNamePrompt] = useState(false);
+  const [urlPrompt, setUrlPrompt] = useState(false);
   const [preview, setPreview] = useState<ImportPreview | "loading" | { error: string } | null>(null);
 
   const [running, setRunning] = useState(false);
@@ -147,9 +148,9 @@ export function ImportWizard({ target, onClose, onDone }: Props) {
     return match ? { target: match, newTable: "" } : { target: "", newTable: wanted };
   };
 
-  const addFiles = async () => {
+  /** Lê as tabelas dos arquivos e as acrescenta à lista; `origin` (endereço) é o que a lista mostra para um arquivo baixado. */
+  const addPaths = async (paths: string[], origin?: string) => {
     try {
-      const paths = await chooseImportFiles(format.ext);
       if (!paths.length) return;
       setBusy(true);
       const added: Job[] = [];
@@ -158,7 +159,7 @@ export function ImportWizard({ target, onClose, onDone }: Props) {
         for (const sheet of sheets) {
           if (jobsRef.current.some((j) => j.file === file && j.sheet === sheet) || added.some((j) => j.file === file && j.sheet === sheet)) continue;
           const name = sheets.length > 1 ? sheet : stemOf(file);
-          added.push({ id: newId(), file, sheet, ...defaultTarget(name, jobsRef.current.length + added.length === 0), mappings: [], keys: [] });
+          added.push({ id: newId(), file, origin, sheet, ...defaultTarget(name, jobsRef.current.length + added.length === 0), mappings: [], keys: [] });
         }
       }
       setJobs((js) => [...js, ...added]);
@@ -166,6 +167,27 @@ export function ImportWizard({ target, onClose, onDone }: Props) {
     } catch (e) {
       setMessage(errorText(toAtlasError(e)));
     } finally {
+      setBusy(false);
+    }
+  };
+  const addFiles = async () => {
+    try {
+      await addPaths(await chooseImportFiles(format.ext));
+    } catch (e) {
+      setMessage(errorText(toAtlasError(e)));
+    }
+  };
+  /** "Adicionar URL": baixa o arquivo para a pasta temporária e segue como um arquivo local. */
+  const addUrl = async (url: string) => {
+    setUrlPrompt(false);
+    setBusy(true);
+    setMessage(t("imp.downloading"));
+    try {
+      const got = await local.downloadToTemp(url);
+      setMessage(null);
+      await addPaths([got.path], url.trim());
+    } catch (e) {
+      setMessage(errorText(toAtlasError(e)));
       setBusy(false);
     }
   };
@@ -449,7 +471,7 @@ export function ImportWizard({ target, onClose, onDone }: Props) {
             {jobs.map((j) => (
               <tr key={j.id} className={j.id === selectedJob ? "is-checked" : undefined} onClick={() => setSelectedJob(j.id)}>
                 <td><SmallIcon name="table" /></td>
-                <td className="exp-name" title={j.file}>{j.file}</td>
+                <td className="exp-name" title={j.origin ?? j.file}>{j.origin ?? j.file}</td>
                 <td className="exp-name" title={j.sheet}>{j.sheet}</td>
               </tr>
             ))}
@@ -458,6 +480,7 @@ export function ImportWizard({ target, onClose, onDone }: Props) {
       </div>
       <div className="exp-files-actions">
         <button type="button" className="btn" disabled={busy} onClick={() => void addFiles()}>{t("imp.addFiles")}</button>
+        <button type="button" className="btn" disabled={busy} onClick={() => setUrlPrompt(true)}>{t("imp.addUrl")}</button>
         <button type="button" className="btn" disabled={!jobs.some((j) => j.id === selectedJob)} onClick={() => { removeJob(selectedJob); setSelectedJob(""); }}>{t("imp.remove")}</button>
         {busy && <span className="spinner" />}
       </div>
@@ -698,6 +721,15 @@ export function ImportWizard({ target, onClose, onDone }: Props) {
         </div>
       </div>
 
+      {urlPrompt && (
+        <MessageDialog
+          title={t("imp.addUrl")}
+          prompt={{ label: t("imp.urlLabel"), initial: "https://" }}
+          okLabel={t("imp.download")}
+          onOk={(url) => { if (url && url.trim()) void addUrl(url); }}
+          onCancel={() => setUrlPrompt(false)}
+        />
+      )}
       {advancedOpen && <ImportAdvancedDialog value={advanced} onChange={setAdvanced} onClose={() => setAdvancedOpen(false)} />}
       {namePrompt && (
         <MessageDialog

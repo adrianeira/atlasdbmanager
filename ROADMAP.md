@@ -144,7 +144,8 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
 - [x] **Seis modos**: Acrescentar, Atualizar, Acrescentar/Atualizar, Acrescentar sem atualizar, Excluir e Copiar;
       INSERT estendido com limite de tamanho, vazio como NULL, continuar em erro (SAVEPOINT por registro) ou
       desfazer a tabela inteira; cancelamento desfaz a tabela em andamento
-- [ ] Importar de Access, ODBC e Paradox *(**deixados de fora por enquanto**, por decisão: são formatos antigos e dependem de driver do Windows; o caminho é converter para CSV fora do Atlas)*; "Adicionar URL" segue em aberto
+- [ ] Importar de Access, ODBC e Paradox *(**deixados de fora por enquanto**, por decisão: são formatos antigos e dependem de driver do Windows; o caminho é converter para CSV fora do Atlas)*
+- [x] Importar por URL: botão "Adicionar URL..." no assistente (http/https, até 200 MB, baixa para a pasta temporária e segue como arquivo local; a lista mostra o endereço)
 
 ### Exportação de dados
 - [x] **Assistente de exportação em etapas** (formato → tabelas e arquivos → campos → resumo com log e
@@ -514,7 +515,7 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
       SSH só para desenvolvimento. Limite: com `verify-full` o nome do host do certificado é conferido contra `127.0.0.1`
 - [ ] HTTP tunnel *(não implementado: na referência ele só funciona com um script PHP instalado no servidor web, com protocolo próprio do fornecedor;
       sem esse servidor não há como conectar, então não há aba HTTP no diálogo para não prometer o que não funciona)*
-- [ ] Autenticação Kerberos/GSSAPI
+- [ ] Autenticação Kerberos/GSSAPI *(**não viável agora**: o driver PostgreSQL usado não tem GSS/SSPI e fazer à mão exigiria um ambiente Kerberos para testar, que não temos)*
 - [x] **Grupos (pastas) de conexão na árvore**: Novo grupo (menu da raiz ou do grupo), Renomear, Excluir (as conexões voltam para fora de
       grupo), **Mover para o grupo** no menu da conexão (e novo grupo na hora) e Nova conexão já dentro do grupo; grupos vazios e o grupo de
       cada conexão ficam guardados; a busca e o filtro de estrela mostram só os grupos que têm conexão visível. Ainda sem arrastar e soltar

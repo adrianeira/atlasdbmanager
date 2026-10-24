@@ -4,6 +4,7 @@ mod commands;
 mod datagen;
 mod monitor;
 mod dictionary;
+mod download;
 mod datasync;
 mod structsync;
 mod dump;
@@ -238,6 +239,7 @@ pub fn run() {
             local::profile_delete,
             local::ssh_password_save,
             local::open_external,
+            download::download_to_temp,
             local::file_read_hex,
             local::file_write_hex,
             local::connections_export,

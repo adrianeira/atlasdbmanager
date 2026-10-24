@@ -115,6 +115,8 @@ export interface MappingRow {
 export interface Job {
   id: string;
   file: string;
+  /** Endereço de onde o arquivo foi baixado (a lista mostra este em vez do caminho temporário). */
+  origin?: string;
   /** Tabela do arquivo (planilha). */
   sheet: string;
   /** Tabela existente de destino ("" = não escolhida). */

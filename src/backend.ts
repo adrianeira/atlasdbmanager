@@ -992,6 +992,8 @@ export const local = {
   profiles: () => call<ProfileRecord[]>("profiles_list"),
   /** Senha (ou frase da chave) do servidor SSH do perfil, guardada no cofre; `save` falso a remove. */
   sshPasswordSave: (id: string, password: string | null, save: boolean) => call<void>("ssh_password_save", { id, password, save }),
+  /** Baixa um arquivo `http(s)` para a pasta temporária (até 200 MB) e devolve o caminho. */
+  downloadToTemp: (url: string) => call<{ path: string; bytes: number }>("download_to_temp", { url }),
   /** Abre um endereço do GitHub do projeto no navegador padrão. */
   openExternal: (url: string) => call<void>("open_external", { url }),
   /** Conteúdo de um arquivo como `\\x...` (hexa do bytea), até 64 MB. */
