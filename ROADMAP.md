@@ -256,14 +256,22 @@ Fora da lista original de paridade: ajustes de UX, novos recursos e polimento vi
       *(`src/documents/TableDesignerDoc.tsx`, `src/sql/ddl.ts`, `crates/atlas-pg/src/meta.rs`)*
 
 ### Localizar no banco / schema
-- [x] **Localizar no banco de dados...** (menu do banco) e **Localizar no schema...** (menu do schema): procura em
-      **nomes** de objetos (tabelas, views, views materializadas, sequências, tipos, funções), **nomes de colunas**,
-      **definições** (views, views materializadas e corpo de funções) e **comentários** (de objetos e de colunas)
-- [x] Opções: diferenciar maiúsculas, **expressão regular** e restringir ao schema; texto simples vale literalmente
-      (`%` e `_` não são curingas); até 500 resultados com aviso de corte
-- [x] Cada resultado mostra o trecho em que achou; **duplo clique abre** o objeto (dados, designer da tabela para
-      colunas, designer de função, sequência ou tipo), carregando o schema se preciso
-      *(`src/components/FindDialog.tsx`, `crates/atlas-pg/src/find.rs`)*
+- [x] **Aba "Find in Database/Schema"** (Tools → Find in Database..., e o menu do banco e do schema na árvore, que já abrem com o
+      escopo marcado), no desenho da referência: painel à esquerda com **Conexão, Banco e Schema** (schema vazio = o banco todo),
+      **Find what**, **Look In** (Data ou Structure), **Search Mode** (Contains, Whole Word, Prefix, Regular Expression),
+      **Case Insensitive** e **Include Objects** (Tables, Views, Functions, Queries, Indexes, Triggers, Materialized Views);
+      resultado à direita e barra de status "Found N objects with M occurrences"
+- [x] **Structure**: árvore por objeto, "client_notes (3)", com o que casou em cada um (Table Name, Field Name, Foreign Key Name,
+      Index Name, Trigger Name, View Body, Function Name, Function Body...) e o trecho achado em vermelho; o corpo de views e
+      funções gera **uma linha por ocorrência**, com o trecho ao redor; reproduz o exemplo da referência (5 objetos, 10 ocorrências)
+- [x] **Data**: quantas linhas de cada tabela têm o texto em alguma coluna (lida como texto), com "Number of Matched Records";
+      `\` como escape (`%` e `_` valem como curingas no LIKE), botão **Stop** que interrompe a consulta no servidor e aviso das
+      tabelas sem permissão; duplo clique abre a tabela
+- [x] Duplo clique num achado abre o objeto (dados, designer da tabela para campo, designer de função); testado no PG 9.6 e 18
+      *(`src/documents/FindDoc.tsx`, `crates/atlas-pg/src/find.rs`)*
+- Limites: a caixa **Queries** aparece desabilitada (as consultas salvas ainda não são objetos para procurar); os índices que
+  sustentam a chave primária ou restrições não entram em "Index Name" (a referência também não os lista); a busca em dados lê
+  todas as tabelas do escopo, então em bancos grandes use o Stop
 
 ### Dump SQL
 - [x] **Despejar arquivo SQL** nos menus do banco, do schema e da tabela, com **Estrutura + dados** ou **Somente
@@ -487,7 +495,7 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
       (lembrado entre sessões); o destaque em amarelo segue a regra escolhida e a barra de status conta os itens que o filtro
       esconde (`11 Databases (2 items hidden)` vira `2 Databases (11 items hidden)`); com um banco selecionado mostra os schemas
       *(`filterRange`/`makeMatcher` em `src/model.ts`, `NavigationPane.tsx`)*
-- [x] Find in Database / Find in Schema (ver "Localizar no banco" em Entregues)
+- [x] Find in Database / Find in Schema (ver "Localizar no banco / schema" em Entregues)
 - [x] Console do servidor (ver "Console" em Entregues)
 - [ ] Share *(`cmd.share` sem handler)*
 - [x] Edit Database / Edit Schema (ver "Navegação / Árvore" em Entregues)

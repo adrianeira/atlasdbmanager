@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as R
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   appReady, errorText, isDesktop, local, onOpenScript, openDataDictionary, openDataGen, openDataSync, openDataTransfer, openStructSync, pg, toAtlasError, type OpenScriptRequest,
-  type ConnectionParams, type DatabaseDetail, type DumpScope, type FindHit, type ProfileRecord, type SchemaDetail,
+  type ConnectionParams, type DatabaseDetail, type DumpScope, type ProfileRecord, type SchemaDetail,
 } from "./backend";
 import { entries, matchesShortcut, sub, type CommandMap, type MenuDef, type MenuEntry } from "./commands";
 import { ConnectionDialog, type ConnectionForm } from "./components/ConnectionDialog";
@@ -33,6 +33,7 @@ import { dropServerStatements } from "./sql/foreignServer";
 import { ExtensionDesignerDoc, type ExtensionBackend } from "./documents/ExtensionDesignerDoc";
 import { ConsoleDoc } from "./documents/ConsoleDoc";
 import { ForeignServerDesignerDoc, type ForeignServerBackend } from "./documents/ForeignServerDesignerDoc";
+import { FindDoc } from "./documents/FindDoc";
 import { ForeignTableDesignerDoc, type ForeignTableBackend } from "./documents/ForeignTableDesignerDoc";
 import { HistoryLogDoc } from "./documents/HistoryLogDoc";
 import { ServerMonitorDoc } from "./documents/ServerMonitorDoc";
@@ -40,7 +41,6 @@ import { dropTypeSql } from "./sql/typedef";
 import { dropRoleSql } from "./sql/role";
 import { RoleDesignerDoc, type RoleBackend } from "./documents/RoleDesignerDoc";
 import { ColumnsDialog } from "./components/ColumnsDialog";
-import { FindDialog } from "./components/FindDialog";
 import { EditDatabaseDialog } from "./components/EditDatabaseDialog";
 import { EditSchemaDialog } from "./components/EditSchemaDialog";
 import { databaseStatements, schemaStatements, type DatabaseEditState, type SchemaEditState } from "./sql/dbedit";
@@ -258,7 +258,6 @@ type Dialog =
   | { kind: "chooseColumns" }
   | { kind: "editDatabase"; connId: string; /** Id do nó do banco na árvore (para fechá-lo se for renomeado). */ nodeId: string; detail: DatabaseDetail }
   | { kind: "editSchema"; connId: string; database: string; detail: SchemaDetail }
-  | { kind: "find"; connId: string; database: string; schema?: string }
   | ({ kind: "dump" } & DumpTarget)
   | ({ kind: "backup" } & BackupTarget)
   | ({ kind: "restore" } & RestoreTarget)
@@ -919,28 +918,33 @@ export default function App() {
   /** Como o `quote_ident` do PostgreSQL: só coloca aspas quando o nome precisa. */
   const quoteIfNeeded = (name: string) => (/^[a-z_][a-z0-9_$]*$/.test(name) ? name : quoteIdent(name));
 
+  /** Abre a aba "Find in Database/Schema", já no banco ou schema da árvore quando houver. */
+  const openFind = (connId?: string, database?: string, schema?: string) => {
+    const connName = connectionsRef.current.find((c) => c.id === connId)?.name;
+    const title = schema ? `${database}.${schema} (${connName}) - ${t("fd.titleSchema")}` : database ? `${database} (${connName}) - ${t("fd.title")}` : t("fd.title");
+    openTab({ kind: "find", title, windowTitle: title, icon: "search", connectionId: connId, database, schema });
+  };
+
   /** Abre o objeto de um achado da busca: carrega o schema (se preciso) e abre o designer ou os dados. */
-  const openFindHit = async (connId: string, database: string, hit: FindHit) => {
+  const openFindHit = async (connId: string, database: string, schemaName: string, hit: { kind: "table" | "view" | "matview" | "function"; name: string; identity: string | null }, what?: string) => {
     const conn = connectionsRef.current.find((c) => c.id === connId);
     if (!conn) return;
     await loadDatabase(connId, database).catch(() => undefined);
-    await loadSchema(connId, database, hit.schema).catch(() => undefined);
+    await loadSchema(connId, database, schemaName).catch(() => undefined);
     const c: NodeContext = {
-      connection: conn, database: { name: database, schemas: [], loaded: true }, schema: { name: hit.schema, objects: {} },
+      connection: conn, database: { name: database, schemas: [], loaded: true }, schema: { name: schemaName, objects: {} },
     };
     if (hit.kind === "function") {
       const title = objectTitle(hit.name, "tb.function", c);
       const identity = hit.identity ?? "";
       openTab({
-        kind: "functionDesigner", connectionId: connId, database, schema: hit.schema, object: `${hit.name}(${identity})`, fnName: hit.name,
+        kind: "functionDesigner", connectionId: connId, database, schema: schemaName, object: `${hit.name}(${identity})`, fnName: hit.name,
         fnIdentity: identity, title, windowTitle: title, icon: "function",
       });
       return;
     }
-    const cat: Category = hit.kind === "table" || hit.kind === "view" || hit.kind === "matview" || hit.kind === "sequence" || hit.kind === "type" ? hit.kind : "table";
-    // Achado de coluna abre o designer da tabela; os demais, os dados (tabelas e views) ou o designer.
-    const mode = hit.matchedIn === "column" || cat === "sequence" || cat === "type" ? "design" : "open";
-    openObjects(mode, [hit.name], cat, c);
+    // Achado de campo abre o designer da tabela; os demais, os dados.
+    openObjects(what === "fieldName" ? "design" : "open", [hit.name], hit.kind, c);
   };
 
   const newRole = () => {
@@ -1393,7 +1397,7 @@ export default function App() {
         item("cmd.extractSql", live ? () => openRestore("extract", c) : undefined),
         sep,
         item("cmd.reverseToModel"),
-        item("cmd.findInDatabase", live ? () => setDialog({ kind: "find", connId: conn.id, database: dbName }) : undefined),
+        item("cmd.findInDatabase", live ? () => openFind(conn.id, dbName) : undefined),
         sep,
         item("cmd.refresh", isOpen && live ? () => refreshNode(node) : undefined),
       );
@@ -1403,7 +1407,7 @@ export default function App() {
       const conn = c.connection;
       const dbName = c.database.name;
       const scName = c.schema.name;
-      if (conn.live) items.push(item("cmd.findInSchema", () => setDialog({ kind: "find", connId: conn.id, database: dbName, schema: scName })), sep);
+      if (conn.live) items.push(item("cmd.findInSchema", () => openFind(conn.id, dbName, scName)), sep);
       const scPrefix = `${seg(conn.id)}/${seg(dbName)}/${seg(scName)}`;
       const closeSchema = () => {
         // Colapsa o schema e qualquer descendente (pastas, objetos, colunas),
@@ -1935,8 +1939,8 @@ export default function App() {
     },
     findInDatabase: {
       id: "findInDatabase", label: "cmd.findInDatabase",
-      run: ctx.connection?.live && ctx.database && openConnections.has(ctx.connection.id)
-        ? () => setDialog({ kind: "find", connId: ctx.connection!.id, database: ctx.database!.name, schema: ctx.schema?.name })
+      run: connections.some((c) => c.live)
+        ? () => openFind(ctx.connection?.live ? ctx.connection.id : undefined, ctx.connection?.live ? ctx.database?.name : undefined, ctx.connection?.live ? ctx.schema?.name : undefined)
         : undefined,
     },
     monitorPostgres: {
@@ -2483,6 +2487,18 @@ export default function App() {
     if (tab.kind === "console" && tab.connectionId) {
       return <ConsoleDoc sessionId={tab.connectionId} database={tab.database ?? "postgres"} active={isActive} onQuit={() => closeTab(tab.id)} />;
     }
+    if (tab.kind === "find") {
+      return (
+        <FindDoc
+          conns={connections.filter((c) => c.live).map((c) => ({ id: c.id, name: c.name, provider: c.provider, open: openConnections.has(c.id) }))}
+          initial={{ connId: tab.connectionId, database: tab.database, schema: tab.schema }}
+          onConnect={(id) => void connect(id)}
+          onOpen={(connId, database, schemaName, object, what) => void openFindHit(connId, database, schemaName, object, what)}
+          active={isActive}
+          onStatus={statusFor(tab.id)}
+        />
+      );
+    }
     if (tab.kind === "historyLog") {
       return <HistoryLogDoc active={isActive} onStatus={statusFor(tab.id)} />;
     }
@@ -2810,16 +2826,6 @@ export default function App() {
         />
       )}
 
-      {dialog?.kind === "find" && (
-        <FindDialog
-          connectionName={connections.find((c) => c.id === dialog.connId)?.name ?? ""}
-          database={dialog.database}
-          schema={dialog.schema}
-          search={(options) => pg.find(dialog.connId, dialog.database, options)}
-          onOpen={(hit) => { void openFindHit(dialog.connId, dialog.database, hit); setDialog(null); }}
-          onClose={() => setDialog(null)}
-        />
-      )}
 
       {dialog?.kind === "connection" && (
         <ConnectionDialog

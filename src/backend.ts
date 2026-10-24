@@ -673,34 +673,61 @@ export interface ToolsInfo { dir: string | null; version: number | null; others:
 
 export interface DumpResult { objects: number; tables: number; rows: number; bytes: number; elapsedMs: number; path: string }
 
+export type FindMode = "contains" | "whole" | "prefix" | "regex";
+
 export interface FindOptions {
   text: string;
   /** Só este schema; null = todos os schemas do usuário. */
   schema: string | null;
-  matchCase: boolean;
-  /** Expressão regular do PostgreSQL em vez de texto simples. */
-  regex: boolean;
-  names: boolean;
-  columns: boolean;
-  definitions: boolean;
-  comments: boolean;
+  mode: FindMode;
+  caseInsensitive: boolean;
+  tables: boolean;
+  views: boolean;
+  matviews: boolean;
+  functions: boolean;
+  indexes: boolean;
+  triggers: boolean;
 }
 
-export interface FindHit {
+export type FindWhat =
+  | "tableName" | "fieldName" | "foreignKeyName" | "indexName" | "triggerName"
+  | "viewName" | "viewBody" | "matviewName" | "matviewBody" | "functionName" | "functionBody";
+
+/** Um achado: o texto mostrado e onde destacar (posições em caracteres). */
+export interface FindMatch {
+  what: FindWhat;
+  text: string;
+  ranges: [number, number][];
+}
+
+export interface FindObject {
   schema: string;
-  kind: "table" | "view" | "matview" | "sequence" | "type" | "function";
+  kind: "table" | "view" | "matview" | "function";
   name: string;
   /** Funções: argumentos de identidade. */
   identity: string | null;
-  column: string | null;
-  matchedIn: "name" | "column" | "definition" | "comment";
-  snippet: string | null;
+  matches: FindMatch[];
 }
 
 export interface FindResult {
-  hits: FindHit[];
-  /** Havia mais achados que o limite. */
+  objects: FindObject[];
+  occurrences: number;
+  /** Havia mais ocorrências que o limite. */
   truncated: boolean;
+}
+
+export interface DataMatch {
+  schema: string;
+  table: string;
+  count: number;
+}
+
+export interface FindDataResult {
+  tables: DataMatch[];
+  scanned: number;
+  total: number;
+  skipped: number;
+  cancelled: boolean;
 }
 
 /** Banco de dados: encoding, collation e tablespace são só leitura (o ALTER não os troca). */
@@ -990,6 +1017,9 @@ export const pg = {
   backupList: (sessionId: string, database: string, schema: string) => call<BackupEntry[]>("pg_backup_list", { sessionId, database, schema }),
   backupDelete: (path: string, metaPath: string) => call<void>("pg_backup_delete", { path, metaPath }),
   find: (sessionId: string, database: string, options: FindOptions) => call<FindResult>("pg_find", { sessionId, database, options }),
+  /** `findId` identifica a busca para o `exportCancel` (botão Parar). */
+  findData: (sessionId: string, database: string, findId: string, options: FindOptions) =>
+    call<FindDataResult>("pg_find_data", { sessionId, database, findId, options }),
   schemaDiagram: (sessionId: string, database: string, schema: string) =>
     call<SchemaDiagram>("pg_schema_diagram", { sessionId, database, schema }),
   availableExtensions: (sessionId: string, database: string) =>

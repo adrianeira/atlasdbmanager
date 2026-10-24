@@ -2092,15 +2092,6 @@ select.et-input {
 .role-list-body { flex: 1; overflow: auto; padding: 4px 8px; }
 
 /* Localizar no banco/schema. */
-.find-dialog { width: min(980px, 94vw); height: min(620px, 86vh); display: flex; flex-direction: column; }
-.find-form { padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; border-bottom: 1px solid var(--c-border); }
-.find-row { display: flex; gap: 8px; }
-.find-text { flex: 1; min-width: 0; }
-.find-options { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; }
-.find-sep { width: 1px; height: 14px; background: var(--c-border); }
-.find-results { flex: 1; min-height: 0; overflow: auto; }
-.find-results .grid-table { width: 100%; }
-.find-snippet { font: 12px/1.35 var(--font-mono); color: var(--c-text-muted); max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Dump SQL. */
 .dump-dialog { width: min(640px, 92vw); }
@@ -2588,3 +2579,33 @@ select.et-input {
 .ft-cols .fs-head, .ft-cols .fs-row { grid-template-columns: 1fr 1fr 88px; }
 .ft-cols .fs-head span:last-child { text-align: center; }
 .ft-null { display: flex; align-items: center; justify-content: center; }
+
+/* Find in Database/Schema (aba). */
+.fd-doc { height: 100%; display: grid; grid-template-columns: 360px 1fr; min-height: 0; background: var(--c-window); }
+.fd-left { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; overflow: auto; border-right: 1px solid var(--c-border); }
+.fd-field { display: flex; flex-direction: column; gap: 3px; }
+.fd-field.fd-gap { margin-top: 10px; }
+.fd-field > label, .fd-label-row label { color: var(--c-text); }
+.fd-label-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.fd-select { display: flex; align-items: center; gap: 6px; }
+.fd-select .field { flex: 1; min-width: 0; }
+.fd-short { width: 140px; }
+.fd-ci { margin: 2px 0 6px; }
+.fd-include { margin-top: 4px; }
+.fd-include-title { margin-bottom: 4px; }
+.fd-include-grid { display: grid; grid-auto-flow: column; grid-template-rows: repeat(4, auto); grid-template-columns: 1fr 1fr; gap: 6px 12px; }
+.fd-actions { margin-top: auto; display: flex; justify-content: flex-end; padding-top: 10px; }
+.fd-right { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 14px 16px 0 12px; gap: 6px; }
+.fd-results-title { color: var(--c-text); }
+.fd-results { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--c-border); background: var(--c-surface); margin-bottom: 12px; }
+.fd-grid { display: grid; grid-template-columns: minmax(180px, 38%) 1fr; align-items: center; }
+.fd-head { position: sticky; top: 0; z-index: 1; height: 24px; background: var(--c-surface); border-bottom: 1px solid var(--c-border); color: var(--c-text); }
+.fd-head span { padding: 0 8px; }
+.fd-head span + span { border-left: 1px solid var(--c-border); }
+.fd-row { height: 22px; cursor: default; }
+.fd-row.is-selected { background: var(--c-selected); }
+.fd-name { display: flex; align-items: center; gap: 5px; padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fd-indent { padding-left: 38px; }
+.fd-content { padding: 0 8px; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+.fd-hit { color: #c62828; }
+.fd-chevron { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; padding: 0; border: 0; background: none; color: var(--c-text-muted); }
