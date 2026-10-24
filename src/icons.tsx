@@ -193,6 +193,7 @@ const small: Record<string, ReactElement> = {
       <path d="M7.6 4.6l1.2-1.2a2.5 2.5 0 0 1 3.6 3.6l-1.2 1.2M8.4 11.4l-1.2 1.2a2.5 2.5 0 0 1-3.6-3.6l1.2-1.2" fill="none" stroke="#2f7fd0" strokeWidth="1.6" strokeLinecap="round" />
     </>
   ),
+  pin: <path d="M6 2h4l-.6 4 2.1 2.2v1H8.6V14H7.4V9.2H4.5v-1L6.6 6z" fill="none" stroke="currentColor" strokeLinejoin="round" />,
   collapseAll: <path d="M4 3l4 4 4-4M4 9l4 4 4-4" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" transform="rotate(180 8 8)" />,
   chevronRight: <path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />,
   chevronDown: <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />,

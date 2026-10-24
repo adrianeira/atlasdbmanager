@@ -2735,3 +2735,16 @@ select.et-input {
 .ex-info { padding: 10px 14px; }
 .ex-info-head { display: grid; grid-template-columns: repeat(2, max-content); gap: 4px 40px; padding-bottom: 12px; border-bottom: 1px solid var(--c-border); }
 .ex-sql { margin: 12px 0 0; font: 12px / 1.5 var(--font-mono); white-space: pre-wrap; user-select: text; }
+
+/* Aba Summary e resultados fixados. */
+.sm-view { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--c-surface); }
+.sm-head { flex: none; display: flex; align-items: flex-start; gap: 40px; padding: 10px 14px; }
+.sm-counts { display: grid; grid-template-columns: repeat(2, max-content); gap: 2px 12px; }
+.sm-only { margin-left: auto; }
+.sm-scroll { flex: 1; min-height: 0; overflow: auto; border-top: 1px solid var(--c-border); }
+.sm-table { width: 100%; margin: 0; }
+.sm-table tr.is-error td { color: #c62828; }
+.sm-sql, .sm-msg { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.result-pin { display: inline-flex; align-items: center; padding: 0; }
+.result-pin > button { border: 0; background: none; padding: 0 6px 0 10px; height: 100%; cursor: default; color: inherit; display: inline-flex; align-items: center; gap: 4px; }
+.result-pin > .result-pin-close { padding: 0 8px 0 2px; color: var(--c-text-muted); }

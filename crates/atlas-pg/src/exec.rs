@@ -36,9 +36,14 @@ async fn execute_inner(s: &PgSession, sql: &str, max_rows: usize, started: Insta
 
     let mut statements = Vec::new();
     let mut current: Option<ResultSet> = None;
+    // O servidor responde um comando atrás do outro: o tempo de cada um é medido entre as respostas.
+    let mut texts = crate::console::split_statements(sql).into_iter();
+    let mut mark = Instant::now();
+    let mut first_row: Option<Instant> = None;
     while let Some(msg) = stream.next().await {
         match msg.map_err(|e| map_error(&e))? {
             SimpleQueryMessage::RowDescription(cols) => {
+                first_row = Some(Instant::now());
                 current = Some(ResultSet {
                     columns: cols.iter().map(|c| ResultColumn { name: c.name().to_string(), type_name: None }).collect(),
                     rows: Vec::new(),
@@ -55,7 +60,16 @@ async fn execute_inner(s: &PgSession, sql: &str, max_rows: usize, started: Insta
                 }
             }
             SimpleQueryMessage::CommandComplete(n) => {
-                statements.push(StatementOutcome { result: current.take(), rows_affected: Some(n) });
+                let now = Instant::now();
+                let began = first_row.take().unwrap_or(now);
+                statements.push(StatementOutcome {
+                    result: current.take(),
+                    rows_affected: Some(n),
+                    sql: texts.next().unwrap_or_default(),
+                    query_time: began.duration_since(mark).as_secs_f64(),
+                    fetch_time: now.duration_since(began).as_secs_f64(),
+                });
+                mark = now;
             }
             _ => {}
         }

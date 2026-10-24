@@ -610,6 +610,11 @@ pub struct StatementOutcome {
     pub result: Option<ResultSet>,
     /// Linhas afetadas/retornadas informadas pelo servidor (CommandComplete).
     pub rows_affected: Option<u64>,
+    /// Texto do comando (vazio se não foi possível casar com a separação do texto).
+    pub sql: String,
+    /// Segundos até o servidor começar a responder (ou terminar, se não há linhas) e segundos lendo as linhas.
+    pub query_time: f64,
+    pub fetch_time: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]

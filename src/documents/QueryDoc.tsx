@@ -1,4 +1,5 @@
 import { ExplainView, type ExplainData } from "../components/ExplainView";
+import { SummaryView, type SummaryData } from "../components/SummaryView";
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { DataGrid, typeKind, type GridColumn } from "../components/DataGrid";
 import { Dropdown } from "../components/Dropdown";
@@ -87,7 +88,18 @@ function fromLive(sqlText: string, out: QueryOutcomeLive, t: ReturnType<typeof u
       lines.push(`> [${i + 1}] OK — ${t("query.rowsAffected", { n: st.rowsAffected ?? 0 })}`);
     }
   });
-  return { sql: sqlText.trim(), ms: out.elapsedMs, results, message: lines.join("\n") };
+  const end = Date.now();
+  const summary: SummaryData = {
+    start: end - out.elapsedMs, end,
+    rows: out.statements.map((st) => ({ sql: st.sql || sqlText.trim(), message: "OK", error: false, queryTime: out.statements.length > 1 ? null : st.queryTime, fetchTime: out.statements.length > 1 ? null : st.fetchTime })),
+  };
+  return { sql: sqlText.trim(), ms: out.elapsedMs, results, message: lines.join("\n"), summary };
+}
+
+/** Resumo de uma execução que falhou: o servidor recusa o texto inteiro, então é uma linha só, com o erro. */
+function failedSummary(sql: string, message: string, ms: number): SummaryData {
+  const end = Date.now();
+  return { start: end - ms, end, rows: [{ sql: sql.trim(), message, error: true, queryTime: ms / 1000, fetchTime: 0 }] };
 }
 
 export interface QueryActions {
@@ -106,6 +118,8 @@ interface ResultSet {
 }
 
 interface RunOutcome {
+  /** Aba Summary: um resumo por comando executado. */
+  summary?: SummaryData;
   /** Plano de execução (o botão Explain): vira a aba "Explain" depois dos resultados. */
   explain?: ExplainData;
   sql: string;
@@ -174,7 +188,11 @@ export function QueryDoc({
   // Gerenciador de snippets; guarda a seleção do editor para oferecê-la como snippet novo.
   const [snippets, setSnippets] = useState<{ selection: string } | null>(null);
   const [outcome, setOutcome] = useState<RunOutcome | null>(null);
-  const [resultTab, setResultTab] = useState(0);
+  /** Aba de resultados aberta: "m" Mensagem, "s" Resumo, "r0".."rN" resultados, "x" Explain, "p<n>" abas fixadas. */
+  const [resultTab, setResultTab] = useState("m");
+  /** Resultados fixados (Pin): continuam ao rodar outra consulta. */
+  const [pins, setPins] = useState<{ id: string; label: string; grid?: ResultSet; explain?: ExplainData }[]>([]);
+  const pinSeq = useRef(0);
   const [activeRow, setActiveRow] = useState(0);
   const [split, setSplit] = useState(0.55);
   /** Transação manual do editor: enquanto aberta, tudo roda nela até Commit ou Rollback. */
@@ -278,15 +296,15 @@ export function QueryDoc({
             : await backend.execute(conn.id, database, text, queryMaxRows, ctx.schema);
           const res = fromLive(text, out, t, queryMaxRows);
           setOutcome(res);
-          setResultTab(res.results.length ? 1 : 0);
+          setResultTab(res.results.length ? "r0" : "m");
           // Linhas: as devolvidas pelo primeiro resultado ou, sem resultado, as afetadas (soma).
           const first = out.statements.find((s) => s.result)?.result;
           record(first ? first.rows.length : out.statements.reduce((n, s) => n + (s.rowsAffected ?? 0), 0), null, out.elapsedMs);
         } catch (e) {
           const err = toAtlasError(e);
           const pos = err.position ? `\n> ${t("query.errorPosition", { n: err.position })}` : "";
-          setOutcome({ sql: text.trim(), ms: 0, results: [], message: "", error: `${errorText(err)}${pos}` });
-          setResultTab(0);
+          setOutcome({ sql: text.trim(), ms: 0, results: [], message: "", error: `${errorText(err)}${pos}`, summary: failedSummary(text, errorText(err), Date.now() - started) });
+          setResultTab("m");
           record(null, errorText(err), Date.now() - started);
         } finally {
           setActiveRow(0);
@@ -298,7 +316,7 @@ export function QueryDoc({
     runTimer.current = window.setTimeout(() => {
       const res = mockExecute(text, conn, ctx.database, ctx.schema);
       setOutcome(res);
-      setResultTab(res.results.length ? 1 : 0);
+      setResultTab(res.results.length ? "r0" : "m");
       setActiveRow(0);
       setRunning(false);
     }, 280);
@@ -312,7 +330,7 @@ export function QueryDoc({
       setTxId(await backend.beginTx(conn.id, ctx.database ?? conn.initialDatabase));
     } catch (e) {
       setOutcome({ sql: "", ms: 0, results: [], message: "", error: errorText(toAtlasError(e)) });
-      setResultTab(0);
+      setResultTab("m");
     } finally {
       setTxBusy(false);
     }
@@ -324,12 +342,12 @@ export function QueryDoc({
       await backend.endTx(txId, commit);
       setTxId(null);
       setOutcome({ sql: "", ms: 0, results: [], message: t(commit ? "query.txCommitted" : "query.txRolledBack") });
-      setResultTab(0);
+      setResultTab("m");
     } catch (e) {
       // Em falha do COMMIT o servidor já terminou a transação; a conexão dedicada não serve mais.
       setTxId(null);
       setOutcome({ sql: "", ms: 0, results: [], message: "", error: errorText(toAtlasError(e)) });
-      setResultTab(0);
+      setResultTab("m");
     } finally {
       setTxBusy(false);
     }
@@ -350,7 +368,7 @@ export function QueryDoc({
     if (running) {
       setRunning(false);
       setOutcome({ sql: "", ms: 0, results: [], message: t("query.cancelled") });
-      setResultTab(0);
+      setResultTab("m");
     }
   }, [running, t, backend, conn, ctx.database]);
 
@@ -387,12 +405,13 @@ export function QueryDoc({
           const ms = out.elapsedMs ?? Math.round(performance.now() - started);
           setOutcome({
             sql: sqlText, ms, results: [], message: `${sqlText}\n> OK`,
+            summary: { start: Date.now() - ms, end: Date.now(), rows: [{ sql: sqlText, message: "OK", error: false, queryTime: out.statements[0]?.queryTime ?? 0, fetchTime: out.statements[0]?.fetchTime ?? 0 }] },
             explain: { json: String(cell ?? ""), text: lines.join("\n"), sql: query, at: new Date().toLocaleString(), ms, connection: conn.name, database, schema: ctx.schema },
           });
-          setResultTab(1);
+          setResultTab("x");
         } catch (e) {
-          setOutcome({ sql: sqlText, ms: 0, results: [], message: "", error: errorText(toAtlasError(e)) });
-          setResultTab(0);
+          setOutcome({ sql: sqlText, ms: 0, results: [], message: "", error: errorText(toAtlasError(e)), summary: failedSummary(sqlText, errorText(toAtlasError(e)), 0) });
+          setResultTab("m");
         } finally {
           setActiveRow(0);
           setRunning(false);
@@ -408,7 +427,7 @@ export function QueryDoc({
       }],
       message: `EXPLAIN ${text.trim()}\n> OK`,
     });
-    setResultTab(1);
+    setResultTab("r0");
   }, [backend, conn, ctx.database, ctx.schema, t]);
 
   // Executa uma vez ao abrir; a marca vai dentro do timer porque o StrictMode cancela e refaz o efeito.
@@ -427,7 +446,23 @@ export function QueryDoc({
     registerActions(active ? { run, stop, explain, beautify, minify, upper, lower } : null);
   }, [active, run, stop, explain, beautify, minify, upper, lower, registerActions]);
 
-  const current = outcome && resultTab > 0 ? outcome.results[resultTab - 1] : undefined;
+  const pinned = pins.find((p) => p.id === resultTab);
+  const current = outcome && /^r[0-9]+$/.test(resultTab) ? outcome.results[Number(resultTab.slice(1))] : pinned?.grid;
+  /** O que o botão Pin fixa agora: o resultado ou o plano da aba aberta. */
+  const pinnable = !!outcome && ((current !== undefined && !pinned) || (resultTab === "x" && !!outcome.explain));
+  const pinCurrent = () => {
+    if (!outcome) return;
+    const n = ++pinSeq.current;
+    const id = `p${n}`;
+    if (resultTab === "x" && outcome.explain) setPins((ps) => [...ps, { id, label: t("ex.tab", { n }), explain: outcome.explain }]);
+    else if (current) setPins((ps) => [...ps, { id, label: t("query.result", { n }), grid: current }]);
+    else return;
+    setResultTab(id);
+  };
+  const closePin = (id: string) => {
+    setPins((ps) => ps.filter((p) => p.id !== id));
+    if (resultTab === id) setResultTab("m");
+  };
 
   useEffect(() => {
     if (!active) return;
@@ -619,31 +654,48 @@ export function QueryDoc({
             <div className={side ? "vsplitter" : "hsplitter"} role="separator" aria-orientation={side ? "vertical" : "horizontal"} onMouseDown={startSplit} />
             <div className="query-results">
               <div className="result-tabs" role="tablist">
-                <button type="button" role="tab" aria-selected={resultTab === 0} className={`result-tab${resultTab === 0 ? " is-active" : ""}`} onClick={() => setResultTab(0)}>{t("query.message")}</button>
+                <button type="button" role="tab" aria-selected={resultTab === "m"} className={`result-tab${resultTab === "m" ? " is-active" : ""}`} onClick={() => setResultTab("m")}>{t("query.message")}</button>
+                {outcome.summary && (
+                  <button type="button" role="tab" aria-selected={resultTab === "s"} className={`result-tab${resultTab === "s" ? " is-active" : ""}`} onClick={() => setResultTab("s")}>{t("query.summary")}</button>
+                )}
                 {outcome.results.map((_, i) => (
-                  <button key={i} type="button" role="tab" aria-selected={resultTab === i + 1} className={`result-tab${resultTab === i + 1 ? " is-active" : ""}`} onClick={() => { setResultTab(i + 1); setActiveRow(0); }}>
+                  <button key={i} type="button" role="tab" aria-selected={resultTab === `r${i}`} className={`result-tab${resultTab === `r${i}` ? " is-active" : ""}`} onClick={() => { setResultTab(`r${i}`); setActiveRow(0); }}>
                     {t("query.result", { n: i + 1 })}
                   </button>
                 ))}
                 {outcome.explain && (
-                  <button type="button" role="tab" aria-selected={resultTab === outcome.results.length + 1} className={`result-tab${resultTab === outcome.results.length + 1 ? " is-active" : ""}`} onClick={() => setResultTab(outcome.results.length + 1)}>{t("ex.tab", { n: 1 })}</button>
+                  <button type="button" role="tab" aria-selected={resultTab === "x"} className={`result-tab${resultTab === "x" ? " is-active" : ""}`} onClick={() => setResultTab("x")}>{t("ex.tab", { n: 1 })}</button>
                 )}
+                {pins.map((p) => (
+                  <span key={p.id} className={`result-tab result-pin${resultTab === p.id ? " is-active" : ""}`}>
+                    <button type="button" role="tab" aria-selected={resultTab === p.id} onClick={() => { setResultTab(p.id); setActiveRow(0); }}><SmallIcon name="pin" size={12} /> {p.label}</button>
+                    <button type="button" className="result-pin-close" title={t("query.unpin")} aria-label={t("query.unpin")} onClick={() => closePin(p.id)}>×</button>
+                  </span>
+                ))}
                 <span className="spacer" />
+                <button type="button" className="result-export" disabled={!pinnable} title={t("query.pin")} onClick={pinCurrent}>
+                  <SmallIcon name="pin" />
+                  <span>{t("query.pin")}</span>
+                </button>
                 <button type="button" className="result-export" disabled={!canExport} title={t("query.exportResult")} onClick={exportResult}>
                   <SmallIcon name="export" />
                   <span>{t("data.export")}</span>
                 </button>
               </div>
               <div className="result-body">
-                {outcome.explain && resultTab === outcome.results.length + 1 ? (
+                {resultTab === "x" && outcome.explain ? (
                   <ExplainView data={outcome.explain} />
-                ) : resultTab === 0 || !current ? (
+                ) : pinned?.explain ? (
+                  <ExplainView data={pinned.explain} />
+                ) : resultTab === "s" && outcome.summary ? (
+                  <SummaryView data={outcome.summary} />
+                ) : !current ? (
                   <pre className={`result-message${outcome.error ? " is-error" : ""}`}>
                     {outcome.error ? `${outcome.sql}\n> ${outcome.error}` : outcome.message}
                     {"\n> "}{t("query.time", { s: (outcome.ms / 1000).toFixed(3) })}
                   </pre>
                 ) : (
-                  <DataGrid columns={current.columns} rows={current.rows} readOnly activeRow={activeRow} onActiveRow={setActiveRow} onSaveAs={canExport ? exportResult : undefined} />
+                  <DataGrid columns={current.columns} rows={current.rows} readOnly activeRow={activeRow} onActiveRow={setActiveRow} onSaveAs={canExport && !pinned ? exportResult : undefined} />
                 )}
               </div>
             </div>

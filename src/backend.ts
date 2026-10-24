@@ -904,7 +904,7 @@ export interface ResultSet {
 }
 
 export interface QueryOutcome {
-  statements: { result: ResultSet | null; rowsAffected: number | null }[];
+  statements: { result: ResultSet | null; rowsAffected: number | null; sql: string; queryTime: number; fetchTime: number }[];
   elapsedMs: number;
 }
 

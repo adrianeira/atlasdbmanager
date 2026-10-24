@@ -573,7 +573,9 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 - [x] **Explain** (botão e menu Query): aba "Explain 1" depois dos resultados, com **Visual** (árvore de nós com custo acima e tabela/tipo abaixo; o nome fica vermelho
       quando o custo próprio do nó passa do **limite de custo (%)**; zoom, salvar como imagem SVG e localizar com anterior/próximo), **JSON**, **Text**, **Statistics**
       (por tipo de nó: quantidade, custo e %, batendo com os números da referência) e **Info** *(`src/explain.ts`, `src/components/ExplainView.tsx`)*
-- [ ] Explain: **Pin** da aba (guardar o plano ao rodar outra consulta) e a aba **Summary** dos resultados *(aparecem nas capturas; o Atlas não tem nenhum dos dois nos resultados em geral)*
+- [x] **Summary** (aba depois de Message): comandos processados, com êxito e com erro, início, fim e tempo total, e uma linha por comando com mensagem e tempos de consulta e de leitura;
+      **Show Errors Only**. Com vários comandos juntos os tempos por comando aparecem como "—" (o servidor entrega as respostas de uma vez); um erro vale para o texto inteiro, então é uma linha só
+- [x] **Pin** (resultado ou plano): fixa a aba, que continua ao rodar outra consulta, com × para desafixar *(`src/components/SummaryView.tsx`, `src/documents/QueryDoc.tsx`)*
 
 ## 5. Designers
 - [x] Trigger designer completo (aba Gatilhos da tabela; ver "Gatilhos" em Entregues)
