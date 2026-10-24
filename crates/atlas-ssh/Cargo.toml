@@ -1,0 +1,19 @@
+[package]
+name = "atlas-ssh"
+description = "Atlas DB Manager — túnel SSH para as conexões"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+atlas-core.workspace = true
+russh = { version = "0.64", default-features = false, features = ["flate2", "ring", "rsa"] }
+tokio.workspace = true
+log.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util"] }
+russh = { version = "0.64", default-features = false, features = ["flate2", "ring", "rsa"] }
+rand = { version = "0.10", features = ["thread_rng"] }

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["src-tauri", "crates/atlas-core", "crates/atlas-pg", "crates/atlas-local", "crates/atlas-export", "crates/atlas-import", "crates/atlas-docs"]
+members = ["src-tauri", "crates/atlas-core", "crates/atlas-pg", "crates/atlas-local", "crates/atlas-export", "crates/atlas-import", "crates/atlas-docs", "crates/atlas-ssh"]
 
 [workspace.package]
 version = "0.1.0"
@@ -16,6 +16,7 @@ atlas-local = { path = "crates/atlas-local" }
 atlas-export = { path = "crates/atlas-export" }
 atlas-import = { path = "crates/atlas-import" }
 atlas-docs = { path = "crates/atlas-docs" }
+atlas-ssh = { path = "crates/atlas-ssh" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
