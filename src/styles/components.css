@@ -2609,3 +2609,5 @@ select.et-input {
 .fd-content { padding: 0 8px; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
 .fd-hit { color: #c62828; }
 .fd-chevron { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; padding: 0; border: 0; background: none; color: var(--c-text-muted); }
+.fd-busy { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.fd-busy .spinner { flex: none; }

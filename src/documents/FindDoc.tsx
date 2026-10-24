@@ -269,7 +269,7 @@ export function FindDoc({ conns, initial, onConnect, onOpen, active, onStatus }:
             <span>{t("fd.colName")}</span>
             <span>{searched?.lookIn === "data" || (!searched && lookIn === "data") ? t("fd.colCount") : t("fd.colMatched")}</span>
           </div>
-          {busy && <div className="hist-empty"><span className="spinner" /></div>}
+          {busy && <div className="hist-empty fd-busy"><span className="spinner" />{t("fd.searching")}</div>}
           {!busy && structure && searched?.lookIn === "structure" && structure.objects.length === 0 && <div className="hist-empty">{t("fd.none", { text: searched.text })}</div>}
           {!busy && data && searched?.lookIn === "data" && data.tables.length === 0 && <div className="hist-empty">{t("fd.none", { text: searched.text })}</div>}
           {!busy && structure && searched?.lookIn === "structure" && structure.objects.map((o) => {
