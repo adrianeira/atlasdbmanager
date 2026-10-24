@@ -429,6 +429,19 @@ Testado ao vivo em 9.6 e 18 (registro, erro com posição, senha mascarada e pau
 Fora desta entrega: a gravação em arquivo e as inserções em lote do import e do Data Transfer, que usam instruções preparadas e
 não aparecem no registro.
 
+### Console
+Tools → Console (F6) e o menu de contexto da conexão e do banco abrem a aba "PostgreSQL 18 - Console", um terminal no estilo do
+`psql` com o prompt `atlas_demo=#` (`>` para quem não é superusuário, `-#` nas linhas de continuação). O comando só roda quando
+termina em `;` fora de aspas, `$tag$` e comentários, então dá para digitar em várias linhas; os comandos com `\` rodam na hora.
+O texto sai do Rust, formatado como o `psql`: tabelas alinhadas com cabeçalho centralizado e números à direita, `(n rows)`,
+etiquetas (`INSERT 0 1`, `CREATE TABLE`...), erros com `LINE n:` e o cursor, `DETAIL:` e `HINT:`. Comandos: `\?`, `\q`, `\c banco`
+(troca de verdade o banco da aba), `\conninfo`, `\l`, `\dn`, `\dt`, `\dv`, `\dm`, `\di`, `\ds`, `\df`, `\du`, `\d nome` (colunas,
+índices, checks, chaves estrangeiras, "Referenced by" e gatilhos), `\timing` e `\x` (saída expandida). Setas para cima e para baixo
+percorrem o histórico e Ctrl+C descarta o que está sendo digitado. Tudo o que o console executa aparece no History Log.
+Testado ao vivo em 9.6 e 18 (SQL, etiquetas, erro, `\dt`, `\d`, `\l`, `\c`, `\timing`, `\x`) e na tela.
+Fora desta entrega: `\copy`, `\i` (rodar arquivo), `\set` e variáveis, `\g`, `\watch`, autocompletar com Tab e o `\d+` com
+tamanhos e descrições.
+
 ## Limitações conhecidas
 - Exportar o resultado de uma consulta exige um único comando que devolva linhas.
 - Exportação de tabela sem filtro/ordenação usa a ordem natural do servidor.
@@ -450,7 +463,7 @@ não aparecem no registro.
       esconde (`11 Databases (2 items hidden)` vira `2 Databases (11 items hidden)`); com um banco selecionado mostra os schemas
       *(`filterRange`/`makeMatcher` em `src/model.ts`, `NavigationPane.tsx`)*
 - [x] Find in Database / Find in Schema (ver "Localizar no banco" em Entregues)
-- [ ] Console do servidor *(item `cmd.console` sem handler)*
+- [x] Console do servidor (ver "Console" em Entregues)
 - [ ] Share *(`cmd.share` sem handler)*
 - [x] Edit Database / Edit Schema (ver "Navegação / Árvore" em Entregues)
 
