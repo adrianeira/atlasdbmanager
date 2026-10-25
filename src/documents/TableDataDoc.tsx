@@ -739,7 +739,6 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
         {tool("import", "data.import")}
         {tool("export", "data.export", onExport ? openExport : undefined)}
         {tool("dataGen", "data.generation")}
-        {tool("biCreate", "data.createBi")}
         <div className="ot-spacer" />
         <FullscreenButton />
       </div>
