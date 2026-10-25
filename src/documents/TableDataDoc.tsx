@@ -454,7 +454,8 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
         const counts = await backend.apply(planned);
         // Sem chave, linhas iguais são todas afetadas: avisa quantas linhas o servidor realmente mudou.
         if (keyless && counts) {
-          const expected = planned.length;
+          // O que o usuário marcou: linhas alteradas, excluídas e novas. Mais que isso afetado = havia linhas iguais.
+          const expected = updatedRows + deleted.size + newRows.size;
           const total = counts.reduce((a, b) => a + b, 0);
           setApplyNote(total > expected ? t("data.keylessAffected", { n: total }) : null);
         }

@@ -172,5 +172,14 @@ export function plannedStatements(c: RowChanges): PlannedStatement[] {
     const params: (string | null)[] = [];
     out.push({ sql: `DELETE FROM ${target} WHERE ${whereFor(c.original[r], params, [])}`, params, expectOneRow: !keyless, expectAtLeastOne: keyless });
   }
-  return out;
+  // Sem chave, linhas iguais marcadas juntas viram o mesmo comando: ele já afeta todas, e repeti-lo daria "0 linhas" (conflito).
+  if (!keyless) return out;
+  const seen = new Set<string>();
+  return out.filter((st) => {
+    if (st.expectAtLeastOne !== true) return true;
+    const key = `${st.sql} ${JSON.stringify(st.params)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
