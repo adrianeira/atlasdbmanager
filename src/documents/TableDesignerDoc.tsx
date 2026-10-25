@@ -361,8 +361,11 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
     triggers: { name: "", forEach: "ROW", fires: "BEFORE", insert: false, update: false, delete: false, truncate: false, updateOf: "", enable: true, comment: "", when: "", fn: "", args: "" },
   };
 
+  /** Só entra outro campo quando todos os que já existem têm nome e tipo. */
+  const fieldsFilled = d.fields.every((f) => f.name.trim() !== "" && f.type !== "");
   const addItem = () => {
     if (tab === "fields") {
+      if (!fieldsFilled) return;
       const f: FieldRow = { _id: nextId++, name: "", type: "", length: 0, decimal: 0, notNull: false, dimensions: 0 };
       patch({ fields: [...d.fields, f] });
       setSelected(d.fields.length);
@@ -737,7 +740,7 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
         {toolBtn("save", "des.save", dirty ? save : undefined)}
         {actions && (
           <>
-            {toolBtn("new", actions.add, addItem)}
+            {toolBtn("new", actions.add, tab === "fields" && !fieldsFilled ? undefined : addItem)}
             {toolBtn("delete", actions.del, (tab === "fields" ? d.fields.length : d[tab as ListKey].length) ? deleteItem : undefined)}
           </>
         )}
