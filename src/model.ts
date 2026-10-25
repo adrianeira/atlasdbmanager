@@ -31,6 +31,8 @@ export interface ColumnDef {
   identity?: "a" | "d";
   /** Coluna gerada por expressão: "s" = STORED (sempre read-only). */
   generated?: "s";
+  /** Designer: a coluna numera sozinha (auto incremento): identidade ou `serial`. */
+  autoInc?: boolean;
 }
 
 export interface IndexDef { name: string; fields: string; method: string; unique: boolean; concurrently: boolean; comment?: string }
