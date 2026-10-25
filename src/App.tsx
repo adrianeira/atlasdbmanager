@@ -40,6 +40,7 @@ import { TablespaceDesignerDoc, type TablespaceBackend } from "./documents/Table
 import { dropTablespaceStatement } from "./sql/tablespace";
 import { TasksDialog } from "./components/TasksDialog";
 import { ShareDialog } from "./components/ShareDialog";
+import { TextContextMenu } from "./components/TextContextMenu";
 import { buildShareUri } from "./shareUri";
 import { liveLookupSource, makeTableBackend } from "./docBackends";
 import type { SavedTable } from "./tabWindow";
@@ -2323,17 +2324,7 @@ export default function App() {
     if (items.length) setCtxMenu({ x, y, items });
   };
 
-  // Sem o menu padrão do navegador (Voltar/Atualizar/Imprimir/Inspecionar): só os menus do Atlas.
-  // Campos de texto e o editor SQL mantêm o menu nativo de recortar/copiar/colar.
-  useEffect(() => {
-    const block = (e: MouseEvent) => {
-      const el = e.target as HTMLElement | null;
-      if (el?.closest?.("input, textarea, [contenteditable='true'], .cm-editor")) return;
-      e.preventDefault();
-    };
-    window.addEventListener("contextmenu", block);
-    return () => window.removeEventListener("contextmenu", block);
-  }, []);
+  // Sem o menu padrão do navegador (Voltar/Atualizar/Imprimir/Inspecionar): só os menus do Atlas (`TextContextMenu` cuida dos campos de texto).
 
   useEffect(() => {
     if (!ctxMenu) return;
@@ -3318,6 +3309,7 @@ export default function App() {
         />
       </div>
 
+      <TextContextMenu />
       {ctxMenu && (
         <PopupMenu
           items={ctxMenu.items}

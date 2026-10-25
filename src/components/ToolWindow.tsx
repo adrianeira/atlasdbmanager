@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { local } from "../backend";
 import { I18nContext, detectLang, makeTranslator, type Lang } from "../i18n";
 import { DEFAULT_OPTIONS, OptionsContext, sanitizeOptions, type AppOptions } from "../options";
+import { TextContextMenu } from "./TextContextMenu";
 import "../editorZoom";
 
 /** Idioma e tema escolhidos na janela principal (guardados no mesmo armazenamento local). */
@@ -37,7 +38,7 @@ export function ToolWindow({ title, children }: { title: string; children: React
 
   return (
     <I18nContext.Provider value={t}>
-      <OptionsContext.Provider value={options}>{children}</OptionsContext.Provider>
+      <OptionsContext.Provider value={options}>{children}<TextContextMenu /></OptionsContext.Provider>
     </I18nContext.Provider>
   );
 }
