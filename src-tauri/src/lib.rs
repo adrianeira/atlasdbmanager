@@ -12,6 +12,7 @@ mod export;
 mod import;
 mod local;
 mod sessions;
+mod sqlite;
 mod transfer;
 mod tunnel;
 mod tx;
@@ -72,6 +73,7 @@ pub fn run() {
         .manage(export::Exports::default())
         .manage(backup::Backups::default())
         .manage(tx::Transactions::default())
+        .manage(sqlite::SqliteSessions::default())
         .manage(datasync::Comparisons::default())
         .manage(structsync::StructComparisons::default())
         .manage(dictionary::DictRuns::default())
@@ -181,6 +183,28 @@ pub fn run() {
             commands::pg_fk_labels,
             commands::pg_table_count,
             commands::pg_data_profile,
+            sqlite::sqlite_test_connection,
+            sqlite::sqlite_open,
+            sqlite::sqlite_close,
+            sqlite::sqlite_close_database,
+            sqlite::sqlite_list_databases,
+            sqlite::sqlite_list_schemas,
+            sqlite::sqlite_list_objects,
+            sqlite::sqlite_table_detail,
+            sqlite::sqlite_list_roles,
+            sqlite::sqlite_execute,
+            sqlite::sqlite_cancel,
+            sqlite::sqlite_table_rows,
+            sqlite::sqlite_table_count,
+            sqlite::sqlite_apply,
+            sqlite::sqlite_fk_labels,
+            sqlite::sqlite_unsupported,
+            sqlite::sqlite_tx_begin,
+            sqlite::sqlite_tx_apply,
+            sqlite::sqlite_tx_execute,
+            sqlite::sqlite_tx_table_rows,
+            sqlite::sqlite_tx_table_count,
+            sqlite::sqlite_tx_end,
             commands::pg_apply,
             tx::pg_tx_begin,
             tx::pg_tx_execute,
