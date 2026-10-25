@@ -177,6 +177,13 @@ pub async fn sqlite_data_profile(
     blocking(move || s.data_profile(&table, &columns, &order_by, filter.as_ref(), limit)).await
 }
 
+/// Tabelas (com colunas) e chaves estrangeiras, para o diagrama ER.
+#[tauri::command]
+pub async fn sqlite_schema_diagram(sessions: State<'_, SqliteSessions>, session_id: String, _database: String, _schema: String) -> Result<atlas_core::SchemaDiagram, DatabaseError> {
+    let s = sessions.session(&session_id)?;
+    blocking(move || s.schema_diagram()).await
+}
+
 /// "Find in Database", Look In = Structure.
 #[tauri::command]
 pub async fn sqlite_find(sessions: State<'_, SqliteSessions>, session_id: String, _database: String, options: atlas_sqlite::FindOptions) -> Result<atlas_sqlite::FindResult, DatabaseError> {

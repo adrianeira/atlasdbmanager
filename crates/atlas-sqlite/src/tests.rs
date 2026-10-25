@@ -312,3 +312,17 @@ fn find_in_data_counts_the_rows_and_gives_a_query_that_runs() {
     assert!(s.find_data(&find_opts("cr", find::FindMode::Prefix), &|| true).unwrap().cancelled);
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn schema_diagram_lists_columns_keys_and_relations() {
+    let (s, path) = sample();
+    let d = s.schema_diagram().unwrap();
+    let names: Vec<&str> = d.tables.iter().map(|t| t.name.as_str()).collect();
+    assert_eq!(names, vec!["clients", "loose", "orders"]);
+    let orders = d.tables.iter().find(|t| t.name == "orders").unwrap();
+    assert!(orders.columns[0].is_pk && orders.columns[1].is_fk && !orders.columns[2].is_fk);
+    assert_eq!(d.relations.len(), 1);
+    let r = &d.relations[0];
+    assert_eq!((r.table.as_str(), r.ref_table.as_str(), r.columns.clone(), r.ref_columns.clone(), r.required), ("orders", "clients", vec!["client_id".to_string()], vec!["id".to_string()], false));
+    let _ = std::fs::remove_file(path);
+}

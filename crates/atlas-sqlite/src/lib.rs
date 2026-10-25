@@ -11,6 +11,7 @@ use rusqlite::types::ValueRef;
 use rusqlite::{Connection, InterruptHandle, OpenFlags};
 use serde::{Deserialize, Serialize};
 
+pub mod diagram;
 pub mod find;
 pub mod profile;
 pub use find::{FindDataResult, FindOptions, FindResult};
@@ -613,6 +614,10 @@ impl SqliteSession {
 
     pub fn table_profile(&self, table: &str) -> Result<atlas_core::TableProfile, DatabaseError> {
         self.with(|c| profile::table_profile_on(c, table))
+    }
+
+    pub fn schema_diagram(&self) -> Result<atlas_core::SchemaDiagram, DatabaseError> {
+        self.with(diagram::schema_diagram_on)
     }
 
     pub fn find(&self, options: &FindOptions) -> Result<FindResult, DatabaseError> {
