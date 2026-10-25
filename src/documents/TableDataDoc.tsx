@@ -135,7 +135,8 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
     let filter: TableFilter | null = null;
     let order: OrderBy[] = [];
     let limit: number | null = null;
-    if (profScope.mode === "filter") {
+    // Com o perfil na tela (botão Settings) vale sempre o filtro, a ordem e o limite do painel; vazios = todos os registros.
+    if (profScope.mode === "filter" || profMode === "on") {
       filter = profScope.filterText.trim() ? { expr: profScope.filterText } : null;
       const parsed = parseSort(profScope.sortText, cols.map((c) => c.name));
       if (parsed.bad) return setProfError(t("pf.badSort", { name: parsed.bad }));
@@ -806,7 +807,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
       {!loadError && !loading && keyless && !readOnly && <div className="doc-banner is-warn">{t("data.noKeyNote")}</div>}
       {!readOnly && production && <div className="doc-banner is-warn">{t("data.productionBanner")}</div>}
 
-      {(profMode === "setup" || (profMode === "on" && profSettings)) && <ProfileSetup columns={cols} scope={profScope} onScope={setProfScope} busy={profBusy} error={profError} onStart={() => void startProfiling()} />}
+      {(profMode === "setup" || (profMode === "on" && profSettings)) && <ProfileSetup columns={cols} scope={profScope} onScope={setProfScope} busy={profBusy} error={profError} settings={profMode === "on"} onStart={() => void startProfiling()} />}
       {profMode === "on" && prof && (
         <div className="pf-toolbar">
           <strong>{t("data.profiling")}</strong>
