@@ -648,6 +648,33 @@ pub async fn sqlite_view_detail(sessions: State<'_, SqliteSessions>, session_id:
     blocking(move || s.view_detail(&view)).await
 }
 
+/// Console (estilo `sqlite3`): `input` é um comando completo, SQL ou com `.`.
+#[tauri::command]
+pub async fn sqlite_console_run(sessions: State<'_, SqliteSessions>, session_id: String, _database: String, input: String, options: atlas_sqlite::ConsoleOptions) -> Result<atlas_sqlite::ConsoleOutput, DatabaseError> {
+    let s = sessions.session(&session_id)?;
+    blocking(move || s.console_run(&input, options)).await
+}
+
+/// O texto do prompt (`main=>`).
+#[tauri::command]
+pub async fn sqlite_console_prompt(sessions: State<'_, SqliteSessions>, session_id: String, _database: String) -> Result<String, DatabaseError> {
+    let s = sessions.session(&session_id)?;
+    blocking(move || s.console_prompt()).await
+}
+
+/// Tab no console.
+#[tauri::command]
+pub async fn sqlite_console_complete(sessions: State<'_, SqliteSessions>, session_id: String, _database: String, text: String) -> Result<atlas_sqlite::ConsoleCompletion, DatabaseError> {
+    let s = sessions.session(&session_id)?;
+    blocking(move || s.console_complete(&text)).await
+}
+
+/// O texto já forma um comando completo? (Sem sessão: só olha o texto.)
+#[tauri::command]
+pub fn sqlite_console_is_complete(input: String) -> bool {
+    atlas_sqlite::console_is_complete(&input)
+}
+
 /// Pede para parar uma busca nos dados.
 #[tauri::command]
 pub async fn sqlite_export_cancel(sessions: State<'_, SqliteSessions>, export_id: String) -> Result<(), DatabaseError> {

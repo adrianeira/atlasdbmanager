@@ -533,7 +533,8 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 - [x] **SQLite — backup e restauração** (cópia compactada do arquivo com `VACUUM INTO`, com seleção de objetos, comentário, pasta e padrão de nome; lista na categoria Backup; restaurar troca o conteúdo do banco pelo do arquivo; sem as ferramentas do PostgreSQL)
 - [x] **SQLite — Dump SQL File e duplicar tabela** (script com `CREATE` + `INSERT` que o `sqlite3` e o Atlas executam de volta; duplicar estrutura e dados com chaves, UNIQUE, CHECK e índices)
 - [x] **SQLite — designer de view** (nova view e alterar a definição; o SQLite não tem `CREATE OR REPLACE VIEW`, então alterar apaga e cria de novo; sem dono, comentário nem regras; renomear view não existe no SQLite)
-- [ ] SQLite: ainda não fazem para ele — console, menu do schema (hoje mostra itens do PostgreSQL)
+- [x] **SQLite — console** (terminal no estilo do `sqlite3`, resultados alinhados como no `psql`, comandos `.tables`, `.schema`, `.indexes`, `.timing`, `.expanded`; Tab completa tabelas, colunas e palavras-chave) e menus sem os itens do PostgreSQL
+- [ ] SQLite: as ferramentas Data Transfer, Data Generation, Data Dictionary, Data Synchronization, Structure Synchronization e Server Monitor ainda são só do PostgreSQL (o SQLite não aparece nelas); falta Execute SQL File atômico, "New Database" (criar um arquivo novo) e o Query Builder para SQLite
 - [ ] SQL Server, MySQL, Firebird, MariaDB, Oracle, MongoDB, Redis (nesta ordem)
 
 ## 2. Árvore / Navegação

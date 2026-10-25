@@ -11,12 +11,14 @@ use rusqlite::types::ValueRef;
 use rusqlite::{Connection, InterruptHandle, OpenFlags};
 use serde::{Deserialize, Serialize};
 
+pub mod console;
 pub mod diagram;
 pub mod view;
 pub mod dump;
 pub mod find;
 pub mod import;
 pub mod profile;
+pub use console::{Completion as ConsoleCompletion, ConsoleOptions, ConsoleOutput, is_complete as console_is_complete};
 pub use dump::DumpPlan;
 pub use find::{FindDataResult, FindOptions, FindResult};
 pub use import::{Feed as ImportFeed, Hooks as ImportHooks, ImportMode, ImportSpec, ImportStats, TargetColumn, declared_type};
@@ -713,6 +715,18 @@ impl SqliteSession {
     /// A definição de uma view (só o `SELECT`).
     pub fn view_detail(&self, view: &str) -> Result<atlas_core::ViewDetail, DatabaseError> {
         self.with(|c| view::view_detail_on(c, view))
+    }
+
+    pub fn console_run(&self, input: &str, options: ConsoleOptions) -> Result<ConsoleOutput, DatabaseError> {
+        self.with(|c| Ok(console::run_on(c, input, options)))
+    }
+
+    pub fn console_complete(&self, text: &str) -> Result<ConsoleCompletion, DatabaseError> {
+        self.with(|c| Ok(console::complete_on(c, text)))
+    }
+
+    pub fn console_prompt(&self) -> Result<String, DatabaseError> {
+        self.with(console::prompt)
     }
 
     pub fn schema_diagram(&self) -> Result<atlas_core::SchemaDiagram, DatabaseError> {

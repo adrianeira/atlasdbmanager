@@ -417,3 +417,22 @@ fn backup_copies_the_file_without_the_excluded_objects_and_restore_brings_it_bac
     let _ = std::fs::remove_file(dest);
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn console_formats_results_like_psql_and_runs_dot_commands() {
+    let (s, path) = sample();
+    let run = |input: &str| s.console_run(input, ConsoleOptions::default()).unwrap();
+    let out = run("SELECT id, name FROM clients ORDER BY id;").text;
+    assert_eq!(out, " id | name \n----+------\n  1 | Ana\n  2 | Bia\n  3 | Cris\n(3 rows)\n");
+    assert_eq!(run("INSERT INTO loose VALUES (1, 'z');").text, "INSERT 0 1\n");
+    assert!(run("SELECT nope FROM clients;").text.starts_with("ERROR:  "));
+    assert!(run(".tables").text.contains("  clients"));
+    assert!(run(".schema orders").text.contains("CREATE TABLE orders"));
+    let timing = s.console_run(".timing on", ConsoleOptions::default()).unwrap();
+    assert!(timing.options.timing && timing.text.contains("on"));
+    assert!(s.console_run(".quit", ConsoleOptions::default()).unwrap().quit);
+    assert!(console_is_complete("select 1;") && console_is_complete(".tables") && !console_is_complete("select 1"));
+    let c = s.console_complete("SELECT * FROM cl").unwrap();
+    assert_eq!((c.start, c.candidates.contains(&"clients".to_string())), (14, true));
+    let _ = std::fs::remove_file(path);
+}

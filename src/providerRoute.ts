@@ -19,6 +19,8 @@ export interface Routed {
 }
 
 export function routeCommand(cmd: string, args?: Record<string, unknown>): Routed {
+  // O console tem comandos sem o prefixo `pg_`.
+  if (cmd.startsWith("console_") && cmd !== "console_is_complete" && typeof args?.sessionId === "string" && args.sessionId.startsWith(SQLITE_PREFIX)) return { cmd: `sqlite_${cmd}`, args };
   if (!cmd.startsWith("pg_")) return { cmd, args };
   const id = args?.sessionId ?? args?.txId ?? args?.exportId ?? (args?.req as { sessionId?: string } | undefined)?.sessionId;
   const params = args?.params as { provider?: string } | undefined;

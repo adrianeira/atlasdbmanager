@@ -2444,7 +2444,8 @@ export default function App() {
     dataTransfer: {
       id: "dataTransfer", label: "cmd.dataTransfer",
       run: () => {
-        const live = connections.filter((c) => c.live);
+        // Estas ferramentas ainda são do PostgreSQL: o SQLite não entra na lista de conexões delas.
+        const live = connections.filter((c) => c.live && c.provider !== "sqlite");
         if (live.length === 0) return;
         void openDataTransfer(t("dt.title"), {
           connections: live.map((c) => ({
@@ -2452,14 +2453,15 @@ export default function App() {
             version: c.serverVersion, versionNum: c.serverVersionNum, open: openConnections.has(c.id),
             initialDatabase: c.initialDatabase, sslMode: c.sslMode, hasPassword: c.hasPassword,
           })),
-          source: ctx.connection?.live && ctx.database && ctx.schema ? { connId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name } : undefined,
+          source: ctx.connection?.live && ctx.connection.provider !== "sqlite" && ctx.database && ctx.schema ? { connId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name } : undefined,
         }).catch((e) => showError(t("dt.title"), e));
       },
     },
     dataSync: {
       id: "dataSync", label: "cmd.dataSync",
       run: () => {
-        const live = connections.filter((c) => c.live);
+        // Estas ferramentas ainda são do PostgreSQL: o SQLite não entra na lista de conexões delas.
+        const live = connections.filter((c) => c.live && c.provider !== "sqlite");
         if (live.length === 0) return;
         void openDataSync(t("ds.title"), {
           connections: live.map((c) => ({
@@ -2467,14 +2469,15 @@ export default function App() {
             version: c.serverVersion, versionNum: c.serverVersionNum, open: openConnections.has(c.id),
             initialDatabase: c.initialDatabase, sslMode: c.sslMode, hasPassword: c.hasPassword,
           })),
-          source: ctx.connection?.live && ctx.database && ctx.schema ? { connId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name } : undefined,
+          source: ctx.connection?.live && ctx.connection.provider !== "sqlite" && ctx.database && ctx.schema ? { connId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name } : undefined,
         }).catch((e) => showError(t("ds.title"), e));
       },
     },
     structureSync: {
       id: "structureSync", label: "cmd.structureSync",
       run: () => {
-        const live = connections.filter((c) => c.live);
+        // Estas ferramentas ainda são do PostgreSQL: o SQLite não entra na lista de conexões delas.
+        const live = connections.filter((c) => c.live && c.provider !== "sqlite");
         if (live.length === 0) return;
         void openStructSync(t("ss.title"), {
           connections: live.map((c) => ({
@@ -2482,14 +2485,15 @@ export default function App() {
             version: c.serverVersion, versionNum: c.serverVersionNum, open: openConnections.has(c.id),
             initialDatabase: c.initialDatabase, sslMode: c.sslMode, hasPassword: c.hasPassword,
           })),
-          source: ctx.connection?.live && ctx.database && ctx.schema ? { connId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name } : undefined,
+          source: ctx.connection?.live && ctx.connection.provider !== "sqlite" && ctx.database && ctx.schema ? { connId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name } : undefined,
         }).catch((e) => showError(t("ss.title"), e));
       },
     },
     dataGen: {
       id: "dataGen", label: "cmd.dataGen",
       run: () => {
-        const live = connections.filter((c) => c.live);
+        // Estas ferramentas ainda são do PostgreSQL: o SQLite não entra na lista de conexões delas.
+        const live = connections.filter((c) => c.live && c.provider !== "sqlite");
         if (live.length === 0) return;
         void openDataGen(t("dg.title"), {
           connections: live.map((c) => ({
@@ -2497,14 +2501,15 @@ export default function App() {
             version: c.serverVersion, versionNum: c.serverVersionNum, open: openConnections.has(c.id),
             initialDatabase: c.initialDatabase, sslMode: c.sslMode, hasPassword: c.hasPassword,
           })),
-          source: ctx.connection?.live && ctx.database && ctx.schema ? { connId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name } : undefined,
+          source: ctx.connection?.live && ctx.connection.provider !== "sqlite" && ctx.database && ctx.schema ? { connId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name } : undefined,
         }).catch((e) => showError(t("dg.title"), e));
       },
     },
     dataDictionary: {
       id: "dataDictionary", label: "cmd.dataDictionary",
       run: () => {
-        const live = connections.filter((c) => c.live);
+        // Estas ferramentas ainda são do PostgreSQL: o SQLite não entra na lista de conexões delas.
+        const live = connections.filter((c) => c.live && c.provider !== "sqlite");
         if (live.length === 0) return;
         void openDataDictionary(t("dd.title"), {
           connections: live.map((c) => ({
@@ -2512,7 +2517,7 @@ export default function App() {
             version: c.serverVersion, versionNum: c.serverVersionNum, open: openConnections.has(c.id),
             initialDatabase: c.initialDatabase, sslMode: c.sslMode, hasPassword: c.hasPassword,
           })),
-          source: ctx.connection?.live && ctx.database && ctx.schema ? { connId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name } : undefined,
+          source: ctx.connection?.live && ctx.connection.provider !== "sqlite" && ctx.database && ctx.schema ? { connId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name } : undefined,
         }).catch((e) => showError(t("dd.title"), e));
       },
     },
@@ -2534,7 +2539,8 @@ export default function App() {
     monitorPostgres: {
       id: "monitorPostgres", label: "mon.postgres",
       run: () => {
-        if (!connections.some((c) => c.live)) return;
+        // O monitor lê as tabelas de sistema do PostgreSQL.
+        if (!connections.some((c) => c.live && c.provider !== "sqlite") || ctx.connection?.provider === "sqlite") return;
         openTab({ kind: "monitor", title: `${t("mon.title")} - PostgreSQL`, windowTitle: `${t("mon.title")} - PostgreSQL`, icon: "settings", object: "monitor", connectionId: ctx.connection?.id });
       },
     },
