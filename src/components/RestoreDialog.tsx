@@ -6,7 +6,7 @@ import {
 import { useT } from "../i18n";
 import { formatBytes } from "../model";
 import { SmallIcon } from "../icons";
-import { isSqliteId } from "../providerRoute";
+import { isMssqlId, isSqliteId } from "../providerRoute";
 import { Dropdown } from "./Dropdown";
 
 export interface RestoreTarget {
@@ -39,7 +39,7 @@ export function RestoreDialog({ target, onClose }: Props) {
   const sep = useMemo(pathSeparator, []);
   const { mode } = target;
   // O SQLite restaura o arquivo inteiro, sem as ferramentas nem as opções do PostgreSQL.
-  const sqlite = isSqliteId(target.connId);
+  const sqlite = isSqliteId(target.connId) || isMssqlId(target.connId);
   const [tools, setTools] = useState<ToolsInfo | null>(null);
   const [toolsDir, setToolsDir] = useState(readToolsDir);
   const [content, setContent] = useState<BackupContent>("all");

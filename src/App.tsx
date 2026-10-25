@@ -1223,7 +1223,7 @@ export default function App() {
     const major = Math.floor(conn.serverVersionNum / 10000);
     const version = major >= 10 ? String(major) : `${major}.${Math.floor((conn.serverVersionNum % 10000) / 100)}`;
     setDialog({
-      kind: "backup", connId: conn.id, database, schema, server: conn.provider === "sqlite" ? "SQLite" : `Postgres ${version}`,
+      kind: "backup", connId: conn.id, database, schema, server: conn.provider === "sqlite" ? "SQLite" : conn.provider === "sqlserver" ? "SQL Server" : `Postgres ${version}`,
       objects: { table: pick("table"), view: pick("view"), matview: pick("matview"), function: pick("function"), sequence: pick("sequence"), type: pick("type") },
     });
   };

@@ -4,6 +4,7 @@
 //! Uma sessão guarda uma conexão por banco (o SQL Server troca de banco com `USE`; aqui cada banco tem a sua, aberta quando
 //! alguém pede). Os valores voltam em texto, como a grade os espera.
 
+mod backup;
 mod console;
 mod dump;
 mod extra;
@@ -14,6 +15,7 @@ mod profile;
 mod rows;
 mod values;
 
+pub use backup::BackupRow;
 pub use console::{Completion as ConsoleCompletion, ConsoleOptions, ConsoleOutput, is_complete as console_is_complete};
 pub use dump::{DumpPlan, DumpTable, literal};
 pub use extra::FkLabels;

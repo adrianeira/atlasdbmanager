@@ -7,6 +7,7 @@ use crate::local::Local;
 use crate::import::{ImportRequest, ImportSummary, JobResult, LogEvent, ProgressEvent, failed_job};
 use atlas_import::convert::{TargetKind, convert, kind_of};
 use atlas_mssql::{ImportFeed, ImportHooks, ImportMode, ImportSpec, TargetColumn};
+use crate::backup::{BackupEntry, BackupRequest, BackupResult, RestoreRequest};
 use crate::dump::{DumpRequest, DumpResult};
 use crate::export::{ExportRequest, ExportResult, PartFile, Progress, io_error, part_path, validate_path};
 use atlas_export::ExportColumn;
@@ -643,6 +644,48 @@ pub async fn mssql_dump_sql(app: tauri::AppHandle, sessions: State<'_, MssqlSess
         m.remove(&req.dump_id);
     }
     out
+}
+
+/// Backup completo do banco: o arquivo `.bak` é gravado pelo servidor, no disco dele (`folder` é uma pasta do servidor; sem ela vale
+/// a pasta padrão de backups da instância). O SQL Server não faz backup de um schema só.
+#[tauri::command]
+pub async fn mssql_backup(sessions: State<'_, MssqlSessions>, req: BackupRequest) -> Result<BackupResult, DatabaseError> {
+    let started = Instant::now();
+    let s = sessions.session(&req.session_id)?;
+    let name: String = req.file_name.chars().map(|c| if c.is_alphanumeric() || matches!(c, '.' | '-' | '_') { c } else { '_' }).collect();
+    let folder = match req.folder.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
+        Some(f) => f.to_string(),
+        None => s.default_backup_dir().await?,
+    };
+    let sep = if folder.contains('\\') { '\\' } else { '/' };
+    let path = format!("{}{sep}{name}.bak", folder.trim_end_matches(['/', '\\']));
+    s.backup(&req.database, &path, &name, &req.comment).await?;
+    let bytes = s.backup_list(&req.database).await?.into_iter().find(|b| b.path == path).map_or(0, |b| b.bytes);
+    Ok(BackupResult { bytes, elapsed_ms: started.elapsed().as_millis() as u64, path, tool: "sqlserver".into(), name })
+}
+
+/// Backups completos do banco, lidos do histórico do servidor.
+#[tauri::command]
+pub async fn mssql_backup_list(sessions: State<'_, MssqlSessions>, session_id: String, database: String, _schema: String) -> Result<Vec<BackupEntry>, DatabaseError> {
+    let rows = sessions.session(&session_id)?.backup_list(&database).await?;
+    Ok(rows
+        .into_iter()
+        .map(|b| {
+            let file = b.path.rsplit(['/', '\\']).next().unwrap_or(&b.path).to_string();
+            BackupEntry { name: file.strip_suffix(".bak").unwrap_or(&file).to_string(), path: b.path, meta_path: String::new(), bytes: b.bytes, modified_ms: b.finished_ms, comment: b.description, scope: "database".into() }
+        })
+        .collect())
+}
+
+/// Restaura um backup (caminho no servidor): o banco passa a ter o conteúdo do arquivo.
+#[tauri::command]
+pub async fn mssql_restore(sessions: State<'_, MssqlSessions>, req: RestoreRequest) -> Result<BackupResult, DatabaseError> {
+    let started = Instant::now();
+    if req.extract_to.is_some() {
+        return Err(DatabaseError::new(ErrorKind::UnsupportedFeature, "extracting SQL from a backup is not available for SQL Server"));
+    }
+    sessions.session(&req.session_id)?.restore(&req.database, &req.path).await?;
+    Ok(BackupResult { bytes: 0, elapsed_ms: started.elapsed().as_millis() as u64, path: req.path, tool: "sqlserver".into(), name: String::new() })
 }
 
 /// Pede para parar uma busca nos dados.
