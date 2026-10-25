@@ -12,9 +12,11 @@ use rusqlite::{Connection, InterruptHandle, OpenFlags};
 use serde::{Deserialize, Serialize};
 
 pub mod diagram;
+pub mod dump;
 pub mod find;
 pub mod import;
 pub mod profile;
+pub use dump::DumpPlan;
 pub use find::{FindDataResult, FindOptions, FindResult};
 pub use import::{Feed as ImportFeed, Hooks as ImportHooks, ImportMode, ImportSpec, ImportStats, TargetColumn, declared_type};
 pub use profile::DataProfile;
@@ -700,6 +702,11 @@ impl SqliteSession {
         let mut dst = open_connection(&self.path)?;
         let backup = rusqlite::backup::Backup::new(&src, &mut dst).map_err(map_err)?;
         backup.run_to_completion(256, Duration::from_millis(0), None).map_err(map_err)
+    }
+
+    /// Os comandos que recriam as tabelas e views pedidas (`None` = todas) e os dados a copiar; `clean` põe um `DROP ... IF EXISTS` antes.
+    pub fn dump_plan(&self, tables: Option<&[String]>, views: Option<&[String]>, clean: bool) -> Result<DumpPlan, DatabaseError> {
+        self.with(|c| dump::plan_on(c, tables, views, clean))
     }
 
     pub fn schema_diagram(&self) -> Result<atlas_core::SchemaDiagram, DatabaseError> {

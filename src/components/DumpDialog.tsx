@@ -6,6 +6,7 @@ import {
 import { useT } from "../i18n";
 import { formatBytes } from "../model";
 import { SmallIcon } from "../icons";
+import { isSqliteId } from "../providerRoute";
 
 export interface DumpTarget {
   connId: string;
@@ -29,7 +30,9 @@ export function DumpDialog({ target, onClose }: Props) {
   const sep = useMemo(pathSeparator, []);
   const [structure, setStructure] = useState(true);
   const [data, setData] = useState(!target.structureOnly);
-  const [format, setFormat] = useState<"copy" | "insert">("copy");
+  // O SQLite só tem `INSERT` (não há COPY).
+  const sqlite = isSqliteId(target.connId);
+  const [format, setFormat] = useState<"copy" | "insert">(sqlite ? "insert" : "copy");
   const [rowsPerInsert, setRowsPerInsert] = useState(100);
   const [clean, setClean] = useState(false);
   const [owner, setOwner] = useState(false);
@@ -75,7 +78,7 @@ export function DumpDialog({ target, onClose }: Props) {
     setRows(0);
     setElapsed(0);
     setRunning(true);
-    const id = crypto.randomUUID();
+    const id = `${isSqliteId(target.connId) ? "sqlite_" : ""}${crypto.randomUUID()}`;
     dumpId.current = id;
     const unlisten = await onExportProgress(id, (n) => setRows(n));
     try {
@@ -111,11 +114,11 @@ export function DumpDialog({ target, onClose }: Props) {
           </div>
           {data && (
             <div className="dump-row">
-              <label>{t("dump.format")}</label>
-              <select className="field" value={format} disabled={running} onChange={(e) => setFormat(e.target.value as "copy" | "insert")}>
+              {!sqlite && <label>{t("dump.format")}</label>}
+              {!sqlite && <select className="field" value={format} disabled={running} onChange={(e) => setFormat(e.target.value as "copy" | "insert")}>
                 <option value="copy">{t("dump.formatCopy")}</option>
                 <option value="insert">{t("dump.formatInsert")}</option>
-              </select>
+              </select>}
               {format === "insert" && (
                 <>
                   <label>{t("exp.rowsPerInsert")}</label>
@@ -126,7 +129,7 @@ export function DumpDialog({ target, onClose }: Props) {
           )}
           <div className="dump-row">
             <label className="check-row" title={t("dump.cleanHint")}><input type="checkbox" checked={clean} disabled={running || !structure} onChange={(e) => setClean(e.target.checked)} /><span>{t("dump.clean")}</span></label>
-            <label className="check-row"><input type="checkbox" checked={owner} disabled={running || !structure} onChange={(e) => setOwner(e.target.checked)} /><span>{t("dump.owner")}</span></label>
+            {!sqlite && <label className="check-row"><input type="checkbox" checked={owner} disabled={running || !structure} onChange={(e) => setOwner(e.target.checked)} /><span>{t("dump.owner")}</span></label>}
           </div>
           <div className="dump-row dump-path">
             <label>{t("dump.file")}</label>

@@ -4,6 +4,7 @@
 use crate::commands::{TABLE_ROWS_CAP, TableRows};
 use crate::export::{ExportRequest, ExportResult, PartFile, Progress, io_error, part_path, validate_path};
 use crate::import::{ImportRequest, ImportSummary, JobResult, LogEvent, ProgressEvent, failed_job};
+use crate::dump::{DumpRequest, DumpResult};
 use crate::backup::{BackupEntry, BackupRequest, BackupResult, LogLine, RestoreRequest, Sidecar, safe_segment, store_dir};
 use atlas_export::ExportColumn;
 use std::path::PathBuf;
@@ -528,6 +529,116 @@ pub async fn sqlite_restore(app: tauri::AppHandle, sessions: State<'_, SqliteSes
     tokio::task::spawn_blocking(move || s.restore_from(&from)).await.map_err(|e| DatabaseError::new(ErrorKind::Internal, e.to_string()))??;
     let _ = app.emit("backup-log", LogLine { job_id: &req.job_id, line: "restore finished" });
     Ok(BackupResult { bytes: fs::metadata(&source).map(|m| m.len()).unwrap_or(0), elapsed_ms: started.elapsed().as_millis() as u64, path: source.to_string_lossy().into_owned(), tool: "sqlite".into(), name: String::new() })
+}
+
+/// Destino compartilhado pelo dump e pelo gravador de `INSERT` (cada um escreve sem o outro estar no meio de uma linha).
+#[derive(Clone)]
+struct DumpSink(Arc<Mutex<std::io::BufWriter<File>>>);
+
+impl std::io::Write for DumpSink {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().write(data)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.0.lock().unwrap().flush()
+    }
+}
+
+/// Dump SQL: os `CREATE` guardados no arquivo e os dados como `INSERT`, num script que o `sqlite3` e o Atlas executam de volta.
+#[tauri::command]
+pub async fn sqlite_dump_sql(app: tauri::AppHandle, sessions: State<'_, SqliteSessions>, req: DumpRequest) -> Result<DumpResult, DatabaseError> {
+    use std::io::Write;
+    let started = Instant::now();
+    let dest = validate_path(&req.path)?;
+    if !req.options.structure && !req.options.data {
+        return Err(DatabaseError::new(ErrorKind::InvalidInput, "escolha ao menos estrutura ou dados"));
+    }
+    let s = sessions.session(&req.session_id)?;
+    let cancel = Arc::new(AtomicBool::new(false));
+    if let Ok(mut m) = sessions.finds.lock() {
+        m.insert(req.dump_id.clone(), cancel.clone());
+    }
+    let dump_id = req.dump_id.clone();
+    let task = tokio::task::spawn_blocking(move || -> Result<DumpResult, DatabaseError> {
+        let (tables, views): (Option<Vec<String>>, Option<Vec<String>>) = match &req.options.scope {
+            atlas_pg::DumpScope::Database | atlas_pg::DumpScope::Schema { .. } => (None, None),
+            atlas_pg::DumpScope::Tables { tables, .. } => (Some(tables.clone()), Some(Vec::new())),
+            atlas_pg::DumpScope::Selection { tables, views, .. } => (Some(tables.clone()), Some(views.clone())),
+        };
+        let plan = s.dump_plan(tables.as_deref(), views.as_deref(), req.options.clean)?;
+        let mut part = PartFile::new(part_path(&dest));
+        let out = DumpSink(Arc::new(Mutex::new(std::io::BufWriter::with_capacity(256 * 1024, File::create(&part.path).map_err(io_error)?))));
+        let write = |text: &str| -> Result<(), DatabaseError> { out.clone().write_all(text.as_bytes()).map_err(io_error) };
+        let canceled = || DatabaseError::new(ErrorKind::Canceled, "dump canceled");
+        write(&format!("-- Atlas DB Manager: SQL dump\n-- SQLite {}; arquivo: {}\n\nPRAGMA foreign_keys = OFF;\nBEGIN TRANSACTION;\n", s.version, s.path.display()))?;
+        if req.options.structure {
+            for stmt in &plan.pre_data {
+                write(&format!("\n{stmt}\n"))?;
+            }
+        }
+        let mut rows = 0u64;
+        let mut last_emit = Instant::now();
+        if req.options.data {
+            for table in &plan.data_tables {
+                if cancel.load(Ordering::Relaxed) {
+                    return Err(canceled());
+                }
+                let quoted = atlas_pg::quote_ident(table);
+                write(&format!("\n-- Dados de {quoted}\n"))?;
+                let format = atlas_export::ExportFormat::Sql { rows_per_insert: req.rows_per_insert.clamp(1, 1000) };
+                let writer = Mutex::new(atlas_export::create_stream(&format, &atlas_export::WriterTarget { sql: &quoted, title: table }, Box::new(out.clone())).map_err(io_error)?);
+                let mut table_rows = 0u64;
+                atlas_sqlite::stream_rows(
+                    &s.path,
+                    &atlas_sqlite::select_sql(table, &[], None),
+                    |cols| {
+                        let cols: Vec<ExportColumn> = cols.iter().map(|c| ExportColumn { name: c.name.clone(), type_name: c.type_name.as_deref().map(export_type) }).collect();
+                        writer.lock().unwrap().begin(&cols).map_err(io_error)
+                    },
+                    |values| {
+                        if cancel.load(Ordering::Relaxed) {
+                            return Ok(false);
+                        }
+                        writer.lock().unwrap().row(values).map_err(io_error)?;
+                        table_rows += 1;
+                        if last_emit.elapsed() >= Duration::from_millis(200) {
+                            last_emit = Instant::now();
+                            let _ = app.emit("export-progress", Progress { export_id: &req.dump_id, rows: rows + table_rows });
+                        }
+                        Ok(true)
+                    },
+                )?;
+                if cancel.load(Ordering::Relaxed) {
+                    return Err(canceled());
+                }
+                writer.into_inner().unwrap().finish().map_err(io_error)?;
+                rows += table_rows;
+            }
+        }
+        if req.options.structure {
+            for stmt in &plan.post_data {
+                write(&format!("\n{stmt}\n"))?;
+            }
+        }
+        write("\nCOMMIT;\nPRAGMA foreign_keys = ON;\n")?;
+        out.clone().flush().map_err(io_error)?;
+        fs::rename(&part.path, &dest).map_err(io_error)?;
+        part.keep = true;
+        let _ = app.emit("export-progress", Progress { export_id: &req.dump_id, rows });
+        Ok(DumpResult {
+            objects: plan.objects,
+            tables: plan.data_tables.len(),
+            rows,
+            bytes: fs::metadata(&dest).map(|m| m.len()).unwrap_or(0),
+            elapsed_ms: started.elapsed().as_millis() as u64,
+            path: dest.to_string_lossy().into_owned(),
+        })
+    });
+    let out = task.await.map_err(|e| DatabaseError::new(ErrorKind::Internal, e.to_string()))?;
+    if let Ok(mut m) = sessions.finds.lock() {
+        m.remove(&dump_id);
+    }
+    out
 }
 
 /// Pede para parar uma busca nos dados.
