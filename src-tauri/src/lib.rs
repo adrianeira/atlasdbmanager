@@ -202,6 +202,7 @@ pub fn run() {
             mssql::mssql_fk_labels,
             mssql::mssql_schema_diagram,
             mssql::mssql_export,
+            mssql::mssql_import,
             mssql::mssql_find,
             mssql::mssql_find_data,
             mssql::mssql_export_cancel,

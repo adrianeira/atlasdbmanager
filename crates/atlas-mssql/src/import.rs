@@ -93,10 +93,10 @@ pub fn declared_type(pg_type: &str) -> String {
     }
 }
 
-struct Runner<'a> {
+struct Runner<'a, 'h> {
     conn: &'a mut Conn,
     spec: &'a ImportSpec,
-    hooks: Hooks<'a>,
+    hooks: Hooks<'h>,
     stats: ImportStats,
     last_progress: Instant,
     row_no: u64,
@@ -109,7 +109,7 @@ fn row_error(e: DatabaseError, row_no: u64) -> DatabaseError {
     DatabaseError { message: format!("row {row_no}: {}", e.message), ..e }
 }
 
-impl Runner<'_> {
+impl Runner<'_, '_> {
     fn column_list(&self) -> String {
         self.spec.columns.iter().map(|c| quote_ident(&c.name)).collect::<Vec<_>>().join(", ")
     }

@@ -1,4 +1,4 @@
-import { isSqliteId } from "../../providerRoute";
+import { idPrefix } from "../../providerRoute";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MenuEntry } from "../../commands";
 import {
@@ -364,7 +364,7 @@ export function ImportWizard({ target, onClose, onDone }: Props) {
     }
     saveLast(kind, settings, advanced);
     const add = (text: string, error = false) => setLog((l) => [...l, { text, error }]);
-    importId.current = `${isSqliteId(target.connId) ? "sqlite_" : ""}${crypto.randomUUID()}`;
+    importId.current = `${idPrefix(target.connId)}${crypto.randomUUID()}`;
     const id = importId.current;
     startedAt.current = performance.now();
     setElapsed(0);

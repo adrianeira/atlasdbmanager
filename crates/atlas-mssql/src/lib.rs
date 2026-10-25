@@ -6,12 +6,14 @@
 
 mod extra;
 mod find;
+mod import;
 mod meta;
 mod rows;
 mod values;
 
 pub use extra::FkLabels;
 pub use find::{FindDataResult, FindMode, FindOptions, FindResult};
+pub use import::{Feed as ImportFeed, Hooks as ImportHooks, ImportMode, ImportSpec, ImportStats, TargetColumn, declared_type};
 
 use atlas_core::{ConnectionParams, DatabaseError, ErrorKind, ServerInfo, SslMode};
 use futures_util::TryStreamExt;

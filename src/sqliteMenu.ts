@@ -14,7 +14,7 @@ const NOT_IN_SQLITE = new Set<MessageKey>([
 const NOT_IN_MSSQL = new Set<MessageKey>([
   "cmd.newDatabase", "cmd.editDatabase", "cmd.deleteDatabase", "cmd.editSchema",
   "cmd.newBackup", "cmd.restoreBackup", "cmd.extractSql", "cmd.reverseToModel", "cmd.share",
-  "sub.duplicateTable", "sub.dumpSql", "act.importWizard", "cmd.console",
+  "sub.duplicateTable", "sub.dumpSql", "cmd.console",
   "cmd.renameTable", "cmd.renameView",
 ]);
 
