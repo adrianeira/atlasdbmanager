@@ -8,7 +8,7 @@ use tokio_postgres::types::ToSql;
 
 /// Um comando com parâmetros posicionais em texto. O SQL faz o cast para o tipo da coluna
 /// (`$1::text::int4`), então os valores nunca são concatenados no texto (ADR-008).
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlannedStatement {
     pub sql: String,
@@ -17,6 +17,20 @@ pub struct PlannedStatement {
     /// UPDATE/DELETE de linha: precisa afetar exatamente 1 linha, senão é conflito (spec §31.4).
     #[serde(default)]
     pub expect_one_row: bool,
+    /// UPDATE/DELETE em tabela sem chave: a linha é achada por todos os valores, então linhas iguais são todas afetadas; só zero é conflito.
+    #[serde(default)]
+    pub expect_at_least_one: bool,
+}
+
+/// O que há de errado com a contagem de linhas afetadas, se houver.
+fn count_problem(st: &PlannedStatement, n: u64) -> Option<&'static str> {
+    if st.expect_one_row && n != 1 {
+        Some("expected exactly 1")
+    } else if st.expect_at_least_one && n == 0 {
+        Some("expected at least 1")
+    } else {
+        None
+    }
 }
 
 /// Executa tudo em uma transação em conexão dedicada; qualquer falha ou contagem
@@ -34,11 +48,11 @@ pub async fn apply_in_transaction(conn: PgSession, statements: &[PlannedStatemen
                 return Err(map_error(&e));
             }
         };
-        if st.expect_one_row && n != 1 {
+        if let Some(expected) = count_problem(st, n) {
             let _ = client.batch_execute("ROLLBACK").await;
             let mut err = DatabaseError::new(
                 ErrorKind::ConcurrencyConflict,
-                format!("statement {} affected {n} rows (expected exactly 1); all changes were rolled back", i + 1),
+                format!("statement {} affected {n} rows ({expected}); all changes were rolled back", i + 1),
             );
             err.detail = Some(st.sql.clone());
             return Err(err);
@@ -72,10 +86,10 @@ pub async fn apply_in_open_transaction(conn: &PgSession, statements: &[PlannedSt
         let params: Vec<&(dyn ToSql + Sync)> = st.params.iter().map(|p| p as &(dyn ToSql + Sync)).collect();
         let res = conn.client.execute(st.sql.as_str(), &params).await.map_err(|e| map_error(&e));
         let failure = match res {
-            Ok(n) if st.expect_one_row && n != 1 => {
+            Ok(n) if count_problem(st, n).is_some() => {
                 let mut err = DatabaseError::new(
                     ErrorKind::ConcurrencyConflict,
-                    format!("statement {} affected {n} rows (expected exactly 1); this batch was rolled back", i + 1),
+                    format!("statement {} affected {n} rows ({}); this batch was rolled back", i + 1, count_problem(st, n).unwrap_or_default()),
                 );
                 err.detail = Some(st.sql.clone());
                 Some(err)
@@ -93,4 +107,22 @@ pub async fn apply_in_open_transaction(conn: &PgSession, statements: &[PlannedSt
     }
     conn.client.batch_execute("RELEASE SAVEPOINT atlas_batch").await.map_err(|e| map_error(&e))?;
     Ok(affected)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn row_count_rules() {
+        let one = PlannedStatement { expect_one_row: true, ..Default::default() };
+        assert!(count_problem(&one, 1).is_none());
+        assert!(count_problem(&one, 0).is_some() && count_problem(&one, 2).is_some());
+        // Tabela sem chave: linhas iguais são todas afetadas (vale 3), só zero é conflito.
+        let keyless = PlannedStatement { expect_at_least_one: true, ..Default::default() };
+        assert!(count_problem(&keyless, 1).is_none() && count_problem(&keyless, 3).is_none());
+        assert!(count_problem(&keyless, 0).is_some());
+        // INSERT e DDL não conferem a contagem.
+        assert!(count_problem(&PlannedStatement::default(), 0).is_none());
+    }
 }

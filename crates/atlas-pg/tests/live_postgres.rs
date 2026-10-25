@@ -153,6 +153,7 @@ async fn apply_commits_or_rolls_back_on_conflict() {
             sql: "UPDATE atlas_a SET v = $1::text WHERE id = $2::text::int4 AND v = $3::text".into(),
             params: vec![Some("O'Brien; DROP".into()), Some("1".into()), Some("a".into())],
             expect_one_row: true,
+            ..Default::default()
         }],
     )
     .await
@@ -167,11 +168,12 @@ async fn apply_commits_or_rolls_back_on_conflict() {
     let err = atlas_pg::apply_in_transaction(
         s,
         &[
-            PlannedStatement { sql: "UPDATE atlas_b SET v = 'changed' WHERE id = 2".into(), params: vec![], expect_one_row: true },
+            PlannedStatement { sql: "UPDATE atlas_b SET v = 'changed' WHERE id = 2".into(), params: vec![], expect_one_row: true, ..Default::default() },
             PlannedStatement {
                 sql: "UPDATE atlas_b SET v = $1::text WHERE id = $2::text::int4 AND v = $3::text".into(),
                 params: vec![Some("x".into()), Some("1".into()), Some("stale".into())],
                 expect_one_row: true,
+                ..Default::default()
             },
         ],
     )
@@ -188,7 +190,7 @@ async fn manual_transaction_keeps_batches_until_commit() {
     atlas_pg::execute(&setup, &format!("DROP TABLE IF EXISTS {name}; CREATE TABLE {name}(id int primary key, v text); INSERT INTO {name} VALUES (1,'a'),(2,'b')"), 1)
         .await
         .unwrap();
-    let st = |sql: String, params: Vec<Option<String>>| atlas_pg::PlannedStatement { sql, params, expect_one_row: true };
+    let st = |sql: String, params: Vec<Option<String>>| atlas_pg::PlannedStatement { sql, params, expect_one_row: true, ..Default::default() };
 
     let tx = atlas_pg::connect(&p, None).await.expect("connect");
     atlas_pg::begin_manual_transaction(&tx).await.unwrap();

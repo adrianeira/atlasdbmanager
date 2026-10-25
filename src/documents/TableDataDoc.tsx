@@ -17,6 +17,7 @@ import { columnType, selectSql } from "../sql/ddl";
 import { useOptions } from "../options";
 import { isDefaultView, prefKey, sanitizeView } from "../tableView";
 import type { DataSnapshot, SnapshotRef } from "../tabState";
+import { NO_EQUALITY } from "../live";
 
 /** Acesso ao banco real; ausente = modo de demonstração com dados fictícios. */
 export interface TableDataBackend {
@@ -25,7 +26,8 @@ export interface TableDataBackend {
   loadProfile?: () => Promise<import("../backend").TableProfile>;
   /** `limit = null`: sem LIMIT ("Limitar registros" desmarcado). */
   loadRows: (orderBy: OrderBy[], filter: TableFilter | null, limit: number | null, offset: number) => Promise<{ sql: string; rows: CellValue[][]; truncated: boolean }>;
-  apply: (statements: PlannedStatement[]) => Promise<void>;
+  /** Devolve as linhas afetadas por comando (quando o servidor informa). */
+  apply: (statements: PlannedStatement[]) => Promise<number[] | void>;
   /** Opcional: cancela a consulta em andamento no servidor (botão "Parar"). */
   cancel?: () => Promise<void>;
   /** Opcional: total de registros (respeitando o filtro) para a navegação de páginas. */
@@ -66,7 +68,11 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   const [table, setTable] = useState<DbObject>(tableProp);
   const cols = useMemo(() => table.columns ?? [], [table]);
   const keyCols = cols.map((c, i) => ({ c, i })).filter((x) => x.c.key).sort((a, b) => (a.c.key ?? 0) - (b.c.key ?? 0));
-  const readOnly = isView || keyCols.length === 0;
+  // Sem chave primária a tabela ainda edita: a linha é achada por todos os valores e linhas iguais são todas afetadas (aviso na tela).
+  // Só fica somente leitura se nenhuma coluna tem igualdade para servir de condição (ex.: só `json`).
+  const keyless = !isView && keyCols.length === 0;
+  const keylessUsable = cols.some((c) => !NO_EQUALITY.has(c.type));
+  const readOnly = isView || (keyless && !keylessUsable);
 
   // "Columns" da toolbar: colunas ocultas do grid, por nome (os dados continuam carregados).
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
@@ -110,6 +116,8 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   const [loadError, setLoadError] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
+  /** Aviso depois de gravar (ex.: sem chave, mais linhas afetadas do que alteradas na tela). */
+  const [applyNote, setApplyNote] = useState<string | null>(null);
   // Transação manual (botão "Iniciar transação"): alterações aplicadas só valem de vez ao confirmar.
   const [inTx, setInTx] = useState(false);
   const [txBusy, setTxBusy] = useState(false);
@@ -432,8 +440,16 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
     if (backend) {
       setApplying(true);
       setApplyError(null);
+      setApplyNote(null);
       try {
-        await backend.apply(plannedStatements({ schema, table: table.name, columns: cols, original, current: rows, edited, newRows, deleted }));
+        const planned = plannedStatements({ schema, table: table.name, columns: cols, original, current: rows, edited, newRows, deleted });
+        const counts = await backend.apply(planned);
+        // Sem chave, linhas iguais são todas afetadas: avisa quantas linhas o servidor realmente mudou.
+        if (keyless && counts) {
+          const expected = planned.length;
+          const total = counts.reduce((a, b) => a + b, 0);
+          setApplyNote(total > expected ? t("data.keylessAffected", { n: total }) : null);
+        }
       } catch (e) {
         setApplyError(errorText(toAtlasError(e)));
         setApplying(false);
@@ -456,7 +472,8 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
 
   /* ----- Gravação automática ao mudar de registro (como a referência) ----- */
   // Produção continua só pelo Aplicar (com revisão); exclusões também só pelo Aplicar.
-  const autoSave = !production && !readOnly;
+  // Sem chave não grava ao sair da linha: o usuário aplica de propósito, sabendo que linhas iguais são todas afetadas.
+  const autoSave = !production && !readOnly && !keyless;
   const rowPending = (r: number) => newRows.has(r) || [...edited].some((k) => k.startsWith(`${r}:`));
   const savingRow = useRef(false);
 
@@ -736,6 +753,8 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
       {loadError && <div className="doc-banner is-warn">{loadError}</div>}
       {!loadError && truncated && <div className="doc-banner is-warn">{t("data.truncatedAll", { n: rows.length.toLocaleString() })}</div>}
       {!loadError && !loading && readOnly && !isView && <div className="doc-banner">{t("data.readOnlyNoKey")}</div>}
+      {!loadError && !loading && keyless && !readOnly && <div className="doc-banner is-warn">{t("data.noKeyNote")}</div>}
+      {applyNote && <div className="doc-banner is-warn">{applyNote}</div>}
       {!readOnly && production && <div className="doc-banner is-warn">{t("data.productionBanner")}</div>}
 
       <div className="doc-body">

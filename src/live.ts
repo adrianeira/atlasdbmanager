@@ -100,7 +100,7 @@ export function tableFromServer(base: DbObject, d: TableDetail): DbObject {
 /* ---------- Comandos parametrizados para a edição de dados ---------- */
 
 // Tipos sem operador de igualdade: não entram na comparação otimista.
-const NO_EQUALITY = new Set(["json", "xml", "point", "line", "lseg", "box", "path", "polygon", "circle"]);
+export const NO_EQUALITY = new Set(["json", "xml", "point", "line", "lseg", "box", "path", "polygon", "circle"]);
 
 export interface RowChanges {
   schema: string;
@@ -121,6 +121,8 @@ export interface RowChanges {
 export function plannedStatements(c: RowChanges): PlannedStatement[] {
   const target = `${quoteIdent(c.schema)}.${quoteIdent(c.table)}`;
   const keys = c.columns.map((col, i) => ({ col, i })).filter((x) => x.col.key).sort((a, b) => (a.col.key ?? 0) - (b.col.key ?? 0));
+  // Sem chave primária, a linha é achada por todos os valores (menos os de tipos sem igualdade): linhas iguais são todas afetadas.
+  const keyless = keys.length === 0;
   const cast = (col: ColumnDef) => col.castType ?? col.type;
   const out: PlannedStatement[] = [];
 
@@ -134,8 +136,9 @@ export function plannedStatements(c: RowChanges): PlannedStatement[] {
         conds.push(`${quoteIdent(col.name)} = $${params.length}::text::${cast(col)}`);
       }
     };
+    if (keyless) c.columns.forEach((col, i) => { if (!NO_EQUALITY.has(col.type)) add(i); });
     keys.forEach(({ i }) => add(i));
-    extra.filter((i) => !c.columns[i].key && !NO_EQUALITY.has(c.columns[i].type)).forEach(add);
+    if (!keyless) extra.filter((i) => !c.columns[i].key && !NO_EQUALITY.has(c.columns[i].type)).forEach(add);
     return conds.join(" AND ");
   };
 
@@ -150,7 +153,7 @@ export function plannedStatements(c: RowChanges): PlannedStatement[] {
       params.push(c.current[r][i]);
       return `${quoteIdent(c.columns[i].name)} = $${params.length}::text::${cast(c.columns[i])}`;
     });
-    out.push({ sql: `UPDATE ${target} SET ${set.join(", ")} WHERE ${whereFor(c.original[r], params, cols)}`, params, expectOneRow: true });
+    out.push({ sql: `UPDATE ${target} SET ${set.join(", ")} WHERE ${whereFor(c.original[r], params, cols)}`, params, expectOneRow: !keyless, expectAtLeastOne: keyless });
   }
   for (const r of c.newRows) {
     const filled = c.columns.map((col, i) => ({ col, v: c.current[r][i] })).filter((x) => x.v !== null);
@@ -167,7 +170,7 @@ export function plannedStatements(c: RowChanges): PlannedStatement[] {
   }
   for (const r of c.deleted) {
     const params: (string | null)[] = [];
-    out.push({ sql: `DELETE FROM ${target} WHERE ${whereFor(c.original[r], params, [])}`, params, expectOneRow: true });
+    out.push({ sql: `DELETE FROM ${target} WHERE ${whereFor(c.original[r], params, [])}`, params, expectOneRow: !keyless, expectAtLeastOne: keyless });
   }
   return out;
 }

@@ -25,10 +25,7 @@ export function makeTableBackend(connId: string, db: string, schema: string, obj
       const rs = r.outcome.statements[0]?.result;
       return { sql: r.sql, rows: rs?.rows ?? [], truncated: !!rs?.truncated };
     },
-    apply: async (statements) => {
-      if (txId) await pg.txApply(txId, statements);
-      else await pg.apply(connId, db, statements);
-    },
+    apply: (statements) => (txId ? pg.txApply(txId, statements) : pg.apply(connId, db, statements)),
     cancel: async () => {
       await pg.cancel(connId, db);
     },
