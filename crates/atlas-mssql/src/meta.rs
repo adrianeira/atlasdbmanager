@@ -328,7 +328,8 @@ impl MssqlSession {
                 ref_fields: None,
                 on_delete: None,
                 on_update: None,
-                definition: format!("CHECK ({})", strip_parens(&s(r, 1))),
+                // Na forma `CHECK ((expressão))`, como o PostgreSQL escreve: é o que a interface sabe desembrulhar.
+                definition: format!("CHECK (({}))", strip_parens(&s(r, 1))),
                 comment: None,
             });
         }

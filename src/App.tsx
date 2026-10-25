@@ -46,7 +46,7 @@ import { liveLookupSource, makeTableBackend } from "./docBackends";
 import { newConnectionId } from "./providerRoute";
 import { hasMenuFilter, hiddenKeys, menuForProvider } from "./sqliteMenu";
 import { createTableStatementsSqlite } from "./sql/sqliteDdl";
-import { renameStatementMssql } from "./sql/mssqlDdl";
+import { createTableStatementsMssql, q as quoteMssql, renameStatementMssql } from "./sql/mssqlDdl";
 import type { SavedTable } from "./tabWindow";
 import type { SnapshotRef } from "./tabState";
 import { viewKeyOf } from "./tableView";
@@ -2043,7 +2043,34 @@ export default function App() {
           }
         })();
       });
-      const duplicate = (withData: boolean) => conn.provider === "sqlite" ? duplicateSqlite(withData) : askName(t("sub.duplicateTable"), t("msg.copyTableName"), `${name}_copy`, (copy) => askDdl({
+      // SQL Server: o CREATE da cópia sai da estrutura lida do servidor; os dados vão com `IDENTITY_INSERT` quando a tabela tem identidade.
+      const duplicateMssql = (withData: boolean) => askName(t("sub.duplicateTable"), t("msg.copyTableName"), `${name}_copy`, (copy) => {
+        void (async () => {
+          try {
+            const obj = tableFromServer({ name }, await pg.tableDetail(conn.id, dbName, scName, name));
+            const cols = obj.columns ?? [];
+            obj.columns = cols.map((col) => ({ ...col, autoInc: !!col.identity }));
+            // O nome das restrições e dos índices é por tabela no SQL Server: ganham o nome da cópia na frente.
+            obj.foreignKeys = (obj.foreignKeys ?? []).map((f) => ({ ...f, name: `${copy}_${f.name}` }));
+            obj.uniques = (obj.uniques ?? []).map((u) => ({ ...u, name: u.name ? `${copy}_${u.name}` : u.name }));
+            obj.checks = (obj.checks ?? []).map((c) => ({ ...c, name: c.name ? `${copy}_${c.name}` : c.name }));
+            obj.indexes = (obj.indexes ?? []).filter((i) => !i.primary && !(obj.uniques ?? []).some((u) => u.name === `${copy}_${i.name}`)).map((i) => ({ ...i, name: `${copy}_${i.name}` }));
+            const statements = createTableStatementsMssql(scName, obj, copy);
+            if (withData) {
+              const target = `${quoteMssql(scName)}.${quoteMssql(copy)}`;
+              const list = cols.filter((col) => !col.generated).map((col) => quoteMssql(col.name)).join(", ");
+              const hasIdentity = cols.some((col) => col.identity);
+              if (hasIdentity) statements.push(`SET IDENTITY_INSERT ${target} ON`);
+              statements.push(`INSERT INTO ${target} (${list}) SELECT ${list} FROM ${quoteMssql(scName)}.${quoteMssql(name)}`);
+              if (hasIdentity) statements.push(`SET IDENTITY_INSERT ${target} OFF`);
+            }
+            askDdl({ ...scope, title: t("sub.duplicateTable"), statements: statements.map((x) => `${x};`) });
+          } catch (e) {
+            showError(t("sub.duplicateTable"), e);
+          }
+        })();
+      });
+      const duplicate = (withData: boolean) => conn.provider === "sqlserver" ? duplicateMssql(withData) : conn.provider === "sqlite" ? duplicateSqlite(withData) : askName(t("sub.duplicateTable"), t("msg.copyTableName"), `${name}_copy`, (copy) => askDdl({
         ...scope, title: t("sub.duplicateTable"),
         statements: [
           `CREATE TABLE ${quoteIdent(scName)}.${quoteIdent(copy)} (LIKE ${target} INCLUDING ALL);`,
