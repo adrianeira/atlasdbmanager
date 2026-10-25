@@ -2819,3 +2819,5 @@ select.et-input {
 .pf-bar { flex: 1; min-width: 14px; max-width: 46px; display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; border: 0; background: none; padding: 0; cursor: pointer; }
 .pf-bar-fill { display: block; width: 100%; }
 .pf-bar-label { height: 28px; font-size: 11px; color: var(--c-text-muted); text-align: center; overflow: hidden; transform: rotate(-35deg); transform-origin: 50% 40%; white-space: nowrap; padding-top: 6px; }
+.pf-toolbar .btn { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.pf-toolbar .btn.is-active { background: var(--c-selected); }
