@@ -125,8 +125,6 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   const [profScope, setProfScope] = useState<ProfileScope>(DEFAULT_SCOPE);
   const [prof, setProf] = useState<import("../backend").DataProfile | null>(null);
   const [profBusy, setProfBusy] = useState(false);
-  /** Com o perfil na tela, o botão Settings reabre o painel do que perfilar. */
-  const [profSettings, setProfSettings] = useState(false);
   const [profError, setProfError] = useState<string | null>(null);
   const [spot, setSpot] = useState<Spotlight | null>(null);
   const startProfiling = async () => {
@@ -135,8 +133,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
     let filter: TableFilter | null = null;
     let order: OrderBy[] = [];
     let limit: number | null = null;
-    // Com o perfil na tela (botão Settings) vale sempre o filtro, a ordem e o limite do painel; vazios = todos os registros.
-    if (profScope.mode === "filter" || profMode === "on") {
+    if (profScope.mode === "filter") {
       filter = profScope.filterText.trim() ? { expr: profScope.filterText } : null;
       const parsed = parseSort(profScope.sortText, cols.map((c) => c.name));
       if (parsed.bad) return setProfError(t("pf.badSort", { name: parsed.bad }));
@@ -150,7 +147,6 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
     try {
       setProf(await backend.profileData(cols.map((c) => c.name), order, filter, limit));
       setSpot(null);
-      setProfSettings(false);
       setProfMode("on");
     } catch (e) {
       setProfError(errorText(toAtlasError(e)));
@@ -807,12 +803,11 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
       {!loadError && !loading && keyless && !readOnly && <div className="doc-banner is-warn">{t("data.noKeyNote")}</div>}
       {!readOnly && production && <div className="doc-banner is-warn">{t("data.productionBanner")}</div>}
 
-      {(profMode === "setup" || (profMode === "on" && profSettings)) && <ProfileSetup columns={cols} scope={profScope} onScope={setProfScope} busy={profBusy} error={profError} settings={profMode === "on"} onStart={() => void startProfiling()} />}
+      {profMode === "setup" && <ProfileSetup columns={cols} scope={profScope} onScope={setProfScope} busy={profBusy} error={profError} onStart={() => void startProfiling()} />}
       {profMode === "on" && prof && (
         <div className="pf-toolbar">
           <strong>{t("data.profiling")}</strong>
           <span className="muted">{t("pf.records2", { n: prof.rows })}</span>
-          <button type="button" className={`btn${profSettings ? " is-active" : ""}`} onClick={() => setProfSettings((v) => !v)}><SmallIcon name="filterSort" /> {t("pf.settings")}</button>
           <span className="spacer" />
           {spot && (
             <>
@@ -821,7 +816,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
               <button type="button" className="icon-button" title={t("pf.nextSpot")} onClick={() => stepSpot(1)}>▼</button>
             </>
           )}
-          <button type="button" className="btn" onClick={() => { setProfMode("off"); setProfSettings(false); setSpot(null); }}>{t("pf.exit")}</button>
+          <button type="button" className="btn" onClick={() => { setProfMode("off"); setSpot(null); }}>{t("pf.exit")}</button>
         </div>
       )}
       <div className="doc-body">

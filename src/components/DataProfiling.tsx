@@ -55,25 +55,21 @@ interface SetupProps {
   busy: boolean;
   error: string | null;
   onStart: () => void;
-  /** Aberto pelo botão Settings com o perfil na tela: só o filtro, a ordem e o limite, e o botão vira "Apply Data Settings". */
-  settings?: boolean;
 }
 
 /** O painel que aparece ao clicar em Data Profiling: o que perfilar e o botão de começar. */
-export function ProfileSetup({ columns, scope, onScope, busy, error, onStart, settings }: SetupProps) {
+export function ProfileSetup({ columns, scope, onScope, busy, error, onStart }: SetupProps) {
   const t = useT();
   const [editor, setEditor] = useState(false);
   const set = (p: Partial<ProfileScope>) => onScope({ ...scope, ...p });
   const asFilter = scope.filterText.trim() ? { expr: scope.filterText } : null;
   return (
     <div className="pf-setup">
-      {!settings && (
-        <div className="pf-radios">
-          <label className="check-row"><input type="radio" name="pf-mode" checked={scope.mode === "all"} onChange={() => set({ mode: "all" })} /><span>{t("pf.allRecords")}</span></label>
-          <label className="check-row"><input type="radio" name="pf-mode" checked={scope.mode === "filter"} onChange={() => set({ mode: "filter" })} /><span>{t("pf.addFilter")}</span></label>
-        </div>
-      )}
-      {!settings && scope.mode === "all" ? (
+      <div className="pf-radios">
+        <label className="check-row"><input type="radio" name="pf-mode" checked={scope.mode === "all"} onChange={() => set({ mode: "all" })} /><span>{t("pf.allRecords")}</span></label>
+        <label className="check-row"><input type="radio" name="pf-mode" checked={scope.mode === "filter"} onChange={() => set({ mode: "filter" })} /><span>{t("pf.addFilter")}</span></label>
+      </div>
+      {scope.mode === "all" ? (
         <div className="muted">({t("pf.startAll")})</div>
       ) : (
         <div className="pf-filter">
@@ -108,7 +104,7 @@ export function ProfileSetup({ columns, scope, onScope, busy, error, onStart, se
         </div>
       )}
       {error && <div className="form-note form-note-warn">{error}</div>}
-      <div><button type="button" className="btn btn-primary" disabled={busy} onClick={onStart}>{busy ? t("pf.profiling") : t(settings ? "pf.apply" : "pf.start")}</button></div>
+      <div><button type="button" className="btn btn-primary" disabled={busy} onClick={onStart}>{busy ? t("pf.profiling") : t("pf.start")}</button></div>
       {editor && (
         <FilterSortDialog
           columns={columns}
