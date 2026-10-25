@@ -37,7 +37,7 @@ const MSSQL: Provider = {
   console: false,
   commands: new Set([
     "test_connection", "open", "close", "close_database", "list_databases", "list_schemas", "list_objects", "table_detail", "list_roles",
-    "execute", "cancel", "table_rows", "table_count", "apply", "fk_labels",
+    "execute", "cancel", "table_rows", "table_count", "apply", "fk_labels", "schema_diagram", "find", "find_data", "export_cancel",
     ...TX,
   ]),
 };
@@ -71,6 +71,9 @@ export function newConnectionId(provider: string, time: string): string {
   const p = PROVIDERS.find((x) => x.param === provider);
   return p ? `${p.prefix}${time}` : `c${time}`;
 }
+
+/** O começo do id de uma operação longa (busca, exportação) que o roteador usa para achar o banco; vazio no PostgreSQL. */
+export const idPrefix = (connId: string | undefined | null): string => PROVIDERS.find((p) => typeof connId === "string" && connId.startsWith(p.prefix))?.prefix ?? "";
 
 /** A conexão (ou transação) é de SQLite? */
 export const isSqliteId = (id: string | undefined | null): boolean => typeof id === "string" && id.startsWith(SQLITE_PREFIX);

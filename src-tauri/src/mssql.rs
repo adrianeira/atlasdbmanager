@@ -6,7 +6,7 @@ use crate::commands::{TABLE_ROWS_CAP, TableRows};
 use atlas_core::{ConnectionParams, DatabaseError, DatabaseList, ErrorKind, OrderBy, QueryOutcome, RoleInfo, SchemaInfo, SchemaObjects, ServerInfo, TableDetail, TableFilter};
 use atlas_mssql::{MssqlSession, MssqlTx, PlannedStatement};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tauri::{Emitter, State};
@@ -19,6 +19,8 @@ pub struct MssqlSessions {
     sessions: Mutex<HashMap<String, Arc<MssqlSession>>>,
     txs: Mutex<HashMap<String, Arc<MssqlTx>>>,
     next_tx: AtomicU64,
+    /// Buscas nos dados em andamento (id da busca → pedido de parada).
+    finds: Mutex<HashMap<String, Arc<AtomicBool>>>,
 }
 
 impl MssqlSessions {
@@ -150,18 +152,62 @@ pub async fn mssql_apply(sessions: State<'_, MssqlSessions>, session_id: String,
     sessions.session(&session_id)?.apply(&database, &statements).await
 }
 
-/// Rótulos de chaves estrangeiras: ainda sem suporte, a grade mostra a chave mesmo.
+/// Rótulos das chaves estrangeiras visíveis no grid ("mostrar o valor da chave estrangeira").
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn mssql_fk_labels(
-    _session_id: String,
-    _database: String,
-    _schema: String,
-    _table: String,
-    _key_column: String,
-    _keys: Vec<String>,
-) -> Result<serde_json::Value, DatabaseError> {
-    Ok(serde_json::json!({ "labelColumn": null, "labels": [] }))
+    sessions: State<'_, MssqlSessions>,
+    session_id: String,
+    database: String,
+    schema: String,
+    table: String,
+    key_column: String,
+    keys: Vec<String>,
+) -> Result<atlas_mssql::FkLabels, DatabaseError> {
+    sessions.session(&session_id)?.fk_labels(&database, &schema, &table, &key_column, &keys).await
+}
+
+/// Tabelas (com colunas) e chaves estrangeiras de um schema, para o diagrama ER.
+#[tauri::command]
+pub async fn mssql_schema_diagram(sessions: State<'_, MssqlSessions>, session_id: String, database: String, schema: String) -> Result<atlas_core::SchemaDiagram, DatabaseError> {
+    sessions.session(&session_id)?.schema_diagram(&database, &schema).await
+}
+
+/// "Find in Database", Look In = Structure.
+#[tauri::command]
+pub async fn mssql_find(sessions: State<'_, MssqlSessions>, session_id: String, database: String, options: atlas_mssql::FindOptions) -> Result<atlas_mssql::FindResult, DatabaseError> {
+    sessions.session(&session_id)?.find(&database, &options).await
+}
+
+/// "Find in Database", Look In = Data. O botão Parar (`mssql_export_cancel` com o mesmo `find_id`) interrompe entre uma tabela e outra.
+#[tauri::command]
+pub async fn mssql_find_data(
+    sessions: State<'_, MssqlSessions>,
+    session_id: String,
+    database: String,
+    find_id: String,
+    options: atlas_mssql::FindOptions,
+) -> Result<atlas_mssql::FindDataResult, DatabaseError> {
+    let s = sessions.session(&session_id)?;
+    let stop = Arc::new(AtomicBool::new(false));
+    if let Ok(mut m) = sessions.finds.lock() {
+        m.insert(find_id.clone(), stop.clone());
+    }
+    let flag = stop.clone();
+    let out = s.find_data(&database, &options, &move || flag.load(Ordering::Relaxed)).await;
+    if let Ok(mut m) = sessions.finds.lock() {
+        m.remove(&find_id);
+    }
+    out
+}
+
+/// Pede para parar uma busca nos dados.
+#[tauri::command]
+pub async fn mssql_export_cancel(sessions: State<'_, MssqlSessions>, export_id: String) -> Result<(), DatabaseError> {
+    if let Some(stop) = sessions.finds.lock().ok().and_then(|m| m.get(&export_id).cloned()) {
+        stop.store(true, Ordering::Relaxed);
+    }
+    Ok(())
 }
 
 /// Tudo que o SQL Server ainda não tem nesta interface: a tela recebe "indisponível".

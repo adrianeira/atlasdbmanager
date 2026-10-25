@@ -4,9 +4,14 @@
 //! Uma sessão guarda uma conexão por banco (o SQL Server troca de banco com `USE`; aqui cada banco tem a sua, aberta quando
 //! alguém pede). Os valores voltam em texto, como a grade os espera.
 
+mod extra;
+mod find;
 mod meta;
 mod rows;
 mod values;
+
+pub use extra::FkLabels;
+pub use find::{FindDataResult, FindMode, FindOptions, FindResult};
 
 use atlas_core::{ConnectionParams, DatabaseError, ErrorKind, ServerInfo, SslMode};
 use futures_util::TryStreamExt;

@@ -5,7 +5,7 @@ import {
 import type { StatusCell } from "../components/StatusBar";
 import { useT, type MessageKey } from "../i18n";
 import { ProviderIcon, SmallIcon, type SmallIconName } from "../icons";
-import { isSqliteId } from "../providerRoute";
+import { idPrefix, isMssqlId, isSqliteId } from "../providerRoute";
 
 export interface FindConn {
   id: string;
@@ -109,17 +109,18 @@ export function FindDoc({ conns, initial, onConnect, onOpen, onOpenRows, active,
   const canFind = open && database !== "" && text.trim() !== "" && !busy;
   // O SQLite não tem funções nem views materializadas.
   const sqlite = isSqliteId(connId);
-  const structureOk = inc.tables || inc.views || inc.indexes || inc.triggers || (!sqlite && (inc.functions || inc.matviews));
+  const noMatview = sqlite || isMssqlId(connId);
+  const structureOk = inc.tables || inc.views || inc.indexes || inc.triggers || (!sqlite && inc.functions) || (!noMatview && inc.matviews);
 
   const run = () => {
     if (!canFind || (lookIn === "structure" && !structureOk)) return;
     const mine = ++seq.current;
     setBusy(true);
     setError(null);
-    findId.current = `${isSqliteId(connId) ? "sqlite_" : ""}find-${mine}-${Date.now()}`;
+    findId.current = `${idPrefix(connId)}find-${mine}-${Date.now()}`;
     const options: FindOptions = {
       text, schema: schema || null, mode, caseInsensitive,
-      tables: inc.tables, views: inc.views, matviews: inc.matviews && !sqlite, functions: inc.functions && !sqlite, indexes: inc.indexes, triggers: inc.triggers,
+      tables: inc.tables, views: inc.views, matviews: inc.matviews && !noMatview, functions: inc.functions && !sqlite, indexes: inc.indexes, triggers: inc.triggers,
     };
     const scope = { text, lookIn, schema };
     const done = () => mine === seq.current && setBusy(false);
@@ -254,7 +255,7 @@ export function FindDoc({ conns, initial, onConnect, onOpen, onOpenRows, active,
               {incBox("tables", "fd.incQueries", true)}
               {incBox("indexes", "fd.incIndexes")}
               {incBox("triggers", "fd.incTriggers")}
-              {!sqlite && incBox("matviews", "fd.incMatviews")}
+              {!noMatview && incBox("matviews", "fd.incMatviews")}
             </div>
           </div>
         )}

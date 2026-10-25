@@ -76,3 +76,34 @@ async fn live_server_lists_reads_and_writes() {
     let _ = s.execute("master", &format!("ALTER DATABASE {0} SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE {0}", quote_ident(&name)), 10).await;
     r.unwrap();
 }
+
+#[tokio::test]
+async fn live_labels_diagram_and_find() {
+    let Some(p) = params() else { return };
+    let s = MssqlSession::open(p).await.unwrap();
+    let name = format!("atlas_f_{}", std::process::id());
+    s.execute("master", &format!("CREATE DATABASE {}", quote_ident(&name)), 10).await.unwrap();
+    let r = async {
+        s.execute(&name, "CREATE TABLE dbo.parent (id int PRIMARY KEY, name nvarchar(30) NOT NULL); CREATE TABLE dbo.child (id int PRIMARY KEY, parent_id int NOT NULL REFERENCES dbo.parent(id), note nvarchar(30)); CREATE INDEX ix_child_note ON dbo.child (note); INSERT INTO dbo.parent VALUES (1, N'Alpha'), (2, N'Beta'); INSERT INTO dbo.child VALUES (1, 1, N'parent note')", 10).await?;
+        s.execute(&name, "CREATE VIEW dbo.v_parent AS SELECT id, name FROM dbo.parent", 10).await.ok();
+        let labels = s.fk_labels(&name, "dbo", "parent", "id", &["1".into(), "2".into(), "9".into()]).await?;
+        assert_eq!(labels.label_column.as_deref(), Some("name"));
+        assert_eq!(labels.labels, vec![["1".to_string(), "Alpha".to_string()], ["2".to_string(), "Beta".to_string()]]);
+        let d = s.schema_diagram(&name, "dbo").await?;
+        assert_eq!(d.tables.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(), vec!["child", "parent"]);
+        assert!(d.tables[0].columns[0].is_pk && d.tables[0].columns[1].is_fk);
+        assert_eq!((d.relations.len(), d.relations[0].required, d.relations[0].ref_table.as_str()), (1, true, "parent"));
+        let opts = |text: &str, mode| FindOptions { text: text.into(), schema: None, mode, case_insensitive: true, tables: true, views: true, matviews: false, functions: true, indexes: true, triggers: true };
+        let f = s.find(&name, &opts("parent", FindMode::Contains)).await?;
+        let names: Vec<(&str, &str)> = f.objects.iter().map(|o| (o.kind.as_str(), o.name.as_str())).collect();
+        assert_eq!(names, vec![("table", "child"), ("table", "parent"), ("view", "v_parent")]);
+        let data = s.find_data(&name, &opts("alp", FindMode::Prefix), &|| false).await?;
+        assert_eq!((data.tables.len(), data.tables[0].table.as_str(), data.tables[0].count), (1, "parent", 1));
+        assert!(s.find_data(&name, &opts("x", FindMode::Regex), &|| false).await.is_err());
+        Ok::<_, DatabaseError>(())
+    }
+    .await;
+    s.close_database(&name).await;
+    let _ = s.execute("master", &format!("ALTER DATABASE {0} SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE {0}", quote_ident(&name)), 10).await;
+    r.unwrap();
+}
