@@ -9,7 +9,7 @@ authors.workspace = true
 
 [dependencies]
 atlas-core.workspace = true
-rusqlite = { version = "0.37", features = ["bundled", "column_decltype", "functions"] }
+rusqlite = { version = "0.37", features = ["bundled", "column_decltype", "functions", "backup"] }
 regex = "1"
 serde.workspace = true
 serde_json.workspace = true

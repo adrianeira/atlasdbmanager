@@ -100,12 +100,12 @@ pub struct BackupEntry {
 }
 
 #[derive(Serialize, Deserialize, Default)]
-struct Sidecar {
+pub(crate) struct Sidecar {
     #[serde(default)]
-    comment: String,
+    pub(crate) comment: String,
     /// Backup gravado fora da pasta do app.
     #[serde(default)]
-    path: Option<String>,
+    pub(crate) path: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -144,9 +144,9 @@ pub struct BackupResult {
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct LogLine<'a> {
-    job_id: &'a str,
-    line: &'a str,
+pub(crate) struct LogLine<'a> {
+    pub(crate) job_id: &'a str,
+    pub(crate) line: &'a str,
 }
 
 #[derive(Serialize)]
@@ -338,7 +338,7 @@ async fn run_tool(
 }
 
 /// Trecho de caminho seguro (sem separadores nem `..`) para nomes de conexão, banco, schema e arquivo.
-fn safe_segment(s: &str) -> String {
+pub(crate) fn safe_segment(s: &str) -> String {
     let t: String = s.chars().map(|c| if c.is_alphanumeric() || matches!(c, '.' | '-' | '_' | ' ') { c } else { '_' }).collect();
     let t = t.trim().trim_matches('.').to_string();
     if t.is_empty() { "_".into() } else { t }
@@ -349,7 +349,7 @@ fn store_root(app: &AppHandle) -> Result<PathBuf, DatabaseError> {
 }
 
 /// Pasta dos backups do schema; os do banco inteiro ficam numa pasta própria (`schema` ausente).
-fn store_dir(app: &AppHandle, session_id: &str, database: &str, schema: Option<&str>) -> Result<PathBuf, DatabaseError> {
+pub(crate) fn store_dir(app: &AppHandle, session_id: &str, database: &str, schema: Option<&str>) -> Result<PathBuf, DatabaseError> {
     let scope = schema.map(safe_segment).unwrap_or_else(|| "__database__".into());
     Ok(store_root(app)?.join(safe_segment(session_id)).join(safe_segment(database)).join(scope))
 }

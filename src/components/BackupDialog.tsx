@@ -3,6 +3,7 @@ import { chooseExportFolder, errorText, onBackupLog, pg, toAtlasError, type Tool
 import { useT, type MessageKey } from "../i18n";
 import { SmallIcon, categoryIcon } from "../icons";
 import type { Category } from "../model";
+import { isSqliteId } from "../providerRoute";
 import { readToolsDir, saveToolsDir } from "./RestoreDialog";
 
 /** Grupos da seleção de objetos: o `pg_dump` deixa de fora tabelas, views e sequências por nome; funções e tipos entram sempre. */
@@ -49,6 +50,8 @@ type Tab = "general" | "objects" | "advanced" | "log";
 
 export function BackupDialog({ target, onClose, onDone }: Props) {
   const t = useT();
+  // O SQLite copia o próprio arquivo: não precisa das ferramentas do PostgreSQL.
+  const sqlite = isSqliteId(target.connId);
   const [tab, setTab] = useState<Tab>("general");
   const [comment, setComment] = useState("");
   const [useName, setUseName] = useState(false);
@@ -69,6 +72,7 @@ export function BackupDialog({ target, onClose, onDone }: Props) {
 
   useEffect(() => {
     let alive = true;
+    if (sqlite) { setTools({ dir: "sqlite", version: null, others: [] }); return; }
     setTools(null);
     void pg.toolsLocate(toolsDir).then((r) => { if (alive) setTools(r); }).catch(() => { if (alive) setTools({ dir: null, version: null, others: [] }); });
     return () => { alive = false; };
@@ -184,7 +188,7 @@ export function BackupDialog({ target, onClose, onDone }: Props) {
                 <textarea id="bk-comment" className="field bk-comment" value={comment} disabled={running} onChange={(e) => setComment(e.target.value)} />
               </fieldset>
               <div className="bk-note">{t("bk.note")}</div>
-              {tools && !tools.dir && (
+              {!sqlite && tools && !tools.dir && (
                 <div className="doc-banner is-warn bk-tools">
                   {t("bk.toolsMissing")} <button type="button" className="btn" onClick={() => void chooseTools()}>{t("bk.toolsChoose")}</button>
                 </div>

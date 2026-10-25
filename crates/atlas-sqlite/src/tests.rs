@@ -327,6 +327,7 @@ fn schema_diagram_lists_columns_keys_and_relations() {
     let _ = std::fs::remove_file(path);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn import_rows(s: &SqliteSession, table: &str, cols: &[(&str, &str)], keys: &[usize], mode: ImportMode, create: bool, continue_on_error: bool, rows: Vec<Vec<Option<&str>>>) -> ImportStats {
     let spec = ImportSpec {
         table: table.into(),
@@ -391,5 +392,28 @@ fn import_error_rolls_back_unless_it_continues() {
     let st = import_rows(&s, "clients", &cols_clients, &[], ImportMode::Append, false, true, bad());
     assert_eq!((st.added, st.errors, st.rolled_back), (2, 1, false));
     assert_eq!(scalar(&s, "SELECT count(*) FROM clients"), "5");
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn backup_copies_the_file_without_the_excluded_objects_and_restore_brings_it_back() {
+    let (s, path) = sample();
+    let dest = std::env::temp_dir().join(format!("atlas-sqlite-backup-{}.dump", std::process::id()));
+    let _ = std::fs::remove_file(&dest);
+    let mut lines = Vec::new();
+    s.backup_to(&dest, &["main.loose".to_string()], &mut |l| lines.push(l)).unwrap();
+    assert!(lines.iter().any(|l| l.contains("main.clients")) && !lines.iter().any(|l| l.contains("main.loose")));
+    let copy = SqliteSession::open(dest.to_str().unwrap()).unwrap();
+    let names: Vec<String> = copy.list_objects().unwrap().tables.iter().map(|o| o.name.clone()).collect();
+    assert_eq!(names, vec!["clients".to_string(), "orders".to_string()]);
+    assert_eq!(copy.table_count("clients", None).unwrap(), 3);
+    // Muda o original e restaura: volta ao que o backup tinha.
+    s.execute("DELETE FROM clients", 10).unwrap();
+    assert_eq!(s.table_count("clients", None).unwrap(), 0);
+    s.restore_from(&dest).unwrap();
+    assert_eq!(s.table_count("clients", None).unwrap(), 3);
+    assert!(s.restore_from(Path::new("Cargo.toml")).is_err());
+    drop(copy);
+    let _ = std::fs::remove_file(dest);
     let _ = std::fs::remove_file(path);
 }

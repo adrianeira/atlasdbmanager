@@ -7,7 +7,7 @@ import type { MessageKey } from "./i18n";
  */
 const NOT_IN_SQLITE = new Set<MessageKey>([
   "cmd.newDatabase", "cmd.editDatabase", "cmd.deleteDatabase", "cmd.newSchema", "cmd.editSchema", "cmd.deleteSchema",
-  "cmd.restoreBackup", "cmd.extractSql", "cmd.reverseToModel", "cmd.share",
+  "cmd.extractSql", "cmd.reverseToModel", "cmd.share",
   "cmd.truncateTable", "sub.duplicateTable",
 ]);
 

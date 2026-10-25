@@ -665,6 +665,43 @@ impl SqliteSession {
         import::run(&conn, spec, feed, hooks)
     }
 
+    /// Copia o banco inteiro para `dest` (que não pode existir) com `VACUUM INTO`, que já grava o arquivo compactado e consistente.
+    /// Os objetos de `exclude` (nomes de tabelas e views) são apagados da cópia. `log` recebe uma linha por tabela copiada.
+    pub fn backup_to(&self, dest: &Path, exclude: &[String], log: &mut dyn FnMut(String)) -> Result<(), DatabaseError> {
+        let tables = self.with(|c| {
+            let mut stmt = c.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' ORDER BY name").map_err(map_err)?;
+            let rows = stmt.query_map([], |r| r.get::<_, String>(0)).map_err(map_err)?.collect::<Result<Vec<_>, _>>().map_err(map_err)?;
+            Ok(rows)
+        })?;
+        self.with(|c| c.execute("VACUUM INTO ?1", [dest.to_string_lossy().as_ref()]).map(|_| ()).map_err(map_err))?;
+        if !exclude.is_empty() {
+            let copy = Connection::open(dest).map_err(map_err)?;
+            copy.execute_batch("PRAGMA foreign_keys = OFF").map_err(map_err)?;
+            for name in exclude {
+                let plain = name.rsplit('.').next().unwrap_or(name);
+                let q = quote_ident(plain);
+                if copy.execute_batch(&format!("DROP TABLE IF EXISTS {q}")).is_err() {
+                    copy.execute_batch(&format!("DROP VIEW IF EXISTS {q}")).map_err(map_err)?;
+                }
+            }
+            copy.execute_batch("VACUUM").map_err(map_err)?;
+        }
+        for t in tables.iter().filter(|t| !exclude.iter().any(|e| e.rsplit('.').next() == Some(t.as_str()))) {
+            log(format!("dumping contents of table \"main.{t}\""));
+        }
+        Ok(())
+    }
+
+    /// Troca o conteúdo do banco pelo de um backup (um arquivo SQLite), com a API de cópia do SQLite: a conexão aberta enxerga o novo conteúdo.
+    pub fn restore_from(&self, source: &Path) -> Result<(), DatabaseError> {
+        let src = Connection::open_with_flags(source, OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(map_err)?;
+        // Um arquivo que não é SQLite falha aqui, antes de tocar no banco.
+        src.query_row("SELECT count(*) FROM sqlite_master", [], |r| r.get::<_, i64>(0)).map_err(|_| DatabaseError::new(ErrorKind::InvalidInput, "o arquivo não é um backup do SQLite"))?;
+        let mut dst = open_connection(&self.path)?;
+        let backup = rusqlite::backup::Backup::new(&src, &mut dst).map_err(map_err)?;
+        backup.run_to_completion(256, Duration::from_millis(0), None).map_err(map_err)
+    }
+
     pub fn schema_diagram(&self) -> Result<atlas_core::SchemaDiagram, DatabaseError> {
         self.with(diagram::schema_diagram_on)
     }

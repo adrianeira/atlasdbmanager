@@ -4,7 +4,9 @@
 use crate::commands::{TABLE_ROWS_CAP, TableRows};
 use crate::export::{ExportRequest, ExportResult, PartFile, Progress, io_error, part_path, validate_path};
 use crate::import::{ImportRequest, ImportSummary, JobResult, LogEvent, ProgressEvent, failed_job};
+use crate::backup::{BackupEntry, BackupRequest, BackupResult, LogLine, RestoreRequest, Sidecar, safe_segment, store_dir};
 use atlas_export::ExportColumn;
+use std::path::PathBuf;
 use atlas_import::convert::{TargetKind, convert, kind_of};
 use atlas_sqlite::{ImportFeed, ImportHooks, ImportMode, ImportSpec, TargetColumn, declared_type};
 use std::fs::{self, File};
@@ -456,6 +458,76 @@ pub async fn sqlite_import(app: tauri::AppHandle, sessions: State<'_, SqliteSess
         m.remove(&import_id);
     }
     out
+}
+
+/// Backup do arquivo: uma cópia compactada guardada na pasta de backups do app (ou na pasta escolhida), com o comentário ao lado.
+/// A extensão `.dump` é a mesma dos backups do PostgreSQL, para a lista e a exclusão serem as mesmas.
+#[tauri::command]
+pub async fn sqlite_backup(app: tauri::AppHandle, sessions: State<'_, SqliteSessions>, req: BackupRequest) -> Result<BackupResult, DatabaseError> {
+    let started = Instant::now();
+    let s = sessions.session(&req.session_id)?;
+    let store = store_dir(&app, &req.session_id, &req.database, req.schema.as_deref())?;
+    fs::create_dir_all(&store).map_err(io_error)?;
+    let folder = match req.folder.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
+        Some(f) => {
+            let p = PathBuf::from(f);
+            if !p.is_absolute() || !p.is_dir() {
+                return Err(DatabaseError::new(ErrorKind::InvalidInput, "a pasta do backup precisa existir"));
+            }
+            p
+        }
+        None => store.clone(),
+    };
+    let name = safe_segment(&req.file_name);
+    let dest = folder.join(format!("{name}.dump"));
+    let meta = store.join(format!("{name}.json"));
+    if dest.exists() || meta.exists() {
+        return Err(DatabaseError::new(ErrorKind::InvalidInput, format!("já existe um backup chamado {name}")));
+    }
+    let job_id = req.job_id.clone();
+    let exclude = req.exclude.clone();
+    let part_dest = dest.clone();
+    let log_app = app.clone();
+    let task = tokio::task::spawn_blocking(move || -> Result<(), DatabaseError> {
+        let mut part = PartFile::new(part_path(&part_dest));
+        let mut log = |line: String| {
+            let _ = log_app.emit("backup-log", LogLine { job_id: &job_id, line: &line });
+        };
+        s.backup_to(&part.path, &exclude, &mut log)?;
+        fs::rename(&part.path, &part_dest).map_err(io_error)?;
+        part.keep = true;
+        Ok(())
+    });
+    task.await.map_err(|e| DatabaseError::new(ErrorKind::Internal, e.to_string()))??;
+    let external = (folder != store).then(|| dest.to_string_lossy().into_owned());
+    let sidecar = serde_json::to_string(&Sidecar { comment: req.comment, path: external }).unwrap_or_default();
+    let _ = fs::write(&meta, sidecar);
+    Ok(BackupResult { bytes: fs::metadata(&dest).map(|m| m.len()).unwrap_or(0), elapsed_ms: started.elapsed().as_millis() as u64, path: dest.to_string_lossy().into_owned(), tool: "sqlite".into(), name })
+}
+
+/// Backups guardados do banco (a lista é a mesma do PostgreSQL: pastas e registros do app).
+#[tauri::command]
+pub async fn sqlite_backup_list(app: tauri::AppHandle, session_id: String, database: String, schema: String) -> Result<Vec<BackupEntry>, DatabaseError> {
+    crate::backup::pg_backup_list(app, session_id, database, schema).await
+}
+
+/// Restaura um backup: o conteúdo do banco passa a ser o do arquivo.
+#[tauri::command]
+pub async fn sqlite_restore(app: tauri::AppHandle, sessions: State<'_, SqliteSessions>, req: RestoreRequest) -> Result<BackupResult, DatabaseError> {
+    let started = Instant::now();
+    let s = sessions.session(&req.session_id)?;
+    if req.extract_to.is_some() {
+        return Err(atlas_sqlite::unsupported_feature("extract SQL from a backup"));
+    }
+    let source = PathBuf::from(&req.path);
+    if !source.exists() {
+        return Err(DatabaseError::new(ErrorKind::InvalidInput, "o arquivo de backup não existe"));
+    }
+    let _ = app.emit("backup-log", LogLine { job_id: &req.job_id, line: &format!("restoring {}", source.display()) });
+    let from = source.clone();
+    tokio::task::spawn_blocking(move || s.restore_from(&from)).await.map_err(|e| DatabaseError::new(ErrorKind::Internal, e.to_string()))??;
+    let _ = app.emit("backup-log", LogLine { job_id: &req.job_id, line: "restore finished" });
+    Ok(BackupResult { bytes: fs::metadata(&source).map(|m| m.len()).unwrap_or(0), elapsed_ms: started.elapsed().as_millis() as u64, path: source.to_string_lossy().into_owned(), tool: "sqlite".into(), name: String::new() })
 }
 
 /// Pede para parar uma busca nos dados.

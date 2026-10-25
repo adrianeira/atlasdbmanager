@@ -530,7 +530,8 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 - [x] **SQLite — rótulos de chave estrangeira, Data Profiling, Table Profile e Find in Database** (estrutura: tabelas, campos, índices, gatilhos, views e corpo das views; dados: `REGEXP` definida em toda conexão, também vale nas consultas do usuário) *(`crates/atlas-sqlite/src/{profile,find}.rs`)*
 - [x] **SQLite — exportação** (assistente de exportação e consulta: CSV, TXT, JSON, XML, HTML, SQL, Excel, DBF; números e booleanos tipados; conexão só de leitura em streaming; cancelável)
 - [x] **SQLite — importação** (os seis modos, tabela nova com os tipos inferidos, continuar em erro por linha, cancelável; conexão própria e uma transação por importação; booleano `0`/`1`)
-- [ ] SQLite: ainda não fazem para ele — backup, console, menu do schema (hoje mostra itens do PostgreSQL)
+- [x] **SQLite — backup e restauração** (cópia compactada do arquivo com `VACUUM INTO`, com seleção de objetos, comentário, pasta e padrão de nome; lista na categoria Backup; restaurar troca o conteúdo do banco pelo do arquivo; sem as ferramentas do PostgreSQL)
+- [ ] SQLite: ainda não fazem para ele — console, menu do schema (hoje mostra itens do PostgreSQL)
 - [ ] SQL Server, MySQL, Firebird, MariaDB, Oracle, MongoDB, Redis (nesta ordem)
 
 ## 2. Árvore / Navegação

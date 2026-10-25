@@ -6,6 +6,7 @@ import {
 import { useT } from "../i18n";
 import { formatBytes } from "../model";
 import { SmallIcon } from "../icons";
+import { isSqliteId } from "../providerRoute";
 import { Dropdown } from "./Dropdown";
 
 export interface RestoreTarget {
@@ -37,6 +38,8 @@ export function RestoreDialog({ target, onClose }: Props) {
   const t = useT();
   const sep = useMemo(pathSeparator, []);
   const { mode } = target;
+  // O SQLite restaura o arquivo inteiro, sem as ferramentas nem as opções do PostgreSQL.
+  const sqlite = isSqliteId(target.connId);
   const [tools, setTools] = useState<ToolsInfo | null>(null);
   const [toolsDir, setToolsDir] = useState(readToolsDir);
   const [content, setContent] = useState<BackupContent>("all");
@@ -57,6 +60,7 @@ export function RestoreDialog({ target, onClose }: Props) {
 
   useEffect(() => {
     let alive = true;
+    if (sqlite) { setTools({ dir: "sqlite", version: null, others: [] }); return; }
     setTools(null);
     void pg.toolsLocate(toolsDir).then((r) => { if (alive) setTools(r); }).catch(() => { if (alive) setTools({ dir: null, version: null, others: [] }); });
     return () => { alive = false; };
@@ -138,20 +142,20 @@ export function RestoreDialog({ target, onClose }: Props) {
     ? t(mode === "restore" ? "bk.doneRestore" : "bk.doneExtract", { size: formatBytes(result.bytes), s: (result.elapsedMs / 1000).toFixed(1) })
     : "";
   // Restaurar um script SQL ignora o conteúdo: o que entra já está decidido no arquivo.
-  const showContent = !/\.sql$/i.test(path);
+  const showContent = !sqlite && !/\.sql$/i.test(path);
 
   return (
     <div className="modal-overlay" role="presentation">
       <div className="modal dump-dialog backup-dialog" role="dialog" aria-label={title}>
         <div className="modal-header"><span className="modal-title">{title}</span><button type="button" className="modal-close" aria-label={t("tab.close")} title={t("tab.close")} onClick={onClose} disabled={running}><SmallIcon name="close" /></button></div>
         <div className="modal-body dump-body">
-          <div className="dump-row">
+          {!sqlite && <div className="dump-row">
             <label>{t("bk.tools")}</label>
             <span className={tools?.dir ? "muted" : "bk-missing"}>
               {tools === null ? "…" : tools.dir ? t("bk.toolsFound", { v: tools.version ?? "", dir: tools.dir }) : t("bk.toolsMissing")}
             </span>
             <button type="button" className="btn" disabled={running} onClick={() => void chooseTools()}>{t("bk.toolsChoose")}</button>
-          </div>
+          </div>}
 
           <div className="dump-row dump-path">
             <label>{t("bk.file")}</label>
@@ -167,7 +171,7 @@ export function RestoreDialog({ target, onClose }: Props) {
             </div>
           )}
 
-          {mode === "restore" && (
+          {mode === "restore" && !sqlite && (
             <div className="dump-row">
               <label>{t("bk.target")}</label>
               <Dropdown value={destDb} disabled={running} onChange={setDestDb} items={target.databases.map((d) => ({ value: d, label: d }))} />
@@ -186,15 +190,15 @@ export function RestoreDialog({ target, onClose }: Props) {
             </div>
           )}
 
-          <div className="dump-row">
+          {!sqlite && <div className="dump-row">
             <label className="check-row"><input type="checkbox" checked={clean} disabled={running} onChange={(e) => setClean(e.target.checked)} /><span>{t("bk.clean")}</span></label>
             <label className="check-row"><input type="checkbox" checked={noOwner} disabled={running} onChange={(e) => setNoOwner(e.target.checked)} /><span>{t("bk.noOwner")}</span></label>
             <label className="check-row"><input type="checkbox" checked={noPrivileges} disabled={running} onChange={(e) => setNoPrivileges(e.target.checked)} /><span>{t("bk.noPrivileges")}</span></label>
             {mode === "restore" && (
               <label className="check-row"><input type="checkbox" checked={single} disabled={running} onChange={(e) => setSingle(e.target.checked)} /><span>{t("bk.single")}</span></label>
             )}
-          </div>
-          {mode === "restore" && <div className="muted dump-note">{t("bk.restoreNote")}</div>}
+          </div>}
+          {mode === "restore" && !sqlite && <div className="muted dump-note">{t("bk.restoreNote")}</div>}
 
           {running && <div className="dump-progress"><span className="spinner" /> {t("bk.running", { s: elapsed })}</div>}
           {log.length > 0 && (
