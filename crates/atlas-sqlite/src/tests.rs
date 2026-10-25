@@ -278,3 +278,37 @@ fn table_profile_counts_the_structure_and_the_rows() {
     assert_eq!((o.foreign_keys, o.indexes), (1, 1));
     let _ = std::fs::remove_file(path);
 }
+
+fn find_opts(text: &str, mode: find::FindMode) -> FindOptions {
+    FindOptions { text: text.into(), schema: None, mode, case_insensitive: true, tables: true, views: true, matviews: false, functions: false, indexes: true, triggers: true }
+}
+
+#[test]
+fn find_in_structure_reports_names_and_view_bodies() {
+    let (s, path) = sample();
+    let r = s.find(&find_opts("client", find::FindMode::Contains)).unwrap();
+    let names: Vec<(&str, &str)> = r.objects.iter().map(|o| (o.kind.as_str(), o.name.as_str())).collect();
+    // `clients` (nome), `orders` (campo client_id e índice orders_client), view big_clients (nome e corpo) e o gatilho clients_log.
+    assert_eq!(names, vec![("table", "clients"), ("table", "orders"), ("view", "big_clients")]);
+    let orders = &r.objects[1];
+    assert_eq!(orders.matches.iter().map(|m| m.what.as_str()).collect::<Vec<_>>(), vec!["fieldName", "indexName"]);
+    assert!(r.objects[2].matches.iter().any(|m| m.what == "viewBody"));
+    assert!(s.find(&find_opts("zzz", find::FindMode::Contains)).unwrap().objects.is_empty());
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn find_in_data_counts_the_rows_and_gives_a_query_that_runs() {
+    let (s, path) = sample();
+    let r = s.find_data(&find_opts("a", find::FindMode::Whole), &|| false).unwrap();
+    assert_eq!(r.total, 3);
+    assert!(r.tables.is_empty() || r.tables.iter().all(|t| t.count > 0));
+    let r = s.find_data(&find_opts("cr", find::FindMode::Prefix), &|| false).unwrap();
+    assert_eq!(r.tables.len(), 1);
+    assert_eq!((r.tables[0].table.as_str(), r.tables[0].count), ("clients", 1));
+    // A consulta devolvida roda na própria sessão (REGEXP é definida em toda conexão).
+    let out = s.execute(&r.tables[0].sql, 10).unwrap();
+    assert_eq!(out.statements[0].result.as_ref().unwrap().rows.len(), 1);
+    assert!(s.find_data(&find_opts("cr", find::FindMode::Prefix), &|| true).unwrap().cancelled);
+    let _ = std::fs::remove_file(path);
+}

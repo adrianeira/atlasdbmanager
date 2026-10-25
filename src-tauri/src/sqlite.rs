@@ -5,7 +5,7 @@ use crate::commands::{TABLE_ROWS_CAP, TableRows};
 use atlas_core::{ConnectionParams, DatabaseError, DatabaseList, ErrorKind, OrderBy, QueryOutcome, RoleInfo, SchemaInfo, SchemaObjects, ServerInfo, TableDetail, TableFilter};
 use atlas_sqlite::{PlannedStatement, SqliteSession, SqliteTx};
 use std::collections::{BTreeMap, HashMap};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, State};
 
@@ -18,6 +18,8 @@ pub struct SqliteSessions {
     sessions: Mutex<HashMap<String, Arc<SqliteSession>>>,
     txs: Mutex<HashMap<String, Arc<SqliteTx>>>,
     next_tx: AtomicU64,
+    /// Buscas nos dados em andamento (id da busca → pedido de parada).
+    finds: Mutex<HashMap<String, Arc<AtomicBool>>>,
 }
 
 impl SqliteSessions {
@@ -173,6 +175,44 @@ pub async fn sqlite_data_profile(
 ) -> Result<atlas_sqlite::DataProfile, DatabaseError> {
     let s = sessions.session(&session_id)?;
     blocking(move || s.data_profile(&table, &columns, &order_by, filter.as_ref(), limit)).await
+}
+
+/// "Find in Database", Look In = Structure.
+#[tauri::command]
+pub async fn sqlite_find(sessions: State<'_, SqliteSessions>, session_id: String, _database: String, options: atlas_sqlite::FindOptions) -> Result<atlas_sqlite::FindResult, DatabaseError> {
+    let s = sessions.session(&session_id)?;
+    blocking(move || s.find(&options)).await
+}
+
+/// "Find in Database", Look In = Data. O botão Parar (`sqlite_export_cancel` com o mesmo `find_id`) interrompe entre uma tabela e outra.
+#[tauri::command]
+pub async fn sqlite_find_data(
+    sessions: State<'_, SqliteSessions>,
+    session_id: String,
+    _database: String,
+    find_id: String,
+    options: atlas_sqlite::FindOptions,
+) -> Result<atlas_sqlite::FindDataResult, DatabaseError> {
+    let s = sessions.session(&session_id)?;
+    let stop = Arc::new(AtomicBool::new(false));
+    if let Ok(mut m) = sessions.finds.lock() {
+        m.insert(find_id.clone(), stop.clone());
+    }
+    let flag = stop.clone();
+    let out = blocking(move || s.find_data(&options, &move || flag.load(Ordering::Relaxed))).await;
+    if let Ok(mut m) = sessions.finds.lock() {
+        m.remove(&find_id);
+    }
+    out
+}
+
+/// Pede para parar uma busca nos dados.
+#[tauri::command]
+pub async fn sqlite_export_cancel(sessions: State<'_, SqliteSessions>, export_id: String) -> Result<(), DatabaseError> {
+    if let Some(stop) = sessions.finds.lock().ok().and_then(|m| m.get(&export_id).cloned()) {
+        stop.store(true, Ordering::Relaxed);
+    }
+    Ok(())
 }
 
 /// Perfil da tabela: tamanhos, contagens da estrutura e total de linhas.

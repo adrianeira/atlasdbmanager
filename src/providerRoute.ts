@@ -9,7 +9,7 @@ export const SQLITE_PREFIX = "sqlite_";
 /** Os `pg_*` que o SQLite atende (o resto da lista de comandos do PostgreSQL não existe no SQLite). */
 const SQLITE_COMMANDS = new Set([
   "test_connection", "open", "close", "close_database", "list_databases", "list_schemas", "list_objects", "table_detail", "list_roles",
-  "execute", "cancel", "table_rows", "table_count", "apply", "fk_labels", "data_profile", "table_profile",
+  "execute", "cancel", "table_rows", "table_count", "apply", "fk_labels", "data_profile", "table_profile", "find", "find_data", "export_cancel",
   "tx_begin", "tx_apply", "tx_execute", "tx_table_rows", "tx_table_count", "tx_end",
 ]);
 
@@ -20,7 +20,7 @@ export interface Routed {
 
 export function routeCommand(cmd: string, args?: Record<string, unknown>): Routed {
   if (!cmd.startsWith("pg_")) return { cmd, args };
-  const id = args?.sessionId ?? args?.txId;
+  const id = args?.sessionId ?? args?.txId ?? args?.exportId;
   const params = args?.params as { provider?: string } | undefined;
   const sqlite = (typeof id === "string" && id.startsWith(SQLITE_PREFIX)) || (cmd === "pg_test_connection" && params?.provider === "sqlite");
   if (!sqlite) return { cmd, args };

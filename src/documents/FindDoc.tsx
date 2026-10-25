@@ -5,6 +5,7 @@ import {
 import type { StatusCell } from "../components/StatusBar";
 import { useT, type MessageKey } from "../i18n";
 import { ProviderIcon, SmallIcon, type SmallIconName } from "../icons";
+import { isSqliteId } from "../providerRoute";
 
 export interface FindConn {
   id: string;
@@ -106,17 +107,19 @@ export function FindDoc({ conns, initial, onConnect, onOpen, onOpenRows, active,
   }, [connId, open, database]);
 
   const canFind = open && database !== "" && text.trim() !== "" && !busy;
-  const structureOk = inc.tables || inc.views || inc.functions || inc.indexes || inc.triggers || inc.matviews;
+  // O SQLite não tem funções nem views materializadas.
+  const sqlite = isSqliteId(connId);
+  const structureOk = inc.tables || inc.views || inc.indexes || inc.triggers || (!sqlite && (inc.functions || inc.matviews));
 
   const run = () => {
     if (!canFind || (lookIn === "structure" && !structureOk)) return;
     const mine = ++seq.current;
     setBusy(true);
     setError(null);
-    findId.current = `find-${mine}-${Date.now()}`;
+    findId.current = `${isSqliteId(connId) ? "sqlite_" : ""}find-${mine}-${Date.now()}`;
     const options: FindOptions = {
       text, schema: schema || null, mode, caseInsensitive,
-      tables: inc.tables, views: inc.views, matviews: inc.matviews, functions: inc.functions, indexes: inc.indexes, triggers: inc.triggers,
+      tables: inc.tables, views: inc.views, matviews: inc.matviews && !sqlite, functions: inc.functions && !sqlite, indexes: inc.indexes, triggers: inc.triggers,
     };
     const scope = { text, lookIn, schema };
     const done = () => mine === seq.current && setBusy(false);
@@ -223,7 +226,7 @@ export function FindDoc({ conns, initial, onConnect, onOpen, onOpenRows, active,
         <div className="fd-field">
           <div className="fd-label-row">
             <label htmlFor="fd-look">{t("fd.lookIn")}:</label>
-            {lookIn === "data" && <span className="muted">{t("fd.escapeNote")}</span>}
+            {lookIn === "data" && !sqlite && <span className="muted">{t("fd.escapeNote")}</span>}
           </div>
           <select id="fd-look" className="field fd-short" value={lookIn} onChange={(e) => setLookIn(e.target.value as LookIn)}>
             <option value="data">{t("fd.lookData")}</option>
@@ -247,11 +250,11 @@ export function FindDoc({ conns, initial, onConnect, onOpen, onOpenRows, active,
             <div className="fd-include-grid">
               {incBox("tables", "fd.incTables")}
               {incBox("views", "fd.incViews")}
-              {incBox("functions", "fd.incFunctions")}
+              {!sqlite && incBox("functions", "fd.incFunctions")}
               {incBox("tables", "fd.incQueries", true)}
               {incBox("indexes", "fd.incIndexes")}
               {incBox("triggers", "fd.incTriggers")}
-              {incBox("matviews", "fd.incMatviews")}
+              {!sqlite && incBox("matviews", "fd.incMatviews")}
             </div>
           </div>
         )}

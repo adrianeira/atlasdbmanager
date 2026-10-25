@@ -11,7 +11,9 @@ use rusqlite::types::ValueRef;
 use rusqlite::{Connection, InterruptHandle, OpenFlags};
 use serde::{Deserialize, Serialize};
 
+pub mod find;
 pub mod profile;
+pub use find::{FindDataResult, FindOptions, FindResult};
 pub use profile::DataProfile;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -559,6 +561,8 @@ fn open_connection(path: &Path) -> Result<Connection, DatabaseError> {
     conn.busy_timeout(Duration::from_secs(5)).map_err(map_err)?;
     // O SQLite só confere chaves estrangeiras se for pedido a cada conexão.
     conn.execute_batch("PRAGMA foreign_keys = ON").map_err(map_err)?;
+    // `coluna REGEXP 'padrão'` também vale nas consultas do usuário.
+    find::register_regexp(&conn)?;
     Ok(conn)
 }
 
@@ -609,6 +613,15 @@ impl SqliteSession {
 
     pub fn table_profile(&self, table: &str) -> Result<atlas_core::TableProfile, DatabaseError> {
         self.with(|c| profile::table_profile_on(c, table))
+    }
+
+    pub fn find(&self, options: &FindOptions) -> Result<FindResult, DatabaseError> {
+        self.with(|c| find::find_on(c, options))
+    }
+
+    /// Procura nos dados numa conexão própria ao arquivo; `cancelled` é consultado a cada tabela.
+    pub fn find_data(&self, options: &FindOptions, cancelled: &(dyn Fn() -> bool + Sync)) -> Result<FindDataResult, DatabaseError> {
+        find::find_data_at(&self.path, options, cancelled)
     }
 
     pub fn fk_labels(&self, table: &str, key_column: &str, keys: &[String]) -> Result<FkLabels, DatabaseError> {
