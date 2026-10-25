@@ -3,6 +3,7 @@
  * Dentro do app desktop tudo vai ao banco real; no navegador (`npm run dev` puro)
  * a interface continua no modo de demonstração com dados fictícios.
  */
+import { routeCommand } from "./providerRoute";
 import { TAB_EVENT, type TabEvent } from "./tabWindow";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
@@ -21,6 +22,8 @@ export interface ConnectionParams {
   password: string;
   sslMode: SslMode;
   connectTimeoutSecs?: number;
+  /** Banco da conexão; ausente = PostgreSQL. */
+  provider?: string;
   /** Túnel SSH até o servidor do banco; com `keyPath` a autenticação é por chave (`password` vira a frase da chave). */
   ssh?: { host: string; port: number; user: string; password: string; keyPath: string };
 }
@@ -944,7 +947,9 @@ export interface PlannedStatement {
 
 const call = async <T>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
   try {
-    return await invoke<T>(cmd, args);
+    // Conexão de outro banco (SQLite...) vai para o comando equivalente; no PostgreSQL a chamada sai como entrou.
+    const routed = routeCommand(cmd, args);
+    return await invoke<T>(routed.cmd, routed.args);
   } catch (e) {
     throw toAtlasError(e);
   }

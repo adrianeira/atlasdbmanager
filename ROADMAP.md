@@ -522,8 +522,10 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 - [x] **Grupos (pastas) de conexão na árvore**: Novo grupo (menu da raiz ou do grupo), Renomear, Excluir (as conexões voltam para fora de
       grupo), **Mover para o grupo** no menu da conexão (e novo grupo na hora) e Nova conexão já dentro do grupo; grupos vazios e o grupo de
       cada conexão ficam guardados; a busca e o filtro de estrela mostram só os grupos que têm conexão visível. Ainda sem arrastar e soltar
-- [ ] Novos provedores: MySQL, MariaDB, SQL Server, Oracle, SQLite, MongoDB, Redis,
-      Snowflake etc. (hoje: só PostgreSQL; Firebird planejado)
+> **Vários bancos.** Regra: o fluxo do PostgreSQL está validado e **não muda**; cada banco novo entra ao lado (crate e comandos `<banco>_*` próprios; as telas chamam os mesmos `pg_*` e o roteador de `src/providerRoute.ts` manda a chamada ao banco da conexão, pelo id dela). Ordem: PostgreSQL (feito) → **SQLite** → SQL Server → MySQL → Firebird → MariaDB → Oracle → MongoDB e Redis. Testes dos outros bancos em Docker (um de cada vez); o Firebird já roda na máquina.
+- [x] **SQLite**: conexão por arquivo (formulário já existia), árvore (banco e schema `main`, Tables, Views, Queries), abrir tabela e view (ordem pela chave, filtro, paginação), editar, inserir, excluir e **duplicar registro** (a chave `INTEGER PRIMARY KEY` numera sozinha), tabela sem chave pelo `rowid` (só quantas linhas foram marcadas), booleano como caixa de seleção (`0`/`1` no arquivo), consulta SQL com vários comandos, erro de sintaxe com posição, cancelar, **transação manual** (Begin Transaction, Commit, Rollback), editor com o dialeto SQLite, chaves estrangeiras ligadas *(`crates/atlas-sqlite`, `src-tauri/src/sqlite.rs`, `src/providerRoute.ts`, `src/sql/sqlitePlan.ts`)*
+- [ ] SQLite: ainda não fazem para ele — Data Profiling, Table Profile, exportação, importação, backup, designers (nova tabela, criar/alterar), rótulos de chave estrangeira, Find in Database, diagrama ER, console
+- [ ] SQL Server, MySQL, Firebird, MariaDB, Oracle, MongoDB, Redis (nesta ordem)
 
 ## 2. Árvore / Navegação
 - [x] **Filtro avançado da árvore**: o funil ao lado da busca abre o menu **Contém** / **Começa com** e **Diferenciar maiúsculas**

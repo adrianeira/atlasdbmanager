@@ -652,6 +652,7 @@ export function QueryDoc({
           <SqlEditor
             value={initialSql ?? ""}
             schema={completionSchema}
+            dialect={conn?.provider === "sqlite" ? "sqlite" : undefined}
             onChange={(text) => { onDirty(true); onText?.(text); }}
             onCursor={(line, col) => setCursor({ line, col })}
             onRun={run}

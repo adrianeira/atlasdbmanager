@@ -1,6 +1,7 @@
 /*
  * Integração da interface com o banco real: conversões e geração de comandos parametrizados.
  */
+import { plannedStatementsSqlite } from "./sql/sqlitePlan";
 import type { ConstraintInfo, ObjectInfo, PlannedStatement, SchemaObjects, TableDetail, TriggerInfo } from "./backend";
 import { quoteIdent, type CellValue, type ColumnDef, type DbObject, type SchemaMock, type TriggerDef } from "./model";
 
@@ -103,6 +104,8 @@ export function tableFromServer(base: DbObject, d: TableDetail): DbObject {
 export const NO_EQUALITY = new Set(["json", "xml", "point", "line", "lseg", "box", "path", "polygon", "circle"]);
 
 export interface RowChanges {
+  /** Banco que recebe os comandos; ausente = PostgreSQL. */
+  dialect?: "sqlite";
   schema: string;
   table: string;
   columns: ColumnDef[];
@@ -119,6 +122,7 @@ export interface RowChanges {
  * parâmetros em texto com cast para o tipo da coluna; nada é concatenado no SQL.
  */
 export function plannedStatements(c: RowChanges): PlannedStatement[] {
+  if (c.dialect === "sqlite") return plannedStatementsSqlite(c);
   const target = `${quoteIdent(c.schema)}.${quoteIdent(c.table)}`;
   const keys = c.columns.map((col, i) => ({ col, i })).filter((x) => x.col.key).sort((a, b) => (a.col.key ?? 0) - (b.col.key ?? 0));
   // Sem chave primária, a linha é achada por todos os valores (menos os de tipos sem igualdade). Linhas iguais marcadas juntas viram um

@@ -23,6 +23,8 @@ import { NO_EQUALITY } from "../live";
 
 /** Acesso ao banco real; ausente = modo de demonstração com dados fictícios. */
 export interface TableDataBackend {
+  /** Banco dos comandos de gravação; ausente = PostgreSQL. */
+  dialect?: "sqlite";
   loadDetail: () => Promise<DbObject>;
   /** Opcional: Data Profiling (estatísticas de cada coluna sobre os registros escolhidos). */
   profileData?: (columns: string[], orderBy: OrderBy[], filter: TableFilter | null, limit: number | null) => Promise<import("../backend").DataProfile>;
@@ -496,7 +498,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
       setApplying(true);
       setApplyError(null);
       try {
-        const planned = plannedStatements({ schema, table: table.name, columns: cols, original, current: rows, edited, newRows, deleted });
+        const planned = plannedStatements({ dialect: backend.dialect, schema, table: table.name, columns: cols, original, current: rows, edited, newRows, deleted });
         await backend.apply(planned);
       } catch (e) {
         setApplyError(errorText(toAtlasError(e)));
@@ -534,7 +536,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
       setApplying(true);
       try {
         await backend.apply(plannedStatements({
-          schema, table: table.name, columns: cols, original, current: rows,
+          dialect: backend.dialect, schema, table: table.name, columns: cols, original, current: rows,
           edited: rowEdited, newRows: new Set(isNew ? [r] : []), deleted: new Set(),
         }));
       } catch (e) {
@@ -1090,7 +1092,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
           onClose={() => setDupRow(null)}
           onInsert={async (values) => {
             // Um INSERT só com os campos preenchidos (os automáticos o banco gera); o erro do servidor (chave repetida...) volta para a janela.
-            await backend.apply(plannedStatements({ schema, table: table.name, columns: cols, original: [], current: [values], edited: new Set(), newRows: new Set([0]), deleted: new Set() }));
+            await backend.apply(plannedStatements({ dialect: backend.dialect, schema, table: table.name, columns: cols, original: [], current: [values], edited: new Set(), newRows: new Set([0]), deleted: new Set() }));
             setDupRow(null);
             await loadPage(page, table, limit);
           }}

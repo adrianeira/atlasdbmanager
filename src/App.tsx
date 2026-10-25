@@ -43,6 +43,7 @@ import { ShareDialog } from "./components/ShareDialog";
 import { TextContextMenu } from "./components/TextContextMenu";
 import { buildShareUri } from "./shareUri";
 import { liveLookupSource, makeTableBackend } from "./docBackends";
+import { newConnectionId } from "./providerRoute";
 import type { SavedTable } from "./tabWindow";
 import type { SnapshotRef } from "./tabState";
 import { viewKeyOf } from "./tableView";
@@ -215,6 +216,7 @@ function paramsFor(c: ConnectionMock): ConnectionParams {
   return {
     host: c.host, port: c.port, database: c.initialDatabase || "postgres", user: c.user,
     password: sessionPasswords.get(c.id) ?? "", sslMode: c.sslMode ?? "disable",
+    ...(c.provider === "sqlite" ? { provider: c.provider } : {}),
     // Sem senha digitada nesta sessão, o núcleo usa a do cofre (`<id>:ssh`).
     ssh: c.ssh ? { host: c.ssh.host, port: c.ssh.port, user: c.ssh.user, password: sessionPasswords.get(`${c.id}:ssh`) ?? "", keyPath: c.ssh.auth === "publickey" ? c.ssh.keyPath : "" } : undefined,
   };
@@ -569,7 +571,7 @@ export default function App() {
     if (connecting.has(connId)) return;
     const conn = connections.find((c) => c.id === connId);
     if (conn?.live) {
-      if (!sessionPasswords.has(connId) && !conn.hasPassword) {
+      if (conn.provider !== "sqlite" && !sessionPasswords.has(connId) && !conn.hasPassword) {
         setDialog({ kind: "password", connId });
         return;
       }
@@ -1719,7 +1721,7 @@ export default function App() {
       remarks: form.remarks.trim() ? form.remarks : undefined,
       ssh: form.useSsh ? { host: form.sshHost.trim(), port: Number(form.sshPort) || 22, user: form.sshUser, auth: form.sshAuth, keyPath: form.sshKeyPath, savePassword: form.sshSavePassword } : undefined,
     };
-    const id = editing?.id ?? `c${Date.now().toString(36)}`;
+    const id = editing?.id ?? newConnectionId(form.provider, Date.now().toString(36));
     // "Salvar senha" marcado: vai para o cofre do sistema (app desktop). Desmarcado: só na memória
     // desta sessão, para conectar agora sem gravar em lugar nenhum.
     const keepInMemory = () => {
@@ -2715,7 +2717,7 @@ export default function App() {
     ensureOpen: async (connId) => {
       if (openRef.current.has(connId)) return;
       const conn = connectionsRef.current.find((c) => c.id === connId);
-      if (!sessionPasswords.has(connId) && !conn?.hasPassword) {
+      if (conn?.provider !== "sqlite" && !sessionPasswords.has(connId) && !conn?.hasPassword) {
         throw { kind: "sessionNotFound", code: null, message: t("conn.needOpen"), detail: null, position: null };
       }
       await openSession(connId);
@@ -2938,7 +2940,7 @@ export default function App() {
           viewKey={isDesktop && conn?.live && tab.database ? viewKeyOf(conn.id, tab.database, tab.schema ?? "", tab.object ?? base.name) : undefined}
           initialState={tabStates.current.get(tab.id)}
           stateRef={stateRefFor(tab.id)}
-          onExport={conn?.live && tab.database ? (scope) => {
+          onExport={conn?.live && tab.database && conn.provider !== "sqlite" ? (scope) => {
             const table = tab.object ?? base.name;
             const sc = conn.databases.find((d) => d.name === tab.database)?.schemas.find((x) => x.name === tab.schema);
             setExportTarget({

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { defaultKeymap, history, historyKeymap, indentWithTab, toggleComment } from "@codemirror/commands";
-import { PostgreSQL, sql, type SQLNamespace } from "@codemirror/lang-sql";
+import { PostgreSQL, SQLite, sql, type SQLNamespace } from "@codemirror/lang-sql";
 import { bracketMatching, foldGutter, HighlightStyle, indentOnInput, indentUnit, syntaxHighlighting } from "@codemirror/language";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import {
@@ -65,6 +65,8 @@ interface Props {
   readOnly?: boolean;
   /** Nomes para o autocomplete: tabelas (com colunas), views e funções; ver `completionNamespace`. */
   schema?: SQLNamespace;
+  /** Dialeto da consulta; ausente = PostgreSQL. */
+  dialect?: "sqlite";
   defaultSchema?: string;
   placeholder?: string;
   /** Linhas (a partir de 1) com o fundo marcado: `add` em verde e `remove` em vermelho (comparação de DDL). */
@@ -105,7 +107,7 @@ function optionExtensions(o: AppOptions): Extension[] {
   ];
 }
 
-export function SqlEditor({ value, readOnly, schema, defaultSchema, placeholder, lineMarks, onChange, onCursor, onRun, handleRef }: Props) {
+export function SqlEditor({ value, readOnly, schema, dialect, defaultSchema, placeholder, lineMarks, onChange, onCursor, onRun, handleRef }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const langConf = useRef(new Compartment());
@@ -139,7 +141,7 @@ export function SqlEditor({ value, readOnly, schema, defaultSchema, placeholder,
       highlightSelectionMatches(),
       search({ top: true }),
       atlasTheme,
-      langConf.current.of(sql({ dialect: PostgreSQL, schema, defaultSchema, upperCaseKeywords: true })),
+      langConf.current.of(sql({ dialect: dialect === "sqlite" ? SQLite : PostgreSQL, schema, defaultSchema, upperCaseKeywords: true })),
       marksConf.current.of([]),
       runKeys,
       keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...completionKeymap, indentWithTab]),
@@ -233,8 +235,8 @@ export function SqlEditor({ value, readOnly, schema, defaultSchema, placeholder,
 
   // Autocomplete acompanha o schema selecionado.
   useEffect(() => {
-    view.current?.dispatch({ effects: langConf.current.reconfigure(sql({ dialect: PostgreSQL, schema, defaultSchema, upperCaseKeywords: true })) });
-  }, [schema, defaultSchema]);
+    view.current?.dispatch({ effects: langConf.current.reconfigure(sql({ dialect: dialect === "sqlite" ? SQLite : PostgreSQL, schema, defaultSchema, upperCaseKeywords: true })) });
+  }, [schema, defaultSchema, dialect]);
 
   return <div className="sql-editor" ref={host} />;
 }

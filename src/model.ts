@@ -342,6 +342,9 @@ export const FLAT_CATEGORIES: Category[] = ["table", "view", "matview", "functio
 
 export const SCHEMA_FOLDERS: Category[] = ["table", "view", "matview", "function", "query", "backup"];
 
+/** As pastas de um schema que o banco tem (o SQLite não tem views materializadas, funções nem backup do PostgreSQL). */
+export const foldersFor = (provider: ProviderId): Category[] => (provider === "sqlite" ? SCHEMA_FOLDERS.filter((c) => c === "table" || c === "view" || c === "query") : SCHEMA_FOLDERS);
+
 export interface NodeContext {
   connection?: ConnectionMock;
   database?: DatabaseMock;
@@ -503,7 +506,7 @@ export function buildVisibleTree(
           for (const cat of FLAT_CATEGORIES) listObjects(cat, 3);
           continue;
         }
-        for (const cat of SCHEMA_FOLDERS) {
+        for (const cat of foldersFor(conn.provider)) {
           const fId = `folder:${scPath}/${cat}`;
           const items = sc.objects[cat] ?? [];
           const listsChildren = cat === "table" || cat === "view" || cat === "matview" || cat === "function";
