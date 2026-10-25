@@ -481,6 +481,30 @@ pub async fn mssql_table_profile(sessions: State<'_, MssqlSessions>, session_id:
     sessions.session(&session_id)?.table_profile(&database, &schema, &table).await
 }
 
+/// Console (estilo `sqlcmd`): `input` é um comando completo, SQL (com `GO` entre lotes) ou com `.`.
+#[tauri::command]
+pub async fn mssql_console_run(sessions: State<'_, MssqlSessions>, session_id: String, database: String, input: String, options: atlas_mssql::ConsoleOptions) -> Result<atlas_mssql::ConsoleOutput, DatabaseError> {
+    sessions.session(&session_id)?.console_run(&database, &input, options).await
+}
+
+/// O texto do prompt (`atlas_demo=>`).
+#[tauri::command]
+pub async fn mssql_console_prompt(sessions: State<'_, MssqlSessions>, session_id: String, database: String) -> Result<String, DatabaseError> {
+    sessions.session(&session_id)?.console_prompt(&database).await
+}
+
+/// Tab no console.
+#[tauri::command]
+pub async fn mssql_console_complete(sessions: State<'_, MssqlSessions>, session_id: String, database: String, text: String) -> Result<atlas_mssql::ConsoleCompletion, DatabaseError> {
+    sessions.session(&session_id)?.console_complete(&database, &text).await
+}
+
+/// O texto já forma um comando completo?
+#[tauri::command]
+pub fn mssql_console_is_complete(input: String) -> bool {
+    atlas_mssql::console_is_complete(&input)
+}
+
 /// Pede para parar uma busca nos dados.
 #[tauri::command]
 pub async fn mssql_export_cancel(sessions: State<'_, MssqlSessions>, export_id: String) -> Result<(), DatabaseError> {

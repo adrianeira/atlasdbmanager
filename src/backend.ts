@@ -1088,8 +1088,8 @@ export const pg = {
   consoleRun: (sessionId: string, database: string, input: string, options: ConsoleOptions) => call<ConsoleOutput>("console_run", { sessionId, database, input, options }),
   consolePrompt: (sessionId: string, database: string) => call<string>("console_prompt", { sessionId, database }),
   consoleComplete: (sessionId: string, database: string, text: string) => call<ConsoleCompletion>("console_complete", { sessionId, database, text }),
-  // Um comando com `.` (console do SQLite) fecha na própria linha; nenhum SQL começa com ponto.
-  consoleIsComplete: (input: string) => (input.trimStart().startsWith(".") ? Promise.resolve(true) : call<boolean>("console_is_complete", { input })),
+  // Um comando com `.` (consoles do SQLite e do SQL Server) ou uma linha `GO` (SQL Server) fecha o comando; no PostgreSQL nada disso aparece.
+  consoleIsComplete: (input: string) => (input.trimStart().startsWith(".") || /(^|\n)\s*go\s*$/i.test(input) ? Promise.resolve(true) : call<boolean>("console_is_complete", { input })),
   sqlLogRead: (after: number) => call<SqlLogPage>("sqllog_read", { after }),
   sqlLogClear: () => call<void>("sqllog_clear"),
   sqlLogSetPaused: (paused: boolean) => call<void>("sqllog_set_paused", { paused }),
