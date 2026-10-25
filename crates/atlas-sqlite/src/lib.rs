@@ -9,7 +9,7 @@ use atlas_core::{
 use rusqlite::fallible_iterator::FallibleIterator;
 use rusqlite::types::ValueRef;
 use rusqlite::{Connection, InterruptHandle, OpenFlags};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -466,6 +466,80 @@ fn parse_checks(sql: &str) -> Vec<(Option<String>, String)> {
     out
 }
 
+/// Rótulos de chaves estrangeiras: para cada chave pedida, o texto da coluna de descrição da tabela referenciada.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FkLabels {
+    /// Coluna usada como descrição; `None` se a tabela não tem uma que sirva (a tela mostra a chave mesmo).
+    pub label_column: Option<String>,
+    /// Pares `[chave, rótulo]` (só das chaves que existem na tabela).
+    pub labels: Vec<[String; 2]>,
+}
+
+/// Máximo de chaves por chamada (a grade mostra uma página por vez).
+const MAX_FK_KEYS: usize = 5_000;
+
+/// Escolhe a coluna de descrição: nomes típicos primeiro (`nome`, `name`, `descricao`...), depois a primeira coluna de texto
+/// que não seja a própria chave nem pareça outra chave (`..._id`, `id_...`, `codigo`).
+fn pick_label_column(columns: &[(String, String)], key: &str) -> Option<String> {
+    let textual = |t: &str| {
+        let t = t.to_ascii_lowercase();
+        t.contains("char") || t.contains("text") || t.contains("clob")
+    };
+    let candidates: Vec<&(String, String)> = columns.iter().filter(|(n, t)| n != key && textual(t)).collect();
+    const PREFERRED: [&str; 12] = ["nome", "name", "titulo", "title", "descricao", "description", "descr", "label", "razao_social", "fantasia", "apelido", "rotulo"];
+    for want in PREFERRED {
+        if let Some((n, _)) = candidates.iter().find(|(n, _)| n.to_lowercase() == want) {
+            return Some(n.clone());
+        }
+    }
+    for want in PREFERRED {
+        if let Some((n, _)) = candidates.iter().find(|(n, _)| n.to_lowercase().contains(want)) {
+            return Some(n.clone());
+        }
+    }
+    candidates
+        .iter()
+        .find(|(n, _)| {
+            let l = n.to_lowercase();
+            !(l.ends_with("_id") || l.starts_with("id_") || l.starts_with("cod") || l == "id")
+        })
+        .map(|(n, _)| n.clone())
+}
+
+fn fk_labels_on(conn: &Connection, table: &str, key_column: &str, keys: &[String]) -> Result<FkLabels, DatabaseError> {
+    let none = FkLabels { label_column: None, labels: Vec::new() };
+    if keys.is_empty() {
+        return Ok(none);
+    }
+    let mut columns: Vec<(String, String)> = Vec::new();
+    {
+        let mut stmt = conn.prepare(&format!("PRAGMA table_info({})", quote_ident(table))).map_err(map_err)?;
+        let mut rows = stmt.query([]).map_err(map_err)?;
+        while let Some(r) = rows.next().map_err(map_err)? {
+            columns.push((r.get(1).map_err(map_err)?, r.get::<_, String>(2).map_err(map_err)?));
+        }
+    }
+    let Some(label) = pick_label_column(&columns, key_column) else { return Ok(none) };
+    let mut labels = Vec::new();
+    // Em pedaços, para ficar longe do limite de parâmetros do SQLite.
+    for chunk in keys.iter().take(MAX_FK_KEYS).collect::<Vec<_>>().chunks(500) {
+        let marks = vec!["?"; chunk.len()].join(", ");
+        let sql = format!(
+            "SELECT CAST({k} AS TEXT), CAST({l} AS TEXT) FROM {t} WHERE CAST({k} AS TEXT) IN ({marks}) AND {l} IS NOT NULL",
+            k = quote_ident(key_column),
+            l = quote_ident(&label),
+            t = quote_ident(table),
+        );
+        let mut stmt = conn.prepare(&sql).map_err(map_err)?;
+        let mut rows = stmt.query(rusqlite::params_from_iter(chunk.iter())).map_err(map_err)?;
+        while let Some(r) = rows.next().map_err(map_err)? {
+            labels.push([r.get::<_, String>(0).map_err(map_err)?, r.get::<_, String>(1).map_err(map_err)?]);
+        }
+    }
+    Ok(FkLabels { label_column: Some(label), labels })
+}
+
 /* ---------- Sessão ---------- */
 
 /// Uma conexão com um arquivo SQLite. Cada transação manual abre a sua própria conexão ao mesmo arquivo.
@@ -524,6 +598,10 @@ impl SqliteSession {
 
     pub fn execute(&self, sql: &str, max_rows: usize) -> Result<QueryOutcome, DatabaseError> {
         self.with(|c| execute_on(c, sql, max_rows))
+    }
+
+    pub fn fk_labels(&self, table: &str, key_column: &str, keys: &[String]) -> Result<FkLabels, DatabaseError> {
+        self.with(|c| fk_labels_on(c, table, key_column, keys))
     }
 
     pub fn table_rows(&self, table: &str, order_by: &[OrderBy], filter: Option<&TableFilter>, limit: Option<u32>, offset: u64, max_rows: usize) -> Result<(String, QueryOutcome), DatabaseError> {

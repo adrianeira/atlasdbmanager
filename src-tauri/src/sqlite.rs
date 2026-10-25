@@ -157,18 +157,20 @@ pub async fn sqlite_apply(sessions: State<'_, SqliteSessions>, session_id: Strin
     blocking(move || s.apply(&statements)).await
 }
 
-/// Rótulos de chaves estrangeiras: ainda sem suporte, a grade mostra a chave mesmo.
+/// Rótulos de chaves estrangeiras visíveis no grid ("mostrar o valor da chave estrangeira").
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn sqlite_fk_labels(
-    _session_id: String,
+    sessions: State<'_, SqliteSessions>,
+    session_id: String,
     _database: String,
     _schema: String,
-    _table: String,
-    _key_column: String,
-    _keys: Vec<String>,
-) -> Result<serde_json::Value, DatabaseError> {
-    Ok(serde_json::json!({ "labelColumn": null, "labels": [] }))
+    table: String,
+    key_column: String,
+    keys: Vec<String>,
+) -> Result<atlas_sqlite::FkLabels, DatabaseError> {
+    let s = sessions.session(&session_id)?;
+    blocking(move || s.fk_labels(&table, &key_column, &keys)).await
 }
 
 /// Tudo que o SQLite não tem (extensões, tablespaces, backup do PostgreSQL...): a interface recebe "indisponível".

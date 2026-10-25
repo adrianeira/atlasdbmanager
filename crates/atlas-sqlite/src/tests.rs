@@ -239,3 +239,15 @@ fn rebuilding_a_table_keeps_data_and_keeps_foreign_keys_working() {
     assert_eq!(out.statements.last().unwrap().result.as_ref().unwrap().rows[0][0].as_deref(), Some("4"));
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn fk_labels_use_the_description_column_of_the_referenced_table() {
+    let (s, path) = sample();
+    let out = s.fk_labels("clients", "id", &["1".into(), "3".into(), "99".into()]).unwrap();
+    assert_eq!(out.label_column.as_deref(), Some("name"));
+    assert_eq!(out.labels, vec![["1".to_string(), "Ana".to_string()], ["3".to_string(), "Cris".to_string()]]);
+    // Tabela sem coluna de texto que sirva: sem rótulo.
+    assert!(s.fk_labels("loose", "a", &["7".into()]).unwrap().label_column.is_some_and(|c| c == "b"));
+    assert!(s.fk_labels("orders", "id", &["1".into()]).unwrap().label_column.as_deref() == Some("note"));
+    let _ = std::fs::remove_file(path);
+}
