@@ -1049,6 +1049,12 @@ export default function App() {
 
   const newFunction = () => {
     if (!ctx.connection || !ctx.database || !ctx.schema) return;
+    if (ctx.connection.provider === "sqlserver") {
+      // SQL Server: o procedimento nasce num modelo numa aba de consulta (não há designer de procedimento).
+      const schema = ctx.schema.name;
+      openTab({ kind: "query", title: t("tab.untitledQuery"), windowTitle: t("tab.untitledQuery"), icon: "query", connectionId: ctx.connection.id, database: ctx.database.name, schema, sql: `CREATE PROCEDURE [${schema}].[new_procedure]\nAS\nBEGIN\n  SET NOCOUNT ON;\n  SELECT 1 AS x;\nEND` });
+      return;
+    }
     const title = objectTitle(t("des.untitled"), "tb.function");
     openTab({ kind: "functionDesigner", title, windowTitle: title, icon: "function", connectionId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name });
   };
@@ -1279,6 +1285,14 @@ export default function App() {
       } else if (cat === "view" && kind === "design") {
         const title = objectTitle(name, "tb.view", c);
         openTab({ ...base, kind: "viewDesigner", title, windowTitle: title, icon: "view" }, `${t("act.designView")} - ${name}`);
+      } else if (cat === "function" && c.connection?.live && c.connection.provider === "sqlserver") {
+        // SQL Server: o texto do procedimento abre numa aba de consulta, pronto para `CREATE OR ALTER`.
+        const conn = c.connection;
+        const schemaName = c.schema?.name ?? "dbo";
+        const routine = c.schema?.objects.function?.find((o) => o.name === name)?.fnName ?? name;
+        void pg.routineDefinition(conn.id, base.database ?? "", schemaName, routine)
+          .then((def) => openTab({ kind: "query", title: `${routine} - ${t("tb.function")}`, windowTitle: routine, icon: "function", connectionId: conn.id, database: base.database, schema: schemaName, sql: def.replace(/^\s*CREATE\s+(PROC|PROCEDURE|FUNCTION)\b/i, "CREATE OR ALTER $1") }))
+          .catch((e) => showError(t("act.designFunction"), e));
       } else if (cat === "function" && c.connection?.live) {
         const fn = c.schema?.objects.function?.find((o) => o.name === name);
         const title = objectTitle(fn?.fnName ?? name, "tb.function", c);
@@ -2293,7 +2307,7 @@ export default function App() {
         item("act.designFunction", () => openObjects("design", [fn.name], "function", c)),
         item("act.newFunction", newFunction),
         item("act.deleteFunction", live ? () => askDdl({
-          ...scope, title: t("act.deleteFunction"), message: confirmDelete(fn.procedure ? "procedure" : "function", fn.name), statements: [dropFuncSql(scName, fn.fnName ?? fn.name, fn.args ?? "", !!fn.procedure)], danger: true, confirmText: prod ? fn.fnName : undefined,
+          ...scope, title: t("act.deleteFunction"), message: confirmDelete(fn.procedure ? "procedure" : "function", fn.name), statements: c.connection?.provider === "sqlserver" ? [`DROP ${fn.procedure ? "PROCEDURE" : "FUNCTION"} ${quoteMssql(scName)}.${quoteMssql(fn.fnName ?? fn.name)};`] : [dropFuncSql(scName, fn.fnName ?? fn.name, fn.args ?? "", !!fn.procedure)], danger: true, confirmText: prod ? fn.fnName : undefined,
         }) : undefined),
         sep,
         item("cmd.copyName", () => { void navigator.clipboard?.writeText(fn.fnName ?? fn.name).catch(() => undefined); }),

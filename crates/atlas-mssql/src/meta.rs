@@ -180,6 +180,15 @@ impl MssqlSession {
         Ok(SchemaObjects { tables, views, functions, sequences, ..Default::default() })
     }
 
+    /// O texto de um procedimento ou função (`CREATE PROCEDURE ...`), como o servidor o guarda.
+    pub async fn routine_definition(&self, database: &str, schema: &str, name: &str) -> Result<String, DatabaseError> {
+        let client = self.client(database).await?;
+        let mut conn = client.lock().await;
+        let object = quote_literal(&format!("{}.{}", quote_ident(schema), quote_ident(name)));
+        let rows = rows_of(&mut conn, &format!("SELECT CAST(OBJECT_DEFINITION(OBJECT_ID({object})) AS nvarchar(max))"), &[]).await?;
+        rows.first().and_then(|r| os(r, 0)).ok_or_else(|| DatabaseError::new(atlas_core::ErrorKind::InvalidInput, format!("routine {schema}.{name} does not exist or is encrypted")))
+    }
+
     /// A definição de uma view (só o `SELECT`).
     pub async fn view_detail(&self, database: &str, schema: &str, view: &str) -> Result<atlas_core::ViewDetail, DatabaseError> {
         let client = self.client(database).await?;

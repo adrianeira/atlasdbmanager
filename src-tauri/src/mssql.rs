@@ -522,6 +522,12 @@ pub fn mssql_console_is_complete(input: String) -> bool {
     atlas_mssql::console_is_complete(&input)
 }
 
+/// O texto de um procedimento ou função, para abrir numa aba de consulta.
+#[tauri::command]
+pub async fn mssql_routine_definition(sessions: State<'_, MssqlSessions>, session_id: String, database: String, schema: String, name: String) -> Result<String, DatabaseError> {
+    sessions.session(&session_id)?.routine_definition(&database, &schema, &name).await
+}
+
 /// Pede para parar uma busca nos dados.
 #[tauri::command]
 pub async fn mssql_export_cancel(sessions: State<'_, MssqlSessions>, export_id: String) -> Result<(), DatabaseError> {

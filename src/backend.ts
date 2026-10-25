@@ -1077,6 +1077,8 @@ export const pg = {
   listObjects: (sessionId: string, database: string, schema: string) => call<SchemaObjects>("pg_list_objects", { sessionId, database, schema }),
   tableDetail: (sessionId: string, database: string, schema: string, table: string) =>
     call<TableDetail>("pg_table_detail", { sessionId, database, schema, table }),
+  /** SQL Server: o texto de um procedimento ou função. */
+  routineDefinition: (sessionId: string, database: string, schema: string, name: string) => call<string>("pg_routine_definition", { sessionId, database, schema, name }),
   viewDetail: (sessionId: string, database: string, schema: string, view: string) =>
     call<ViewDetail>("pg_view_detail", { sessionId, database, schema, view }),
   syncCompare: (req: SyncCompareRequest) => call<SyncSummary>("datasync_compare", { req }),
