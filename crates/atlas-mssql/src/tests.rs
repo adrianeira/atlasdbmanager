@@ -107,3 +107,20 @@ async fn live_labels_diagram_and_find() {
     let _ = s.execute("master", &format!("ALTER DATABASE {0} SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE {0}", quote_ident(&name)), 10).await;
     r.unwrap();
 }
+
+#[tokio::test]
+async fn live_cancel_stops_a_long_query_and_the_session_recovers() {
+    let Some(p) = params() else { return };
+    let s = std::sync::Arc::new(MssqlSession::open(p).await.unwrap());
+    let runner = s.clone();
+    let started = std::time::Instant::now();
+    let long = tokio::spawn(async move { runner.execute("master", "WAITFOR DELAY '00:00:30'; SELECT 1", 10).await });
+    tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+    s.cancel("master").await.unwrap();
+    let err = long.await.unwrap().unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Canceled);
+    assert!(started.elapsed() < std::time::Duration::from_secs(10));
+    // A próxima consulta abre uma conexão nova e funciona.
+    let out = s.execute("master", "SELECT 7", 10).await.unwrap();
+    assert_eq!(out.statements[0].result.as_ref().unwrap().rows[0][0].as_deref(), Some("7"));
+}

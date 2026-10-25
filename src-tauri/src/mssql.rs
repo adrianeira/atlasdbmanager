@@ -3,6 +3,7 @@
 //! Os comandos do PostgreSQL não são tocados.
 
 use crate::commands::{TABLE_ROWS_CAP, TableRows};
+use crate::local::Local;
 use crate::import::{ImportRequest, ImportSummary, JobResult, LogEvent, ProgressEvent, failed_job};
 use atlas_import::convert::{TargetKind, convert, kind_of};
 use atlas_mssql::{ImportFeed, ImportHooks, ImportMode, ImportSpec, TargetColumn};
@@ -26,6 +27,8 @@ pub struct MssqlSessions {
     sessions: Mutex<HashMap<String, Arc<MssqlSession>>>,
     txs: Mutex<HashMap<String, Arc<MssqlTx>>>,
     next_tx: AtomicU64,
+    /// Túneis SSH das conexões abertas (vivem enquanto a conexão existir).
+    tunnels: Mutex<HashMap<String, atlas_ssh::Tunnel>>,
     /// Buscas nos dados em andamento (id da busca → pedido de parada).
     finds: Mutex<HashMap<String, Arc<AtomicBool>>>,
 }
@@ -41,8 +44,12 @@ impl MssqlSessions {
 }
 
 #[tauri::command]
-pub async fn mssql_test_connection(params: ConnectionParams, _profile_id: Option<String>) -> Result<ServerInfo, DatabaseError> {
+pub async fn mssql_test_connection(local: State<'_, Local>, params: ConnectionParams, profile_id: Option<String>) -> Result<ServerInfo, DatabaseError> {
     let started = Instant::now();
+    let mut params = local.resolve_password(params, profile_id.as_deref())?;
+    // O túnel só vive durante o teste.
+    let _tunnel = crate::tunnel::start(&local, &mut params).await?;
+    params.ssh = None;
     let s = MssqlSession::open(params).await?;
     Ok(s.server_info(started.elapsed().as_millis() as u64))
 }
@@ -50,13 +57,21 @@ pub async fn mssql_test_connection(params: ConnectionParams, _profile_id: Option
 #[tauri::command]
 pub async fn mssql_open(
     app: tauri::AppHandle,
+    local: State<'_, Local>,
     sessions: State<'_, MssqlSessions>,
     session_id: String,
     params: ConnectionParams,
-    _profile_id: Option<String>,
+    profile_id: Option<String>,
 ) -> Result<ServerInfo, DatabaseError> {
     let started = Instant::now();
+    // A senha guardada no cofre do sistema e o túnel SSH, como no PostgreSQL.
+    let mut params = local.resolve_password(params, profile_id.as_deref())?;
+    let tunnel = crate::tunnel::start(&local, &mut params).await?;
+    params.ssh = None;
     let session = Arc::new(MssqlSession::open(params).await?);
+    if let (Some(t), Ok(mut map)) = (tunnel, sessions.tunnels.lock()) {
+        map.insert(session_id.clone(), t);
+    }
     let info = session.server_info(started.elapsed().as_millis() as u64);
     if let Ok(mut map) = sessions.sessions.lock() {
         map.insert(session_id.clone(), session);
@@ -68,6 +83,9 @@ pub async fn mssql_open(
 #[tauri::command]
 pub async fn mssql_close(sessions: State<'_, MssqlSessions>, session_id: String) -> Result<(), DatabaseError> {
     if let Ok(mut map) = sessions.sessions.lock() {
+        map.remove(&session_id);
+    }
+    if let Ok(mut map) = sessions.tunnels.lock() {
         map.remove(&session_id);
     }
     Ok(())
@@ -116,11 +134,10 @@ pub async fn mssql_execute(
     sessions.session(&session_id)?.execute(&database, &sql, max_rows.clamp(1, MAX_ROWS_CAP)).await
 }
 
-/// O TDS cancela com um pacote de atenção que o driver ainda não expõe: por enquanto o botão Parar não interrompe.
+/// Botão Parar: encerra a sessão que está executando a consulta (o SQL Server não cancela só o comando por este driver).
 #[tauri::command]
-pub async fn mssql_cancel(sessions: State<'_, MssqlSessions>, session_id: String, _database: String) -> Result<(), DatabaseError> {
-    sessions.session(&session_id)?;
-    Ok(())
+pub async fn mssql_cancel(sessions: State<'_, MssqlSessions>, session_id: String, database: String) -> Result<(), DatabaseError> {
+    sessions.session(&session_id)?.cancel(&database).await
 }
 
 #[tauri::command]

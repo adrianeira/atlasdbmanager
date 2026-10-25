@@ -123,7 +123,13 @@ impl MssqlSession {
     pub async fn execute(&self, database: &str, sql: &str, max_rows: usize) -> Result<QueryOutcome, DatabaseError> {
         let client = self.client(database).await?;
         let mut conn = client.lock().await;
-        run_text(&mut conn, sql, max_rows).await
+        match run_text(&mut conn, sql, max_rows).await {
+            Ok(out) => Ok(out),
+            Err(e) => {
+                drop(conn);
+                Err(self.after_error(database, e).await)
+            }
+        }
     }
 
     #[allow(clippy::too_many_arguments)]

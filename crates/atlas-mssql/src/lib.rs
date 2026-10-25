@@ -114,6 +114,10 @@ pub async fn connect(p: &ConnectionParams, database: &str) -> Result<Conn, Datab
 pub struct MssqlSession {
     params: ConnectionParams,
     clients: Mutex<HashMap<String, Arc<Mutex<Conn>>>>,
+    /// O número da sessão (`@@SPID`) da conexão de cada banco: é por ele que uma consulta em andamento é cancelada.
+    spids: std::sync::Mutex<HashMap<String, i32>>,
+    /// Bancos cuja consulta foi cancelada pelo usuário (o erro que a conexão devolve vira "cancelado").
+    canceled: std::sync::Mutex<std::collections::HashSet<String>>,
     pub version: String,
     pub version_num: i32,
     pub current_user: String,
@@ -138,9 +142,11 @@ impl MssqlSession {
         let initial_db: String = row.get::<&str, _>(1).unwrap_or("master").to_string();
         let current_user: String = row.get::<&str, _>(2).unwrap_or("").to_string();
         let _ = started;
+        let spid = spid_of(&mut conn).await;
         let mut clients = HashMap::new();
         clients.insert(initial_db.clone(), Arc::new(Mutex::new(conn)));
-        Ok(Self { params, clients: Mutex::new(clients), version, version_num, current_user, initial_db })
+        let spids = std::sync::Mutex::new(HashMap::from([(initial_db.clone(), spid)]));
+        Ok(Self { params, clients: Mutex::new(clients), spids, canceled: Default::default(), version, version_num, current_user, initial_db })
     }
 
     pub fn server_info(&self, latency_ms: u64) -> ServerInfo {
@@ -165,9 +171,39 @@ impl MssqlSession {
         if let Some(c) = map.get(db) {
             return Ok(c.clone());
         }
-        let conn = Arc::new(Mutex::new(connect(&self.params, db).await?));
+        let mut fresh = connect(&self.params, db).await?;
+        let spid = spid_of(&mut fresh).await;
+        if let Ok(mut m) = self.spids.lock() {
+            m.insert(db.to_string(), spid);
+        }
+        let conn = Arc::new(Mutex::new(fresh));
         map.insert(db.to_string(), conn.clone());
         Ok(conn)
+    }
+
+    /// Cancela o que o banco está executando: o TDS cancela com um pacote de atenção que o driver não expõe, então a sessão é
+    /// encerrada (`KILL`) por outra conexão e a seguinte consulta abre uma nova.
+    pub async fn cancel(&self, database: &str) -> Result<(), DatabaseError> {
+        let db = if database.is_empty() { self.initial_db.clone() } else { database.to_string() };
+        let spid = self.spids.lock().ok().and_then(|m| m.get(&db).copied());
+        let Some(spid) = spid.filter(|s| *s > 0) else { return Ok(()) };
+        if let Ok(mut c) = self.canceled.lock() {
+            c.insert(db.clone());
+        }
+        let mut killer = connect(&self.params, "master").await?;
+        killer.simple_query(format!("KILL {spid}")).await.map_err(map_err)?.into_results().await.map_err(map_err)?;
+        Ok(())
+    }
+
+    /// Depois de um erro: se o usuário tinha cancelado, o erro é "cancelado" e a conexão morta sai da lista.
+    pub(crate) async fn after_error(&self, database: &str, err: DatabaseError) -> DatabaseError {
+        let db = if database.is_empty() { self.initial_db.clone() } else { database.to_string() };
+        let was_canceled = self.canceled.lock().map(|mut c| c.remove(&db)).unwrap_or(false);
+        if !was_canceled {
+            return err;
+        }
+        self.clients.lock().await.remove(&db);
+        DatabaseError::new(ErrorKind::Canceled, "query canceled")
     }
 
     /// Fecha a conexão de um banco (a árvore fechou o banco).
@@ -183,6 +219,13 @@ impl MssqlSession {
     pub fn params(&self) -> &ConnectionParams {
         &self.params
     }
+}
+
+/// O `@@SPID` da conexão (0 se não der para ler).
+async fn spid_of(conn: &mut Conn) -> i32 {
+    let Ok(stream) = conn.simple_query("SELECT CAST(@@SPID AS int)").await else { return 0 };
+    let Ok(Some(row)) = stream.into_row().await else { return 0 };
+    row.get::<i32, _>(0).unwrap_or(0)
 }
 
 /// `16.0.4235.2` → ("16.0", 160000): a versão numérica no formato maior*10000 + menor*100, como o PostgreSQL.
