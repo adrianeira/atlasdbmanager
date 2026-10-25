@@ -1,0 +1,14 @@
+[package]
+name = "atlas-sqlite"
+description = "Atlas DB Manager — driver SQLite (arquivo local)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+atlas-core.workspace = true
+rusqlite = { version = "0.37", features = ["bundled", "column_decltype"] }
+serde.workspace = true
+serde_json.workspace = true

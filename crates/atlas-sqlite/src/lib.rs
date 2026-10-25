@@ -1,0 +1,519 @@
+//! Driver SQLite do Atlas: abre um arquivo, lê a estrutura e executa SQL devolvendo os mesmos formatos de resposta do PostgreSQL,
+//! para a interface usar as mesmas telas. Tudo é síncrono (o SQLite é uma biblioteca no próprio processo); quem chama decide em que
+//! thread rodar.
+
+use atlas_core::{
+    ColumnInfo, ConstraintInfo, DatabaseError, ErrorKind, IndexInfo, ObjectInfo, OrderBy, QueryOutcome, ResultColumn, ResultSet, SchemaObjects, ServerInfo,
+    StatementOutcome, TableDetail, TableFilter, TriggerInfo,
+};
+use rusqlite::fallible_iterator::FallibleIterator;
+use rusqlite::types::ValueRef;
+use rusqlite::{Connection, InterruptHandle, OpenFlags};
+use serde::Deserialize;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+/// Um comando com parâmetros posicionais (`?`), como a interface o planeja; os valores vão em texto (ou NULL) e o SQLite aplica a
+/// afinidade da coluna.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlannedStatement {
+    pub sql: String,
+    #[serde(default)]
+    pub params: Vec<Option<String>>,
+    /// UPDATE/DELETE de linha com chave: precisa afetar exatamente 1 linha, senão é conflito.
+    #[serde(default)]
+    pub expect_one_row: bool,
+    /// UPDATE/DELETE em tabela sem chave: mexe em exatamente esta quantidade de linhas iguais.
+    #[serde(default)]
+    pub expect_rows: Option<u64>,
+}
+
+pub fn quote_ident(name: &str) -> String {
+    format!("\"{}\"", name.replace('"', "\"\""))
+}
+
+fn unsupported(what: &str) -> DatabaseError {
+    DatabaseError::new(ErrorKind::UnsupportedFeature, format!("{what} is not available for SQLite"))
+}
+
+/// Erro do SQLite na forma da interface (categoria, código nativo e posição no SQL, quando há).
+fn map_err(e: rusqlite::Error) -> DatabaseError {
+    use rusqlite::ErrorCode as C;
+    match e {
+        rusqlite::Error::SqlInputError { error, msg, offset, .. } => {
+            let mut err = DatabaseError::new(ErrorKind::SqlSyntaxError, msg);
+            err.code = Some(error.extended_code.to_string());
+            err.position = u32::try_from(offset.max(0)).ok().map(|o| o + 1);
+            err
+        }
+        rusqlite::Error::SqliteFailure(f, msg) => {
+            let text = msg.unwrap_or_else(|| f.to_string());
+            let kind = match f.code {
+                C::ConstraintViolation => ErrorKind::ConstraintViolation,
+                C::OperationInterrupted => ErrorKind::Canceled,
+                C::CannotOpen => ErrorKind::DatabaseNotFound,
+                C::PermissionDenied | C::ReadOnly => ErrorKind::PermissionDenied,
+                C::NotADatabase => ErrorKind::InvalidInput,
+                C::DatabaseBusy | C::DatabaseLocked => ErrorKind::Timeout,
+                _ if text.contains("syntax error") => ErrorKind::SqlSyntaxError,
+                _ => ErrorKind::Server,
+            };
+            let mut err = DatabaseError::new(kind, text);
+            err.code = Some(f.extended_code.to_string());
+            err
+        }
+        other => DatabaseError::new(ErrorKind::Internal, other.to_string()),
+    }
+}
+
+/* ---------- Valores ---------- */
+
+/// O valor como texto, no formato que a grade espera: binário em hexa (`\x...`), real sempre com ponto decimal.
+fn value_text(v: ValueRef<'_>, boolean: bool) -> Option<String> {
+    match v {
+        ValueRef::Null => None,
+        ValueRef::Integer(i) if boolean => Some(if i == 0 { "f".into() } else { "t".into() }),
+        ValueRef::Integer(i) => Some(i.to_string()),
+        ValueRef::Real(r) => Some(format!("{r:?}")),
+        ValueRef::Text(t) => Some(String::from_utf8_lossy(t).into_owned()),
+        ValueRef::Blob(b) => {
+            let mut s = String::with_capacity(2 + b.len() * 2);
+            s.push_str("\\x");
+            for byte in b {
+                s.push_str(&format!("{byte:02x}"));
+            }
+            Some(s)
+        }
+    }
+}
+
+/// Coluna declarada como booleana (o SQLite guarda 0/1; a grade usa `t`/`f`).
+fn is_bool_type(decl: Option<&str>) -> bool {
+    decl.is_some_and(|d| d.to_ascii_lowercase().contains("bool"))
+}
+
+/* ---------- Execução ---------- */
+
+/// Roda um comando que devolve linhas (ou não) e monta o resultado; `max_rows` limita o que fica na memória.
+fn run_statement(stmt: &mut rusqlite::Statement<'_>, max_rows: usize, started: Instant) -> Result<StatementOutcome, DatabaseError> {
+    let sql_text = stmt.expanded_sql().unwrap_or_default();
+    let cols: Vec<(String, Option<String>)> = stmt.columns().iter().map(|c| (c.name().to_string(), c.decl_type().map(str::to_string))).collect();
+    if cols.is_empty() {
+        let n = stmt.execute([]).map_err(map_err)?;
+        let took = started.elapsed().as_secs_f64();
+        return Ok(StatementOutcome { result: None, rows_affected: Some(n as u64), sql: sql_text, query_time: took, fetch_time: 0.0 });
+    }
+    let bools: Vec<bool> = cols.iter().map(|(_, d)| is_bool_type(d.as_deref())).collect();
+    let mut rows = stmt.query([]).map_err(map_err)?;
+    let mut out: Vec<Vec<Option<String>>> = Vec::new();
+    let mut truncated = false;
+    let mut first_at: Option<Instant> = None;
+    while let Some(row) = rows.next().map_err(map_err)? {
+        first_at.get_or_insert_with(Instant::now);
+        if out.len() >= max_rows {
+            truncated = true;
+            break;
+        }
+        let mut cells = Vec::with_capacity(cols.len());
+        for (i, boolean) in bools.iter().enumerate() {
+            cells.push(value_text(row.get_ref(i).map_err(map_err)?, *boolean));
+        }
+        out.push(cells);
+    }
+    let began = first_at.unwrap_or_else(Instant::now);
+    let count = out.len() as u64;
+    Ok(StatementOutcome {
+        result: Some(ResultSet {
+            columns: cols.into_iter().map(|(name, decl)| ResultColumn { name, type_name: decl.filter(|d| !d.is_empty()) }).collect(),
+            rows: out,
+            truncated,
+        }),
+        rows_affected: Some(count),
+        sql: sql_text,
+        query_time: began.duration_since(started).as_secs_f64(),
+        fetch_time: began.elapsed().as_secs_f64(),
+    })
+}
+
+/// Executa o texto (um ou vários comandos separados por `;`).
+fn execute_on(conn: &Connection, sql: &str, max_rows: usize) -> Result<QueryOutcome, DatabaseError> {
+    let started = Instant::now();
+    let mut statements = Vec::new();
+    let mut batch = rusqlite::Batch::new(conn, sql);
+    loop {
+        let mut stmt = match batch.next() {
+            Ok(Some(stmt)) => stmt,
+            Ok(None) => break,
+            Err(e) => return Err(map_err(e)),
+        };
+        statements.push(run_statement(&mut stmt, max_rows, Instant::now())?);
+    }
+    Ok(QueryOutcome { statements, elapsed_ms: started.elapsed().as_millis() as u64 })
+}
+
+fn count_problem(st: &PlannedStatement, n: u64) -> Option<String> {
+    if st.expect_one_row && n != 1 {
+        Some("expected exactly 1".to_string())
+    } else if let Some(k) = st.expect_rows
+        && n != k
+    {
+        Some(format!("expected exactly {k}"))
+    } else {
+        None
+    }
+}
+
+/// Executa os comandos planejados; qualquer falha ou contagem inesperada desfaz o lote (sob SAVEPOINT).
+fn apply_on(conn: &Connection, statements: &[PlannedStatement]) -> Result<Vec<u64>, DatabaseError> {
+    conn.execute_batch("SAVEPOINT atlas_batch").map_err(map_err)?;
+    let mut affected = Vec::with_capacity(statements.len());
+    for (i, st) in statements.iter().enumerate() {
+        let res = conn.execute(&st.sql, rusqlite::params_from_iter(st.params.iter())).map(|n| n as u64).map_err(map_err);
+        let failure = match res {
+            Ok(n) => match count_problem(st, n) {
+                Some(expected) => {
+                    let mut err = DatabaseError::new(ErrorKind::ConcurrencyConflict, format!("statement {} affected {n} rows ({expected}); all changes were rolled back", i + 1));
+                    err.detail = Some(st.sql.clone());
+                    Some(err)
+                }
+                None => {
+                    affected.push(n);
+                    None
+                }
+            },
+            Err(e) => Some(e),
+        };
+        if let Some(err) = failure {
+            let _ = conn.execute_batch("ROLLBACK TO atlas_batch; RELEASE atlas_batch");
+            return Err(err);
+        }
+    }
+    conn.execute_batch("RELEASE atlas_batch").map_err(map_err)?;
+    Ok(affected)
+}
+
+/// `SELECT * FROM tabela [WHERE ...] [ORDER BY ...]`: só identificadores entre aspas entram no texto; o filtro é a expressão do usuário.
+pub fn select_sql(table: &str, order_by: &[OrderBy], filter: Option<&TableFilter>) -> String {
+    let mut sql = format!("SELECT * FROM {}", quote_ident(table));
+    if let Some(f) = filter {
+        let expr = f.expr.trim();
+        if !expr.is_empty() {
+            sql.push_str(&format!(" WHERE {expr}"));
+        }
+    }
+    if !order_by.is_empty() {
+        let cols: Vec<String> = order_by.iter().map(|o| format!("{} {}", quote_ident(&o.column), if o.descending { "DESC" } else { "ASC" })).collect();
+        sql.push_str(&format!(" ORDER BY {}", cols.join(", ")));
+    }
+    sql
+}
+
+fn rows_on(conn: &Connection, table: &str, order_by: &[OrderBy], filter: Option<&TableFilter>, limit: Option<u32>, offset: u64, max_rows: usize) -> Result<(String, QueryOutcome), DatabaseError> {
+    let mut sql = select_sql(table, order_by, filter);
+    let keep = match limit {
+        Some(limit) => {
+            sql.push_str(&format!(" LIMIT {limit} OFFSET {offset}"));
+            (limit as usize).min(max_rows)
+        }
+        None => max_rows,
+    };
+    let out = execute_on(conn, &sql, keep)?;
+    Ok((sql, out))
+}
+
+fn count_on(conn: &Connection, table: &str, filter: Option<&TableFilter>) -> Result<u64, DatabaseError> {
+    let mut sql = format!("SELECT COUNT(*) FROM {}", quote_ident(table));
+    if let Some(f) = filter {
+        let expr = f.expr.trim();
+        if !expr.is_empty() {
+            sql.push_str(&format!(" WHERE {expr}"));
+        }
+    }
+    conn.query_row(&sql, [], |r| r.get::<_, i64>(0)).map(|n| n.max(0) as u64).map_err(map_err)
+}
+
+/* ---------- Estrutura ---------- */
+
+/// `VARCHAR(20)` → (20, 0); `NUMERIC(10,2)` → (10, 2); sem parênteses → (0, 0).
+fn length_decimal(decl: &str) -> (i32, i32) {
+    let Some(open) = decl.find('(') else { return (0, 0) };
+    let Some(close) = decl[open..].find(')') else { return (0, 0) };
+    let mut parts = decl[open + 1..open + close].split(',').map(|p| p.trim().parse::<i32>().unwrap_or(0));
+    (parts.next().unwrap_or(0), parts.next().unwrap_or(0))
+}
+
+fn list_objects_on(conn: &Connection) -> Result<SchemaObjects, DatabaseError> {
+    let mut out = SchemaObjects::default();
+    let mut stmt = conn.prepare("SELECT name, type FROM sqlite_master WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' ORDER BY name COLLATE NOCASE").map_err(map_err)?;
+    let mut rows = stmt.query([]).map_err(map_err)?;
+    while let Some(r) = rows.next().map_err(map_err)? {
+        let name: String = r.get(0).map_err(map_err)?;
+        let kind: String = r.get(1).map_err(map_err)?;
+        let info = ObjectInfo { name, rows: None, comment: None, owner: None, args: None, return_type: None, language: None, data_type: None, procedure: false };
+        if kind == "view" { out.views.push(info) } else { out.tables.push(info) }
+    }
+    Ok(out)
+}
+
+fn table_detail_on(conn: &Connection, table: &str) -> Result<TableDetail, DatabaseError> {
+    let q = quote_ident(table);
+    let create_sql: Option<String> = conn.query_row("SELECT sql FROM sqlite_master WHERE name = ?1 AND type IN ('table', 'view')", [table], |r| r.get(0)).ok();
+    let without_rowid = create_sql.as_deref().is_some_and(|s| s.to_ascii_uppercase().contains("WITHOUT ROWID"));
+    // table_xinfo traz também as colunas geradas (hidden 2 = virtual, 3 = stored); hidden 1 é de tabela virtual e não aparece.
+    let mut cols: Vec<(String, String, bool, Option<String>, i32, i32)> = Vec::new();
+    {
+        let mut stmt = conn.prepare(&format!("PRAGMA table_xinfo({q})")).map_err(map_err)?;
+        let mut rows = stmt.query([]).map_err(map_err)?;
+        while let Some(r) = rows.next().map_err(map_err)? {
+            let hidden: i32 = r.get(6).map_err(map_err)?;
+            if hidden == 1 {
+                continue;
+            }
+            cols.push((r.get(1).map_err(map_err)?, r.get::<_, String>(2).map_err(map_err)?, r.get::<_, i64>(3).map_err(map_err)? != 0, r.get(4).map_err(map_err)?, r.get(5).map_err(map_err)?, hidden));
+        }
+    }
+    if cols.is_empty() {
+        return Err(DatabaseError::new(ErrorKind::InvalidInput, format!("table \"{table}\" does not exist")));
+    }
+    let pk_count = cols.iter().filter(|c| c.4 > 0).count();
+    let columns: Vec<ColumnInfo> = cols
+        .iter()
+        .map(|(name, decl, not_null, default, pk, hidden)| {
+            let (length, decimal) = length_decimal(decl);
+            // `INTEGER PRIMARY KEY` é o apelido do rowid: o próprio SQLite numera, então a coluna se comporta como identidade.
+            let rowid_alias = !without_rowid && pk_count == 1 && *pk == 1 && decl.eq_ignore_ascii_case("integer");
+            ColumnInfo {
+                name: name.clone(),
+                data_type: decl.clone(),
+                formatted_type: decl.clone(),
+                length,
+                decimal,
+                not_null: *not_null,
+                key: if *pk > 0 { Some(*pk) } else { None },
+                default: default.clone(),
+                comment: None,
+                collation: None,
+                identity: if rowid_alias { Some("d".into()) } else { None },
+                generated: if *hidden == 2 || *hidden == 3 { Some("s".into()) } else { None },
+            }
+        })
+        .collect();
+
+    let mut indexes = Vec::new();
+    let mut constraints = Vec::new();
+    {
+        let mut stmt = conn.prepare(&format!("PRAGMA index_list({q})")).map_err(map_err)?;
+        let list: Vec<(String, bool, String)> = stmt
+            .query_map([], |r| Ok((r.get::<_, String>(1)?, r.get::<_, i64>(2)? != 0, r.get::<_, String>(3)?)))
+            .map_err(map_err)?
+            .collect::<Result<_, _>>()
+            .map_err(map_err)?;
+        for (name, unique, origin) in list {
+            let mut info = conn.prepare(&format!("PRAGMA index_info({})", quote_ident(&name))).map_err(map_err)?;
+            let fields: Vec<String> = info
+                .query_map([], |r| r.get::<_, Option<String>>(2))
+                .map_err(map_err)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(map_err)?
+                .into_iter()
+                .map(|c| c.unwrap_or_else(|| "(expression)".into()))
+                .collect();
+            let definition: Option<String> = conn.query_row("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?1", [&name], |r| r.get(0)).ok().flatten();
+            let joined = fields.join(", ");
+            indexes.push(IndexInfo {
+                name: name.clone(),
+                fields: joined.clone(),
+                method: "btree".into(),
+                unique,
+                primary: origin == "pk",
+                definition: definition.unwrap_or_else(|| format!("(automatic index) ({joined})")),
+                comment: None,
+            });
+            if origin == "u" {
+                constraints.push(ConstraintInfo { name, kind: "u".into(), fields: joined.clone(), ref_schema: None, ref_table: None, ref_fields: None, on_delete: None, on_update: None, definition: format!("UNIQUE ({joined})"), comment: None });
+            }
+        }
+    }
+    {
+        // Chaves estrangeiras: cada linha do pragma é uma coluna; as de mesmo id formam uma chave composta.
+        let mut stmt = conn.prepare(&format!("PRAGMA foreign_key_list({q})")).map_err(map_err)?;
+        let rows: Vec<(i64, String, String, Option<String>, String, String)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)))
+            .map_err(map_err)?
+            .collect::<Result<_, _>>()
+            .map_err(map_err)?;
+        let mut ids: Vec<i64> = rows.iter().map(|r| r.0).collect();
+        ids.dedup();
+        for id in ids {
+            let part: Vec<_> = rows.iter().filter(|r| r.0 == id).collect();
+            let fields = part.iter().map(|r| r.2.clone()).collect::<Vec<_>>().join(", ");
+            let ref_fields = part.iter().map(|r| r.3.clone().unwrap_or_default()).collect::<Vec<_>>().join(", ");
+            constraints.push(ConstraintInfo {
+                name: format!("fk_{table}_{id}"),
+                kind: "f".into(),
+                fields: fields.clone(),
+                ref_schema: Some("main".into()),
+                ref_table: Some(part[0].1.clone()),
+                ref_fields: Some(ref_fields.clone()),
+                on_delete: Some(part[0].5.clone()),
+                on_update: Some(part[0].4.clone()),
+                definition: format!("FOREIGN KEY ({fields}) REFERENCES {} ({ref_fields})", quote_ident(&part[0].1)),
+                comment: None,
+            });
+        }
+    }
+    let mut triggers = Vec::new();
+    {
+        let mut stmt = conn.prepare("SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND tbl_name = ?1 ORDER BY name").map_err(map_err)?;
+        let rows: Vec<(String, Option<String>)> = stmt.query_map([table], |r| Ok((r.get(0)?, r.get(1)?))).map_err(map_err)?.collect::<Result<_, _>>().map_err(map_err)?;
+        for (name, sql) in rows {
+            let sql = sql.unwrap_or_default();
+            let upper = sql.to_ascii_uppercase();
+            let timing = if upper.contains("INSTEAD OF") { "INSTEAD OF" } else if upper.contains(" BEFORE ") { "BEFORE" } else { "AFTER" };
+            let events: Vec<String> = ["INSERT", "UPDATE", "DELETE"].iter().filter(|e| upper.contains(&format!(" {e} "))).map(|e| e.to_string()).collect();
+            triggers.push(TriggerInfo {
+                name,
+                definition: sql,
+                enabled: true,
+                timing: timing.into(),
+                events,
+                for_each_row: true,
+                when: None,
+                function: String::new(),
+                args: Vec::new(),
+                update_columns: Vec::new(),
+                comment: None,
+                read_only: true,
+            });
+        }
+    }
+    Ok(TableDetail { columns, indexes, constraints, triggers, owner: None, comment: None })
+}
+
+/* ---------- Sessão ---------- */
+
+/// Uma conexão com um arquivo SQLite. Cada transação manual abre a sua própria conexão ao mesmo arquivo.
+pub struct SqliteSession {
+    pub path: PathBuf,
+    conn: Mutex<Connection>,
+    interrupt: InterruptHandle,
+    pub version: String,
+    pub version_num: i32,
+}
+
+fn open_connection(path: &Path) -> Result<Connection, DatabaseError> {
+    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX).map_err(map_err)?;
+    conn.busy_timeout(Duration::from_secs(5)).map_err(map_err)?;
+    // O SQLite só confere chaves estrangeiras se for pedido a cada conexão.
+    conn.execute_batch("PRAGMA foreign_keys = ON").map_err(map_err)?;
+    Ok(conn)
+}
+
+impl SqliteSession {
+    /// Abre um arquivo que já existe (não cria um novo por engano).
+    pub fn open(path: &str) -> Result<Self, DatabaseError> {
+        let path = PathBuf::from(path.trim());
+        if path.as_os_str().is_empty() {
+            return Err(DatabaseError::new(ErrorKind::InvalidInput, "choose the database file"));
+        }
+        if !path.is_file() {
+            return Err(DatabaseError::new(ErrorKind::DatabaseNotFound, format!("database file not found: {}", path.display())));
+        }
+        let conn = open_connection(&path)?;
+        // Um arquivo que não é SQLite só reclama na primeira leitura.
+        let version: String = conn.query_row("SELECT sqlite_version()", [], |r| r.get(0)).map_err(map_err)?;
+        conn.query_row("SELECT count(*) FROM sqlite_master", [], |r| r.get::<_, i64>(0)).map_err(map_err)?;
+        let mut nums = version.split('.').map(|p| p.parse::<i32>().unwrap_or(0));
+        let version_num = nums.next().unwrap_or(0) * 1_000_000 + nums.next().unwrap_or(0) * 1_000 + nums.next().unwrap_or(0);
+        let interrupt = conn.get_interrupt_handle();
+        Ok(Self { path, conn: Mutex::new(conn), interrupt, version, version_num })
+    }
+
+    fn with<T>(&self, f: impl FnOnce(&Connection) -> Result<T, DatabaseError>) -> Result<T, DatabaseError> {
+        let guard = self.conn.lock().map_err(|_| DatabaseError::new(ErrorKind::Internal, "connection lock poisoned"))?;
+        f(&guard)
+    }
+
+    pub fn server_info(&self) -> ServerInfo {
+        ServerInfo { version: self.version.clone(), version_num: self.version_num, current_database: "main".into(), current_user: String::new(), tls: None, latency_ms: 0 }
+    }
+
+    pub fn list_objects(&self) -> Result<SchemaObjects, DatabaseError> {
+        self.with(list_objects_on)
+    }
+
+    pub fn table_detail(&self, table: &str) -> Result<TableDetail, DatabaseError> {
+        self.with(|c| table_detail_on(c, table))
+    }
+
+    pub fn execute(&self, sql: &str, max_rows: usize) -> Result<QueryOutcome, DatabaseError> {
+        self.with(|c| execute_on(c, sql, max_rows))
+    }
+
+    pub fn table_rows(&self, table: &str, order_by: &[OrderBy], filter: Option<&TableFilter>, limit: Option<u32>, offset: u64, max_rows: usize) -> Result<(String, QueryOutcome), DatabaseError> {
+        self.with(|c| rows_on(c, table, order_by, filter, limit, offset, max_rows))
+    }
+
+    pub fn table_count(&self, table: &str, filter: Option<&TableFilter>) -> Result<u64, DatabaseError> {
+        self.with(|c| count_on(c, table, filter))
+    }
+
+    pub fn apply(&self, statements: &[PlannedStatement]) -> Result<Vec<u64>, DatabaseError> {
+        self.with(|c| apply_on(c, statements))
+    }
+
+    /// Interrompe o comando em andamento (o SQLite o encerra com "interrupted").
+    pub fn cancel(&self) {
+        self.interrupt.interrupt();
+    }
+
+    /// Abre uma transação manual (conexão própria ao mesmo arquivo, com `BEGIN`).
+    pub fn begin(&self) -> Result<SqliteTx, DatabaseError> {
+        let conn = open_connection(&self.path)?;
+        conn.execute_batch("BEGIN").map_err(map_err)?;
+        Ok(SqliteTx { conn: Mutex::new(conn) })
+    }
+}
+
+/// Transação manual aberta: tudo que roda nela fica pendente até `finish`.
+pub struct SqliteTx {
+    conn: Mutex<Connection>,
+}
+
+impl SqliteTx {
+    fn with<T>(&self, f: impl FnOnce(&Connection) -> Result<T, DatabaseError>) -> Result<T, DatabaseError> {
+        let guard = self.conn.lock().map_err(|_| DatabaseError::new(ErrorKind::Internal, "transaction lock poisoned"))?;
+        f(&guard)
+    }
+
+    pub fn execute(&self, sql: &str, max_rows: usize) -> Result<QueryOutcome, DatabaseError> {
+        self.with(|c| execute_on(c, sql, max_rows))
+    }
+
+    pub fn apply(&self, statements: &[PlannedStatement]) -> Result<Vec<u64>, DatabaseError> {
+        self.with(|c| apply_on(c, statements))
+    }
+
+    pub fn table_rows(&self, table: &str, order_by: &[OrderBy], filter: Option<&TableFilter>, limit: Option<u32>, offset: u64, max_rows: usize) -> Result<(String, QueryOutcome), DatabaseError> {
+        self.with(|c| rows_on(c, table, order_by, filter, limit, offset, max_rows))
+    }
+
+    pub fn table_count(&self, table: &str, filter: Option<&TableFilter>) -> Result<u64, DatabaseError> {
+        self.with(|c| count_on(c, table, filter))
+    }
+
+    /// Grava (`commit`) ou desfaz a transação.
+    pub fn finish(&self, commit: bool) -> Result<(), DatabaseError> {
+        self.with(|c| c.execute_batch(if commit { "COMMIT" } else { "ROLLBACK" }).map_err(map_err))
+    }
+}
+
+/// Funções que o SQLite não tem como o PostgreSQL: a interface as chama e recebe "indisponível".
+pub fn unsupported_feature(what: &str) -> DatabaseError {
+    unsupported(what)
+}
+
+#[cfg(test)]
+mod tests;
