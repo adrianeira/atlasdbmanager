@@ -364,6 +364,20 @@ fn table_detail_on(conn: &Connection, table: &str) -> Result<TableDetail, Databa
             });
         }
     }
+    for (i, (name, expr)) in parse_checks(create_sql.as_deref().unwrap_or("")).into_iter().enumerate() {
+        constraints.push(ConstraintInfo {
+            name: name.unwrap_or_else(|| format!("check_{}", i + 1)),
+            kind: "c".into(),
+            fields: String::new(),
+            ref_schema: None,
+            ref_table: None,
+            ref_fields: None,
+            on_delete: None,
+            on_update: None,
+            definition: format!("CHECK ({expr})"),
+            comment: None,
+        });
+    }
     let mut triggers = Vec::new();
     {
         let mut stmt = conn.prepare("SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND tbl_name = ?1 ORDER BY name").map_err(map_err)?;
@@ -390,6 +404,66 @@ fn table_detail_on(conn: &Connection, table: &str) -> Result<TableDetail, Databa
         }
     }
     Ok(TableDetail { columns, indexes, constraints, triggers, owner: None, comment: None })
+}
+
+/// As restrições `CHECK (...)` do `CREATE TABLE` (o SQLite não as expõe por PRAGMA), com o nome de `CONSTRAINT nome` quando houver.
+/// Lê o texto respeitando aspas e parênteses.
+fn parse_checks(sql: &str) -> Vec<(Option<String>, String)> {
+    let chars: Vec<char> = sql.chars().collect();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '\'' || c == '"' || c == '`' || c == '[' {
+            let close = if c == '[' { ']' } else { c };
+            i += 1;
+            while i < chars.len() && chars[i] != close {
+                i += 1;
+            }
+            i += 1;
+            continue;
+        }
+        let word_start = i == 0 || !(chars[i - 1].is_alphanumeric() || chars[i - 1] == '_');
+        if word_start && chars[i..].iter().take(5).collect::<String>().eq_ignore_ascii_case("check") && !chars.get(i + 5).is_some_and(|c| c.is_alphanumeric() || *c == '_') {
+            let mut j = i + 5;
+            while j < chars.len() && chars[j].is_whitespace() {
+                j += 1;
+            }
+            if chars.get(j) == Some(&'(') {
+                let start = j + 1;
+                let mut depth = 1;
+                let mut k = start;
+                while k < chars.len() && depth > 0 {
+                    match chars[k] {
+                        '(' => depth += 1,
+                        ')' => depth -= 1,
+                        q @ ('\'' | '"' | '`') => {
+                            k += 1;
+                            while k < chars.len() && chars[k] != q {
+                                k += 1;
+                            }
+                        }
+                        _ => {}
+                    }
+                    k += 1;
+                }
+                if depth == 0 {
+                    let expr: String = chars[start..k - 1].iter().collect();
+                    let before: String = chars[..i].iter().collect();
+                    let tokens: Vec<&str> = before.split_whitespace().collect();
+                    let name = match tokens.as_slice() {
+                        [.., kw, name] if kw.eq_ignore_ascii_case("constraint") => Some(name.trim_matches(|c| c == '"' || c == '`' || c == '[' || c == ']' || c == '\'').to_string()),
+                        _ => None,
+                    };
+                    out.push((name, expr.trim().to_string()));
+                    i = k;
+                    continue;
+                }
+            }
+        }
+        i += 1;
+    }
+    out
 }
 
 /* ---------- Sessão ---------- */

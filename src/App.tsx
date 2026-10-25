@@ -3196,6 +3196,7 @@ export default function App() {
             if (conn?.live && tab.database && tab.schema) void loadSchema(conn.id, tab.database, tab.schema, true).catch(() => undefined);
           }}
           loadDetail={liveBackend && tab.object ? liveBackend.loadDetail : undefined}
+          dialect={conn?.provider === "sqlite" ? "sqlite" : undefined}
           applyDdl={conn?.live ? async (statements) => {
             await pg.apply(conn.id, tab.database ?? "", statements.map((sql) => ({ sql, params: [], expectOneRow: false })));
           } : undefined}

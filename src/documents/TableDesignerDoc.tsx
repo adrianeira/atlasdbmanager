@@ -10,6 +10,7 @@ import { SmallIcon } from "../icons";
 import { FullscreenButton } from "../components/FullscreenButton";
 import { quoteIdent, type ColumnDef, type DbObject, type TriggerDef } from "../model";
 import { errorText, toAtlasError } from "../backend";
+import { SQLITE_TYPES, alterStatementsSqlite, createTableStatementsSqlite, isRowidType } from "../sql/sqliteDdl";
 import { AUTO_INC_SERIAL, autoIncColumn, columnType, createTableSql, createTableStatements, triggerExtras, triggerSql } from "../sql/ddl";
 
 /* ---------- Estado de trabalho do designer ---------- */
@@ -56,11 +57,11 @@ const INDEX_METHODS = ["btree", "hash", "gist", "gin", "spgist", "brin"];
 
 let nextId = 1;
 
-function toState(t: DbObject | null): DesignState {
+function toState(t: DbObject | null, sqlite = false): DesignState {
   return {
     name: t?.name ?? "",
     fields: (t?.columns ?? []).map((c) => ({ ...c, autoInc: !!c.identity || /^nextval\(/i.test(c.default ?? ""), _id: nextId++, _orig: c.name, dimensions: 0 })),
-    indexes: (t?.indexes ?? []).map((i) => ({ name: i.name, fields: i.fields, method: i.method, unique: i.unique, concurrently: i.concurrently, comment: i.comment ?? "", tablespace: "", fillFactor: "", where: "" })),
+    indexes: (t?.indexes ?? []).filter((i) => !(sqlite && i.name.startsWith("sqlite_autoindex_"))).map((i) => ({ name: i.name, fields: i.fields, method: i.method, unique: i.unique, concurrently: i.concurrently, comment: i.comment ?? "", tablespace: "", fillFactor: "", where: "" })),
     fks: (t?.foreignKeys ?? []).map((f) => ({ name: f.name, fields: f.fields, refSchema: f.refSchema, refTable: f.refTable, refFields: f.refFields, onDelete: f.onDelete, onUpdate: f.onUpdate, comment: f.comment ?? "", matchFull: false, deferrable: "", deferred: "" })),
     uniques: (t?.uniques ?? []).map((u) => ({ name: u.name, fields: u.fields, comment: u.comment ?? "", tablespace: "", fillFactor: "", deferrable: "", deferred: "" })),
     checks: (t?.checks ?? []).map((c) => ({ name: c.name, expression: c.expression, noInherit: c.noInherit, comment: c.comment ?? "" })),
@@ -252,6 +253,9 @@ const SUBTABS: { id: SubTab; label: MessageKey }[] = [
   { id: "sql", label: "des.sqlPreview" },
 ];
 
+/** Abas do designer que o SQLite tem. */
+const SQLITE_SUBTABS = new Set<SubTab>(["fields", "indexes", "fks", "uniques", "checks", "sql"]);
+
 interface Props {
   schema: string;
   /** null = nova tabela. */
@@ -269,12 +273,15 @@ interface Props {
   loadDetail?: () => Promise<DbObject>;
   /** Conexão real: executa os comandos em uma transação (falha = nada aplicado). */
   applyDdl?: (statements: string[]) => Promise<void>;
+  /** Banco da conexão; ausente = PostgreSQL. */
+  dialect?: "sqlite";
 }
 
-export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFunctions, serverVersionNum, active, production, onStatus, onSaved, loadDetail, applyDdl }: Props) {
+export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFunctions, serverVersionNum, active, production, onStatus, onSaved, loadDetail, applyDdl, dialect }: Props) {
   const t = useT();
+  const sqlite = dialect === "sqlite";
   const [original, setOriginal] = useState<DbObject | null>(table);
-  const [d, setD] = useState<DesignState>(() => toState(table));
+  const [d, setD] = useState<DesignState>(() => toState(table, sqlite));
   const [loading, setLoading] = useState(!!loadDetail && !!table);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -287,7 +294,7 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
       .then((obj) => {
         if (!alive) return;
         setOriginal(obj);
-        setD(toState(obj));
+        setD(toState(obj, sqlite));
       })
       .catch((e) => alive && setLoadError(errorText(toAtlasError(e))))
       .finally(() => alive && setLoading(false));
@@ -317,9 +324,13 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
     const id = window.setTimeout(() => setAutoNote(null), 5000);
     return () => window.clearTimeout(id);
   }, [autoNote]);
-  const plan = useMemo(() => (original ? alterSql(schema, original, d, serverVersionNum) : null), [original, d, schema, serverVersionNum]);
+  const plan = useMemo(() => {
+    if (!original) return null;
+    if (sqlite) return alterStatementsSqlite(original, toObject(d), d.fields.map((f) => f._orig));
+    return alterSql(schema, original, d, serverVersionNum);
+  }, [original, d, schema, serverVersionNum, sqlite]);
   const dirty = isNew ? d.fields.length > 0 : !!plan?.sql;
-  const createSql = useMemo(() => createTableSql(schema, toObject(d), isNew ? "Untitled" : undefined, serverVersionNum), [schema, d, isNew, serverVersionNum]);
+  const createSql = useMemo(() => (sqlite ? createTableStatementsSqlite(toObject(d), isNew ? "Untitled" : undefined).map((x) => `${x};`).join(String.fromCharCode(10, 10)) : createTableSql(schema, toObject(d), isNew ? "Untitled" : undefined, serverVersionNum)), [schema, d, isNew, serverVersionNum, sqlite]);
 
   useEffect(() => {
     if (!pkMenu) return;
@@ -399,7 +410,15 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
     });
     // Renumera a ordem da chave após remover um campo da PK.
     const ordered = fields.filter((x) => x.key).sort((a, b) => (a.key ?? 0) - (b.key ?? 0));
-    patch({ fields: fields.map((x) => (x.key ? { ...x, key: ordered.indexOf(x) + 1 } : x)) });
+    const renumbered = fields.map((x) => (x.key ? { ...x, key: ordered.indexOf(x) + 1 } : x));
+    if (sqlite) {
+      // Chave única do tipo `integer` é o rowid do SQLite e numera sozinha; qualquer outra chave não.
+      const keyed = renumbered.filter((x) => x.key);
+      const sole = keyed.length === 1 && isRowidType(keyed[0].type);
+      patch({ fields: renumbered.map((x) => ({ ...x, autoInc: !!x.key && sole })) });
+      return;
+    }
+    patch({ fields: renumbered });
   };
 
   const save = () => {
@@ -420,7 +439,7 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
     const obj = toObject(newName ? { ...d, name: newName } : d);
     const previous = original?.name ?? null;
     if (applyDdl) {
-      const statements = isNew ? createTableStatements(schema, obj, undefined, serverVersionNum) : plan?.statements ?? [];
+      const statements = isNew ? (sqlite ? createTableStatementsSqlite(obj) : createTableStatements(schema, obj, undefined, serverVersionNum)) : plan?.statements ?? [];
       setSaving(true);
       setSaveError(null);
       try {
@@ -436,13 +455,15 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
     const saved: DbObject = {
       ...obj,
       columns: (obj.columns ?? []).map((c) => {
-        if (!c.autoInc) return c;
-        return serverVersionNum >= 100000 ? { ...c, identity: "d" as const } : { ...c, default: `nextval('${obj.name}_${c.name}_seq'::regclass)` };
+        if (!c.autoInc) return { ...c, identity: undefined };
+        return sqlite || serverVersionNum >= 100000 ? { ...c, identity: "d" as const } : { ...c, default: `nextval('${obj.name}_${c.name}_seq'::regclass)` };
       }),
+      // Os gatilhos do SQLite não se editam aqui: seguem como estavam (e voltam se a tabela for refeita).
+      ...(sqlite ? { triggers: original?.triggers, indexes: obj.indexes } : {}),
     };
     onSaved(saved, previous);
     setOriginal(saved);
-    setD(toState(saved));
+    setD(toState(saved, sqlite));
     setPreviewMode("save");
     setDialog(null);
   };
@@ -530,7 +551,7 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
   const fieldCols: EditColumn<FieldRow>[] = [
     { key: "name", label: t("col.name"), width: 200, kind: "text" },
     // Lista fixa: sem texto livre no tipo (evita tipo inválido ou SQL injetado no DDL).
-    { key: "type", label: t("des.type"), width: 120, kind: "select", options: PG_TYPES },
+    { key: "type", label: t("des.type"), width: 120, kind: "select", options: sqlite ? SQLITE_TYPES : PG_TYPES },
     { key: "length", label: t("des.length"), width: 60, kind: "number" },
     { key: "decimal", label: t("des.decimal"), width: 60, kind: "number" },
     { key: "notNull", label: t("des.notNull"), width: 60, kind: "check" },
@@ -538,6 +559,9 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
     { key: "key", label: t("des.key"), width: 60, kind: "key" },
     { key: "comment", label: t("col.comment"), width: 300, kind: "text" },
   ];
+
+  /** O SQLite não tem comentário de coluna, método de índice, schema de referência nem NO INHERIT. */
+  const sqliteCols = <T,>(cols: EditColumn<T>[]) => (sqlite ? cols.filter((c) => !["comment", "method", "concurrently", "refSchema", "noInherit"].includes(c.key)) : cols);
 
   const changeList = (k: ListKey) => (i: number, key: string, v: string | number | boolean) =>
     patch({ [k]: d[k].map((r, j) => (j === i ? { ...r, [key]: v } : r)) } as Partial<DesignState>);
@@ -575,13 +599,13 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
             <ComboInput
               className="prop-field"
               value={field.default ?? ""}
-              options={["NULL", "now()", "CURRENT_TIMESTAMP", "gen_random_uuid()", "''::text", "0", "true", "false"]}
+              options={sqlite ? ["NULL", "CURRENT_TIMESTAMP", "CURRENT_DATE", "CURRENT_TIME", "''", "0", "1"] : ["NULL", "now()", "CURRENT_TIMESTAMP", "gen_random_uuid()", "''::text", "0", "true", "false"]}
               onChange={(v) => patch({ fields: d.fields.map((f, i) => (i === selected ? { ...f, default: v || undefined } : f)) })}
               spellCheck={false}
             />
           </>
         ))}
-        {prop("des.collation", (
+        {!sqlite && prop("des.collation", (
           <span className="prop-pair">
             <select className="field" disabled={!isTextType} value={isTextType ? "pg_catalog" : ""} onChange={() => undefined}>
               <option value="" />
@@ -595,7 +619,7 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
             </select>
           </span>
         ), !isTextType)}
-        {prop("des.dimensions", <input className="field prop-field is-num" value={field.dimensions} onChange={(e) => patch({ fields: d.fields.map((f, i) => (i === selected ? { ...f, dimensions: Number(e.target.value) || 0 } : f)) })} />)}
+        {!sqlite && prop("des.dimensions", <input className="field prop-field is-num" value={field.dimensions} onChange={(e) => patch({ fields: d.fields.map((f, i) => (i === selected ? { ...f, dimensions: Number(e.target.value) || 0 } : f)) })} />)}
       </>
     ),
     indexes: (
@@ -683,7 +707,7 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
     if (tab === "fields") {
       return (
         <EditTable<FieldRow>
-          columns={fieldCols}
+          columns={sqliteCols(fieldCols)}
           rows={d.fields}
           selected={selected}
           onSelect={setSelected}
@@ -692,6 +716,23 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
             const cur = d.fields[i];
             // Clique na coluna Key marca ou tira a chave primária do campo.
             if (key === "key") { setSelected(i); togglePk(i); return; }
+            if (sqlite) {
+              // SQLite: numera sozinha a chave única do tipo `integer` (apelido do rowid); sem isso o tipo deixa de ser `integer`.
+              if (key === "autoInc" && v === true) {
+                if (d.fields.some((f, j) => j !== i && f.key)) { setAutoNote(t("des.autoIncSqliteKey")); return; }
+                patch({ fields: d.fields.map((f, j) => (j === i ? { ...f, autoInc: true, type: "integer", key: 1, notNull: true, default: undefined } : f)) });
+                return;
+              }
+              if (key === "autoInc") {
+                patch({ fields: d.fields.map((f, j) => (j === i ? { ...f, autoInc: false, type: isRowidType(f.type) ? "int" : f.type } : f)) });
+                return;
+              }
+              if (key === "type") {
+                const sole = !!cur.key && d.fields.filter((f) => f.key).length === 1;
+                patch({ fields: d.fields.map((f, j) => (j === i ? { ...f, type: String(v), autoInc: sole && isRowidType(String(v)) } : f)) });
+                return;
+              }
+            }
             if (key === "autoInc" && v === true) {
               // Só tipo inteiro numera sozinho; sem tipo escolhido vira int4. A coluna passa a ser não nula e sem valor padrão.
               if (cur.type && !AUTO_INC_SERIAL[cur.type]) { setAutoNote(t("des.autoIncType")); return; }
@@ -728,10 +769,12 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
       return <SqlEditor value={text} readOnly />;
     }
     const k = tab as ListKey;
-    return <EditTable<Row> columns={colsFor(k)} rows={d[k]} selected={selected} onSelect={setSelected} onChange={changeList(k)} onBlankDoubleClick={addItem} />;
+    return <EditTable<Row> columns={sqliteCols(colsFor(k))} rows={d[k]} selected={selected} onSelect={setSelected} onChange={changeList(k)} onBlankDoubleClick={addItem} />;
   };
 
   const actions = listTabs[tab];
+  // No SQLite o painel de baixo só existe nos campos (valor padrão); o resto é do PostgreSQL.
+  const shownBottom = sqlite && tab !== "fields" ? undefined : bottom[tab];
 
   if (loading) return <div className="doc-loading"><span className="spinner" />{t("common.loading")}</div>;
 
@@ -773,16 +816,16 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
       </div>
 
       <div className="dlg-tabs des-tabs" role="tablist">
-        {SUBTABS.map((x) => (
+        {SUBTABS.filter((x) => !sqlite || SQLITE_SUBTABS.has(x.id)).map((x) => (
           <button key={x.id} type="button" role="tab" aria-selected={tab === x.id} className={`dlg-tab${tab === x.id ? " is-active" : ""}`} onClick={() => setTab(x.id)}>
             {t(x.label)}
           </button>
         ))}
       </div>
 
-      <div className={`des-body${bottom[tab] !== undefined ? " has-bottom" : ""}`}>
+      <div className={`des-body${shownBottom !== undefined ? " has-bottom" : ""}`}>
         <div className="des-main">{body()}</div>
-        {bottom[tab] !== undefined && <div className="des-props">{bottom[tab]}</div>}
+        {shownBottom !== undefined && <div className="des-props">{shownBottom}</div>}
         {tab === "sql" && (
           <div className="des-sql-footer">
             <select className="field" value={previewMode} onChange={(e) => setPreviewMode(e.target.value as "save" | "saveAs")}>

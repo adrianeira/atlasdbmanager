@@ -200,3 +200,42 @@ fn foreign_keys_are_enforced() {
     assert_eq!(err.kind, ErrorKind::ConstraintViolation);
     cleanup(&p);
 }
+
+#[test]
+fn check_constraints_are_read_from_the_create_statement() {
+    let checks = parse_checks("CREATE TABLE t (a INT CHECK (a > 0), b TEXT, CONSTRAINT \"b_ok\" CHECK (b IN ('(x)', 'y') AND length(b) < (3 + 1)), note TEXT DEFAULT 'check (z)')");
+    assert_eq!(checks.len(), 2);
+    assert_eq!(checks[0], (None, "a > 0".to_string()));
+    assert_eq!(checks[1], (Some("b_ok".to_string()), "b IN ('(x)', 'y') AND length(b) < (3 + 1)".to_string()));
+}
+
+/// O que o designer faz para alterar a tabela: criar a nova, copiar, trocar. As chaves estrangeiras de quem aponta para ela seguem valendo.
+#[test]
+fn rebuilding_a_table_keeps_data_and_keeps_foreign_keys_working() {
+    let (s, path) = sample();
+    let plan = |sql: &str| PlannedStatement { sql: sql.into(), params: vec![], expect_one_row: false, expect_rows: None };
+    s.apply(&[
+        plan("PRAGMA defer_foreign_keys = ON"),
+        plan("CREATE TABLE \"__atlas_new\" (\"id\" INTEGER PRIMARY KEY AUTOINCREMENT, \"name\" VARCHAR(20) NOT NULL, \"extra\" TEXT)"),
+        plan("INSERT INTO \"__atlas_new\" (\"id\", \"name\") SELECT \"id\", \"name\" FROM \"clients\""),
+        plan("DROP TABLE \"clients\""),
+        // Com views apontando para a tabela, o RENAME comum recusa (a view ficaria sem tabela por um instante).
+        plan("PRAGMA legacy_alter_table = ON"),
+        plan("ALTER TABLE \"__atlas_new\" RENAME TO \"clients\""),
+        plan("PRAGMA legacy_alter_table = OFF"),
+        plan("CREATE TRIGGER clients_log AFTER INSERT ON clients BEGIN SELECT 1; END"),
+    ])
+    .unwrap();
+    let d = s.table_detail("clients").unwrap();
+    assert_eq!(d.columns.len(), 3);
+    assert_eq!(d.triggers.len(), 1);
+    assert_eq!(s.table_count("clients", None).unwrap(), 3);
+    // `orders` ainda aponta para `clients` e a chave continua sendo conferida.
+    assert!(s.execute("INSERT INTO orders (client_id) VALUES (999)", 10).is_err());
+    assert!(s.execute("INSERT INTO orders (client_id) VALUES (2)", 10).is_ok());
+    // O AUTOINCREMENT numera sozinho.
+    s.execute("INSERT INTO clients (name) VALUES ('Dani')", 10).unwrap();
+    let out = s.execute("SELECT max(id) FROM clients", 10).unwrap();
+    assert_eq!(out.statements.last().unwrap().result.as_ref().unwrap().rows[0][0].as_deref(), Some("4"));
+    let _ = std::fs::remove_file(path);
+}

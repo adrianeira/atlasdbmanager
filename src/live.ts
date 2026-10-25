@@ -57,7 +57,7 @@ function triggerFromServer(g: TriggerInfo): TriggerDef {
   return {
     name: g.name, fires: g.timing, enable: g.enabled, fn: g.function, forEach: g.forEachRow ? "ROW" : "STATEMENT",
     insert: g.events.includes("INSERT"), update: g.events.includes("UPDATE"), delete: g.events.includes("DELETE"), truncate: g.events.includes("TRUNCATE"),
-    comment: g.comment ?? undefined, updateOf: g.updateColumns.join(", "), when: g.when ?? "", args: triggerArgs(g.args), readOnly: g.readOnly,
+    comment: g.comment ?? undefined, updateOf: g.updateColumns.join(", "), when: g.when ?? "", args: triggerArgs(g.args), readOnly: g.readOnly, sql: g.definition,
   };
 }
 

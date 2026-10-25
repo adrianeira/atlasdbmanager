@@ -50,6 +50,8 @@ export interface TriggerDef {
   args?: string;
   /** Gatilho de restrição ou com tabelas de transição: aparece, mas o designer não o altera. */
   readOnly?: boolean;
+  /** Comando que criou o gatilho (SQLite), para recriá-lo quando a tabela é refeita. */
+  sql?: string;
 }
 
 export interface DbObject {
