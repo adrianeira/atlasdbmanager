@@ -18,7 +18,8 @@ type ButtonDef = { id: Category | "others"; icon: LargeIconName; label: MessageK
 
 function buttonsFor(provider?: ProviderId): ButtonDef[] {
   const pg = provider === "postgresql";
-  return [
+  const sqlite = provider === "sqlite";
+  const all: ButtonDef[] = [
     { id: "table", icon: "table", label: "tb.table" },
     { id: "view", icon: "view", label: "tb.view" },
     ...(pg ? [{ id: "matview", icon: "matview", label: "tb.matview" } as ButtonDef] : []),
@@ -31,6 +32,8 @@ function buttonsFor(provider?: ProviderId): ButtonDef[] {
     { id: "model", icon: "model", label: "tb.model" },
     { id: "bi", icon: "bi", label: "tb.bi" },
   ];
+  // O SQLite não tem funções armazenadas, usuários nem os outros tipos de objeto.
+  return sqlite ? all.filter((b) => b.id !== "function" && b.id !== "user" && b.id !== "others") : all;
 }
 
 const OTHERS_LABEL: Record<string, MessageKey> = { matview: "cat.matview", sequence: "cat.sequence", type: "cat.type", extension: "cat.extension", foreignServer: "cat.foreignServer", tablespace: "cat.tablespace" };

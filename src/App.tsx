@@ -44,6 +44,7 @@ import { TextContextMenu } from "./components/TextContextMenu";
 import { buildShareUri } from "./shareUri";
 import { liveLookupSource, makeTableBackend } from "./docBackends";
 import { newConnectionId } from "./providerRoute";
+import { menuForSqlite, sqliteHiddenKeys } from "./sqliteMenu";
 import type { SavedTable } from "./tabWindow";
 import type { SnapshotRef } from "./tabState";
 import { viewKeyOf } from "./tableView";
@@ -2323,7 +2324,9 @@ export default function App() {
         item("cmd.objectInfo", () => patchLayout({ infoVisible: true })),
       );
     }
-    if (items.length) setCtxMenu({ x, y, items });
+    // Conexão SQLite: tira os itens que o SQLite não tem (os menus nascem com os do PostgreSQL).
+    const shown = c.connection?.provider === "sqlite" ? menuForSqlite(items, new Map(sqliteHiddenKeys().map((k) => [t(k), k]))) : items;
+    if (shown.length) setCtxMenu({ x, y, items: shown });
   };
 
   // Sem o menu padrão do navegador (Voltar/Atualizar/Imprimir/Inspecionar): só os menus do Atlas (`TextContextMenu` cuida dos campos de texto).
