@@ -646,10 +646,10 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 - [ ] Notificações por e-mail
 
 ## 10. Modelagem (Model)
-- [ ] ER Diagram de **modelo** (criar, importar via "Reverse Schema to Model"); o modo Exibir → ER Diagram da área de
-      objetos está na seção 14
-- [ ] Forward engineer (model → SQL)
-- [ ] Compare models
+> **Decisão:** a modelagem sai deste projeto. Vai ser um **projeto separado**, inspirado em um modelador de dados dedicado (criar o modelo, importar de um banco, gerar o SQL, comparar modelos). O Atlas fica só com o ER Diagram da área de objetos (seção 14).
+- [x] ER Diagram de **modelo** (criar, importar via "Reverse Schema to Model"): **fora do Atlas** (projeto separado); o modo Exibir → ER Diagram da área de objetos está na seção 14
+- [x] Forward engineer (model → SQL): **fora do Atlas** (projeto separado)
+- [x] Compare models: **fora do Atlas** (projeto separado)
 
 ## 11. BI *(fora de prioridade neste ciclo)*
 - [ ] Workspace de dashboards (widgets, filtros, parâmetros, publicação)
