@@ -160,18 +160,25 @@ pub async fn mysql_apply(sessions: State<'_, MysqlSessions>, session_id: String,
     sessions.session(&session_id)?.apply(&database, &statements).await
 }
 
-/// Rótulos de chaves estrangeiras: ainda sem suporte, a grade mostra a chave mesmo.
+/// Rótulos de chaves estrangeiras.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn mysql_fk_labels(
-    _session_id: String,
-    _database: String,
+    sessions: State<'_, MysqlSessions>,
+    session_id: String,
+    database: String,
     _schema: String,
-    _table: String,
-    _key_column: String,
-    _keys: Vec<String>,
-) -> Result<serde_json::Value, DatabaseError> {
-    Ok(serde_json::json!({ "labelColumn": null, "labels": [] }))
+    table: String,
+    key_column: String,
+    keys: Vec<String>,
+) -> Result<atlas_mysql::FkLabels, DatabaseError> {
+    sessions.session(&session_id)?.fk_labels(&database, &table, &key_column, &keys).await
+}
+
+/// Tabelas (com colunas) e chaves estrangeiras de um banco, para o diagrama ER.
+#[tauri::command]
+pub async fn mysql_schema_diagram(sessions: State<'_, MysqlSessions>, session_id: String, database: String, _schema: String) -> Result<atlas_core::SchemaDiagram, DatabaseError> {
+    sessions.session(&session_id)?.schema_diagram(&database).await
 }
 
 /// Tudo que o MySQL ainda não tem nesta interface: a tela recebe "indisponível".
