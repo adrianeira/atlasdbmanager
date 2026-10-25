@@ -39,6 +39,8 @@ import { ForeignTableDesignerDoc, type ForeignTableBackend } from "./documents/F
 import { TablespaceDesignerDoc, type TablespaceBackend } from "./documents/TablespaceDesignerDoc";
 import { dropTablespaceStatement } from "./sql/tablespace";
 import { TasksDialog } from "./components/TasksDialog";
+import { ShareDialog } from "./components/ShareDialog";
+import { buildShareUri } from "./shareUri";
 import { liveLookupSource, makeTableBackend } from "./docBackends";
 import type { SavedTable } from "./tabWindow";
 import type { SnapshotRef } from "./tabState";
@@ -280,6 +282,7 @@ type Dialog =
   | { kind: "error"; title: string; message: string }
   | { kind: "info"; title: string; message: string }
   | { kind: "tasks" }
+  | { kind: "share"; connId: string; database: string | null }
   | { kind: "newDatabase"; connId: string; busy?: boolean; error?: string }
   | ({ kind: "ddl"; busy?: boolean; error?: string } & DdlRequest)
   | { kind: "name"; title: string; label: string; initial: string; onSubmit: (value: string) => void }
@@ -1897,7 +1900,7 @@ export default function App() {
           ],
         },
         sep,
-        item("cmd.share"),
+        item("cmd.share", () => setDialog({ kind: "share", connId: conn.id, database: null })),
         sep,
         item("cmd.refresh", isOpen && live ? () => refreshNode(node) : undefined),
       );
@@ -1949,6 +1952,7 @@ export default function App() {
         sep,
         item("cmd.reverseToModel"),
         item("cmd.findInDatabase", live ? () => openFind(conn.id, dbName) : undefined),
+        item("cmd.share", () => setDialog({ kind: "share", connId: conn.id, database: dbName })),
         sep,
         item("cmd.refresh", isOpen && live ? () => refreshNode(node) : undefined),
       );
@@ -3430,6 +3434,18 @@ export default function App() {
           onCancel={() => setDialog(null)}
         />
       )}
+      {dialog?.kind === "share" && (() => {
+        const conn = connections.find((c) => c.id === dialog.connId);
+        if (!conn) return null;
+        return (
+          <ShareDialog
+            name={dialog.database ?? conn.name}
+            kind={dialog.database === null ? "connection" : "database"}
+            uriFor={(opts) => buildShareUri(conn, dialog.database, opts)}
+            onClose={() => setDialog(null)}
+          />
+        );
+      })()}
       {dialog?.kind === "closeDbDirty" && (
         <MessageDialog
           title={t("msg.unsavedTitle")}

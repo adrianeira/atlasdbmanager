@@ -2768,3 +2768,14 @@ select.et-input {
 .cm-tooltip-autocomplete .cm-completionIcon-property { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='5' y='1.5' width='6' height='13' fill='%23e3e8ee' stroke='%238a96a3'/%3E%3Cpath d='M5 5.5h6M5 9.5h6' stroke='%238a96a3'/%3E%3C/svg%3E"); }
 .cm-tooltip-autocomplete .cm-completionDetail { margin-left: 6px; color: var(--c-text-muted); font-style: normal; }
 .cm-tooltip-autocomplete .cm-completionWhere { margin-left: auto; padding-left: 24px; color: var(--c-text-muted); }
+
+/* Compartilhar. */
+.share-dialog { width: min(660px, 94vw); }
+.share-head { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+.share-name { font-size: 15px; font-weight: 700; }
+.share-uri { width: 100%; height: 150px; margin-top: 6px; resize: none; font: 12px / 1.45 var(--font-mono); word-break: break-all; }
+.share-foot { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-top: 12px; }
+.share-opts { display: flex; flex-direction: column; gap: 4px; }
+.share-copy { min-width: 200px; }
+.share-info { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; margin-left: 6px; border-radius: 50%; background: #1e88e5; color: #fff; font: italic 700 10px / 1 serif; cursor: default; }
+.share-dialog .modal-title { display: inline-flex; align-items: center; gap: 6px; }

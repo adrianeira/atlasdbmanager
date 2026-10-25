@@ -532,7 +532,8 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
       *(`filterRange`/`makeMatcher` em `src/model.ts`, `NavigationPane.tsx`)*
 - [x] Find in Database / Find in Schema (ver "Localizar no banco / schema" em Entregues)
 - [x] Console do servidor (ver "Console" em Entregues)
-- [ ] Share *(`cmd.share` sem handler)*
+- [x] **Share** (menu de uma conexão e de um banco): janela "Share via Atlas URI" com o endereço `atlas://...` para copiar, **Include hosts & ports** e **Include password template** (campo de senha em branco; a senha de verdade nunca vai) e **Copy Atlas URI** *(`src/shareUri.ts`, `src/components/ShareDialog.tsx`)*
+- [ ] Receber um endereço Atlas (colar para criar a conexão ou abrir o banco) e registrar o protocolo `atlas://` no sistema *(não aparece nas capturas; hoje o endereço só é gerado)*
 - [x] Edit Database / Edit Schema (ver "Navegação / Árvore" em Entregues)
 
 ## 3. Grid de dados
