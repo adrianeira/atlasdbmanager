@@ -350,8 +350,8 @@ export const SCHEMA_FOLDERS: Category[] = ["table", "view", "matview", "function
 /** O dialeto das telas para cada banco (o PostgreSQL é o padrão e fica sem dialeto). */
 export const dialectOf = (provider: ProviderId | undefined): "sqlite" | "mssql" | "mysql" | undefined => (provider === "sqlite" ? "sqlite" : provider === "sqlserver" ? "mssql" : provider === "mysql" ? "mysql" : undefined);
 
-/** O dialeto dos designers: o MySQL ainda não tem os seus (volta `undefined`). */
-export const designerDialectOf = (provider: ProviderId | undefined): "sqlite" | "mssql" | undefined => (provider === "sqlite" ? "sqlite" : provider === "sqlserver" ? "mssql" : undefined);
+/** O dialeto dos designers de tabela. */
+export const designerDialectOf = (provider: ProviderId | undefined): "sqlite" | "mssql" | "mysql" | undefined => dialectOf(provider);
 
 export const foldersFor = (provider: ProviderId): Category[] =>
   provider === "sqlite" ? SCHEMA_FOLDERS.filter((c) => c === "table" || c === "view" || c === "query")

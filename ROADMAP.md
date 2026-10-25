@@ -540,7 +540,10 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 - [x] **SQL Server — console** (estilo `sqlcmd`: resultados alinhados, lotes com `GO`, `.tables`, `.schemas`, `.databases`, `.timing`, `.expanded`, Tab) e **duplicar tabela** (estrutura e dados; `IDENTITY_INSERT` quando há identidade)
 - [x] **SQL Server - Dump SQL File** (DDL lido do catalogo com IDENTITY, chaves, UNIQUE, CHECK, FKs, indices, views e procedimentos; dados em INSERT com N'...' e IDENTITY_INSERT; lotes com GO; reexecutado num banco novo devolve tudo), **backup e restauracao** (BACKUP/RESTORE DATABASE, arquivo no disco do servidor, lista pelo historico do msdb; o SQL Server nao faz backup de um schema so), **cancelar consulta** (KILL da sessao), **tunel SSH e senha do cofre** (como no PostgreSQL) e **procedimentos e funcoes** (o texto abre numa aba de consulta como CREATE OR ALTER; novo e excluir)
 - [ ] SQL Server: excluir um backup da lista (o arquivo esta no servidor), extrair o SQL de um backup, designer proprio de procedimentos
-- [ ] SQL Server, MySQL, Firebird, MariaDB, Oracle, MongoDB, Redis (nesta ordem)
+- [x] **MySQL (fatia vertical)** — driver `crates/atlas-mysql` (`mysql_async`; banco = schema, `KILL QUERY` para parar) e comandos `mysql_*`: conexão (senha do cofre e túnel SSH), árvore (tabelas, views, funções, consultas), leitura e edição na grade (com ou sem chave primária), transação manual e editor SQL com dialeto MySQL
+- [x] **MySQL — designer de tabela** (nova tabela e alterar: campos, índices, FKs, uniques, checks e SQL Preview; tipos do MySQL com UNSIGNED); **auto incremento** = `AUTO_INCREMENT` em coluna inteira que seja chave, uma por tabela; validado ao vivo (criar, inserir sem informar o id, desligar e ligar numa coluna existente)
+- [ ] MySQL: rótulos de FK, Data/Table Profile, Find, diagrama ER, exportação, importação, designer de view, console, renomear/duplicar/truncar, dump SQL, procedimentos
+- [ ] Firebird, MariaDB, Oracle, MongoDB, Redis (nesta ordem)
 
 ## 2. Árvore / Navegação
 - [x] **Filtro avançado da árvore**: o funil ao lado da busca abre o menu **Contém** / **Começa com** e **Diferenciar maiúsculas**

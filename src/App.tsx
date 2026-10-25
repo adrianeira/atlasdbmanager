@@ -3040,7 +3040,7 @@ export default function App() {
             if (conn?.live && tab.database && tab.schema) void loadSchema(conn.id, tab.database, tab.schema, true).catch(() => undefined);
           }}
           backend={conn?.live ? viewBackendFor(tab, conn) : undefined}
-          dialect={designerDialectOf(conn?.provider)}
+          dialect={conn?.provider === "mysql" ? undefined : (designerDialectOf(conn?.provider) as "sqlite" | "mssql" | undefined)}
         />
       );
     }

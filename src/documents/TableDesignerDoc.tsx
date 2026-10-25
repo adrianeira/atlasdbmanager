@@ -10,6 +10,7 @@ import { SmallIcon } from "../icons";
 import { FullscreenButton } from "../components/FullscreenButton";
 import { quoteIdent, type ColumnDef, type DbObject, type TriggerDef } from "../model";
 import { errorText, toAtlasError } from "../backend";
+import { MYSQL_TYPES, alterStatementsMysql, createTableStatementsMysql, isAutoType } from "../sql/mysqlDdl";
 import { MSSQL_TYPES, alterStatementsMssql, createTableStatementsMssql, isIdentityType } from "../sql/mssqlDdl";
 import { SQLITE_TYPES, alterStatementsSqlite, createTableStatementsSqlite, isRowidType } from "../sql/sqliteDdl";
 import { AUTO_INC_SERIAL, autoIncColumn, columnType, createTableSql, createTableStatements, triggerExtras, triggerSql } from "../sql/ddl";
@@ -276,17 +277,18 @@ interface Props {
   /** Conexão real: executa os comandos em uma transação (falha = nada aplicado). */
   applyDdl?: (statements: string[]) => Promise<void>;
   /** Banco da conexão; ausente = PostgreSQL. */
-  dialect?: "sqlite" | "mssql";
+  dialect?: "sqlite" | "mssql" | "mysql";
 }
 
 export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFunctions, serverVersionNum, active, production, onStatus, onSaved, loadDetail, applyDdl, dialect }: Props) {
   const t = useT();
   const sqlite = dialect === "sqlite";
   const mssql = dialect === "mssql";
+  const mysql = dialect === "mysql";
   /** Qualquer banco que não seja o PostgreSQL: sem as abas, colunas e painéis que só ele tem. */
-  const notPg = sqlite || mssql;
+  const notPg = sqlite || mssql || mysql;
   const [original, setOriginal] = useState<DbObject | null>(table);
-  const [d, setD] = useState<DesignState>(() => toState(table, sqlite, mssql));
+  const [d, setD] = useState<DesignState>(() => toState(table, sqlite, mssql || mysql));
   const [loading, setLoading] = useState(!!loadDetail && !!table);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -299,7 +301,7 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
       .then((obj) => {
         if (!alive) return;
         setOriginal(obj);
-        setD(toState(obj, sqlite, mssql));
+        setD(toState(obj, sqlite, mssql || mysql));
       })
       .catch((e) => alive && setLoadError(errorText(toAtlasError(e))))
       .finally(() => alive && setLoading(false));
@@ -333,10 +335,11 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
     if (!original) return null;
     if (sqlite) return alterStatementsSqlite(original, toObject(d), d.fields.map((f) => f._orig));
     if (mssql) return alterStatementsMssql(schema, original, toObject(d), d.fields.map((f) => f._orig));
+    if (mysql) return alterStatementsMysql(schema, original, toObject(d), d.fields.map((f) => f._orig));
     return alterSql(schema, original, d, serverVersionNum);
-  }, [original, d, schema, serverVersionNum, sqlite, mssql]);
+  }, [original, d, schema, serverVersionNum, sqlite, mssql, mysql]);
   const dirty = isNew ? d.fields.length > 0 : !!plan?.sql;
-  const createSql = useMemo(() => (sqlite ? createTableStatementsSqlite(toObject(d), isNew ? "Untitled" : undefined).map((x) => `${x};`).join(String.fromCharCode(10, 10)) : mssql ? createTableStatementsMssql(schema, toObject(d), isNew ? "Untitled" : undefined).map((x) => `${x};`).join(String.fromCharCode(10, 10)) : createTableSql(schema, toObject(d), isNew ? "Untitled" : undefined, serverVersionNum)), [schema, d, isNew, serverVersionNum, sqlite, mssql]);
+  const createSql = useMemo(() => (sqlite ? createTableStatementsSqlite(toObject(d), isNew ? "Untitled" : undefined).map((x) => `${x};`).join(String.fromCharCode(10, 10)) : mysql ? createTableStatementsMysql(schema, toObject(d), isNew ? "Untitled" : undefined).map((x) => `${x};`).join(String.fromCharCode(10, 10)) : mssql ? createTableStatementsMssql(schema, toObject(d), isNew ? "Untitled" : undefined).map((x) => `${x};`).join(String.fromCharCode(10, 10)) : createTableSql(schema, toObject(d), isNew ? "Untitled" : undefined, serverVersionNum)), [schema, d, isNew, serverVersionNum, sqlite, mssql, mysql]);
 
   useEffect(() => {
     if (!pkMenu) return;
@@ -416,6 +419,11 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
     });
     // Renumera a ordem da chave após remover um campo da PK.
     const ordered = fields.filter((x) => x.key).sort((a, b) => (a.key ?? 0) - (b.key ?? 0));
+    if (mysql) {
+      // O que numera sozinho precisa ser chave: tirar a chave tira o auto incremento.
+      patch({ fields: fields.map((x) => (x.key ? x : { ...x, autoInc: false })).map((x) => (x.key ? { ...x, key: [...fields.filter((y) => y.key)].sort((a, b) => (a.key ?? 0) - (b.key ?? 0)).indexOf(fields.find((y) => y._id === x._id) as typeof x) + 1 } : x)) });
+      return;
+    }
     const renumbered = fields.map((x) => (x.key ? { ...x, key: ordered.indexOf(x) + 1 } : x));
     if (sqlite) {
       // Chave única do tipo `integer` é o rowid do SQLite e numera sozinha; qualquer outra chave não.
@@ -445,7 +453,7 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
     const obj = toObject(newName ? { ...d, name: newName } : d);
     const previous = original?.name ?? null;
     if (applyDdl) {
-      const statements = isNew ? (sqlite ? createTableStatementsSqlite(obj) : mssql ? createTableStatementsMssql(schema, obj) : createTableStatements(schema, obj, undefined, serverVersionNum)) : plan?.statements ?? [];
+      const statements = isNew ? (sqlite ? createTableStatementsSqlite(obj) : mysql ? createTableStatementsMysql(schema, obj) : mssql ? createTableStatementsMssql(schema, obj) : createTableStatements(schema, obj, undefined, serverVersionNum)) : plan?.statements ?? [];
       setSaving(true);
       setSaveError(null);
       try {
@@ -469,7 +477,7 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
     };
     onSaved(saved, previous);
     setOriginal(saved);
-    setD(toState(saved, sqlite, mssql));
+    setD(toState(saved, sqlite, mssql || mysql));
     setPreviewMode("save");
     setDialog(null);
   };
@@ -557,7 +565,7 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
   const fieldCols: EditColumn<FieldRow>[] = [
     { key: "name", label: t("col.name"), width: 200, kind: "text" },
     // Lista fixa: sem texto livre no tipo (evita tipo inválido ou SQL injetado no DDL).
-    { key: "type", label: t("des.type"), width: 120, kind: "select", options: sqlite ? SQLITE_TYPES : mssql ? MSSQL_TYPES : PG_TYPES },
+    { key: "type", label: t("des.type"), width: 120, kind: "select", options: sqlite ? SQLITE_TYPES : mssql ? MSSQL_TYPES : mysql ? MYSQL_TYPES : PG_TYPES },
     { key: "length", label: t("des.length"), width: 60, kind: "number" },
     { key: "decimal", label: t("des.decimal"), width: 60, kind: "number" },
     { key: "notNull", label: t("des.notNull"), width: 60, kind: "check" },
@@ -567,7 +575,7 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
   ];
 
   /** O SQLite não tem comentário de coluna, método de índice, schema de referência nem NO INHERIT. */
-  const sqliteCols = <T,>(cols: EditColumn<T>[]) => (sqlite ? cols.filter((c) => !["comment", "method", "concurrently", "refSchema", "noInherit"].includes(c.key)) : mssql ? cols.filter((c) => !["comment", "method", "concurrently", "noInherit"].includes(c.key)) : cols);
+  const sqliteCols = <T,>(cols: EditColumn<T>[]) => (sqlite ? cols.filter((c) => !["comment", "method", "concurrently", "refSchema", "noInherit"].includes(c.key)) : mssql || mysql ? cols.filter((c) => !["comment", "method", "concurrently", "noInherit"].includes(c.key)) : cols);
 
   const changeList = (k: ListKey) => (i: number, key: string, v: string | number | boolean) =>
     patch({ [k]: d[k].map((r, j) => (j === i ? { ...r, [key]: v } : r)) } as Partial<DesignState>);
@@ -605,7 +613,7 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
             <ComboInput
               className="prop-field"
               value={field.default ?? ""}
-              options={mssql ? ["NULL", "GETDATE()", "SYSDATETIME()", "NEWID()", "''", "0", "1"] : sqlite ? ["NULL", "CURRENT_TIMESTAMP", "CURRENT_DATE", "CURRENT_TIME", "''", "0", "1"] : ["NULL", "now()", "CURRENT_TIMESTAMP", "gen_random_uuid()", "''::text", "0", "true", "false"]}
+              options={mysql ? ["NULL", "CURRENT_TIMESTAMP", "''", "0", "1"] : mssql ? ["NULL", "GETDATE()", "SYSDATETIME()", "NEWID()", "''", "0", "1"] : sqlite ? ["NULL", "CURRENT_TIMESTAMP", "CURRENT_DATE", "CURRENT_TIME", "''", "0", "1"] : ["NULL", "now()", "CURRENT_TIMESTAMP", "gen_random_uuid()", "''::text", "0", "true", "false"]}
               onChange={(v) => patch({ fields: d.fields.map((f, i) => (i === selected ? { ...f, default: v || undefined } : f)) })}
               spellCheck={false}
             />
@@ -722,6 +730,21 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
             const cur = d.fields[i];
             // Clique na coluna Key marca ou tira a chave primária do campo.
             if (key === "key") { setSelected(i); togglePk(i); return; }
+            if (mysql) {
+              // MySQL: AUTO_INCREMENT em tipo inteiro, uma coluna por tabela, e a coluna precisa ser chave (vira a chave se a tabela não tem uma).
+              if (key === "autoInc") {
+                if (v !== true) { patch({ fields: d.fields.map((f, j) => (j === i ? { ...f, autoInc: false } : f)) }); return; }
+                if (cur.type && !isAutoType(cur.type)) { setAutoNote(t("des.autoIncMysqlType")); return; }
+                if (d.fields.some((f, j) => j !== i && f.autoInc)) { setAutoNote(t("des.autoIncMysqlOne")); return; }
+                if (!cur.key && d.fields.some((f) => f.key)) { setAutoNote(t("des.autoIncMysqlKey")); return; }
+                patch({ fields: d.fields.map((f, j) => (j === i ? { ...f, autoInc: true, type: f.type || "int", notNull: true, key: f.key ?? 1, default: undefined } : f)) });
+                return;
+              }
+              if (key === "type" && cur.autoInc && !isAutoType(String(v))) {
+                patch({ fields: d.fields.map((f, j) => (j === i ? { ...f, type: String(v), autoInc: false } : f)) });
+                return;
+              }
+            }
             if (mssql) {
               // SQL Server: IDENTITY em tipo inteiro, uma coluna por tabela; numa coluna que já existe não se liga nem se desliga.
               if (key === "autoInc") {
@@ -840,7 +863,7 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
       </div>
 
       <div className="dlg-tabs des-tabs" role="tablist">
-        {SUBTABS.filter((x) => !(sqlite || mssql) || (sqlite ? SQLITE_SUBTABS : MSSQL_SUBTABS).has(x.id)).map((x) => (
+        {SUBTABS.filter((x) => !(sqlite || mssql || mysql) || (sqlite ? SQLITE_SUBTABS : MSSQL_SUBTABS).has(x.id)).map((x) => (
           <button key={x.id} type="button" role="tab" aria-selected={tab === x.id} className={`dlg-tab${tab === x.id ? " is-active" : ""}`} onClick={() => setTab(x.id)}>
             {t(x.label)}
           </button>
