@@ -14,8 +14,8 @@ export function makeTableBackend(connId: string, db: string, schema: string, obj
   return {
     dialect: sqlite ? "sqlite" : undefined,
     loadDetail: async () => tableFromServer(base, await pg.tableDetail(connId, db, schema, object)),
-    // Perfil dos dados e perfil da tabela são do PostgreSQL por enquanto.
-    profileData: sqlite ? undefined : (columns, orderBy, filter, limit) => pg.dataProfile(connId, db, schema, object, columns, orderBy, filter, limit),
+    // O perfil da tabela (tamanhos, estatísticas de uso) ainda é só do PostgreSQL.
+    profileData: (columns, orderBy, filter, limit) => pg.dataProfile(connId, db, schema, object, columns, orderBy, filter, limit),
     loadProfile: sqlite || objectKind === "view" ? undefined : () => pg.tableProfile(connId, db, schema, object),
     beginTx: async () => { txId = await pg.txBegin(connId, db); },
     endTx: async (commit) => {

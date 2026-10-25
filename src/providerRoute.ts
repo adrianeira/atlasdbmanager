@@ -9,7 +9,7 @@ export const SQLITE_PREFIX = "sqlite_";
 /** Os `pg_*` que o SQLite atende (o resto da lista de comandos do PostgreSQL não existe no SQLite). */
 const SQLITE_COMMANDS = new Set([
   "test_connection", "open", "close", "close_database", "list_databases", "list_schemas", "list_objects", "table_detail", "list_roles",
-  "execute", "cancel", "table_rows", "table_count", "apply", "fk_labels",
+  "execute", "cancel", "table_rows", "table_count", "apply", "fk_labels", "data_profile",
   "tx_begin", "tx_apply", "tx_execute", "tx_table_rows", "tx_table_count", "tx_end",
 ]);
 

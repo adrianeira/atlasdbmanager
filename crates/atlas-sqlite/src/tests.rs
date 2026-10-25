@@ -251,3 +251,20 @@ fn fk_labels_use_the_description_column_of_the_referenced_table() {
     assert!(s.fk_labels("orders", "id", &["1".into()]).unwrap().label_column.as_deref() == Some("note"));
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn data_profile_counts_nulls_distinct_unique_and_top_values() {
+    let (s, path) = sample();
+    let cols = vec!["id".to_string(), "total".to_string(), "photo".to_string()];
+    let p = s.data_profile("clients", &cols, &[], None, None).unwrap();
+    assert_eq!(p.rows, 3);
+    let total = &p.columns[1];
+    assert_eq!((total.nulls, total.distinct, total.unique), (1, Some(2), Some(2)));
+    assert_eq!((total.min.as_deref(), total.max.as_deref()), (Some("20"), Some("150.5")));
+    assert_eq!(p.columns[2].nulls, 2);
+    // Sobre as linhas que o limite escolhe.
+    let limited = s.data_profile("loose", &["a".to_string()], &[], None, Some(2)).unwrap();
+    assert_eq!(limited.rows, 2);
+    assert_eq!(limited.columns[0].top[0].count, 2);
+    let _ = std::fs::remove_file(path);
+}

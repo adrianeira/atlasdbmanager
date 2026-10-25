@@ -157,6 +157,24 @@ pub async fn sqlite_apply(sessions: State<'_, SqliteSessions>, session_id: Strin
     blocking(move || s.apply(&statements)).await
 }
 
+/// Data Profiling: estatísticas de cada coluna sobre os registros que o filtro, a ordenação e o limite escolhem.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn sqlite_data_profile(
+    sessions: State<'_, SqliteSessions>,
+    session_id: String,
+    _database: String,
+    _schema: String,
+    table: String,
+    columns: Vec<String>,
+    order_by: Vec<OrderBy>,
+    filter: Option<TableFilter>,
+    limit: Option<u64>,
+) -> Result<atlas_sqlite::DataProfile, DatabaseError> {
+    let s = sessions.session(&session_id)?;
+    blocking(move || s.data_profile(&table, &columns, &order_by, filter.as_ref(), limit)).await
+}
+
 /// Rótulos de chaves estrangeiras visíveis no grid ("mostrar o valor da chave estrangeira").
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]

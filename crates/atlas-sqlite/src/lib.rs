@@ -10,6 +10,9 @@ use rusqlite::fallible_iterator::FallibleIterator;
 use rusqlite::types::ValueRef;
 use rusqlite::{Connection, InterruptHandle, OpenFlags};
 use serde::{Deserialize, Serialize};
+
+pub mod profile;
+pub use profile::DataProfile;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -598,6 +601,10 @@ impl SqliteSession {
 
     pub fn execute(&self, sql: &str, max_rows: usize) -> Result<QueryOutcome, DatabaseError> {
         self.with(|c| execute_on(c, sql, max_rows))
+    }
+
+    pub fn data_profile(&self, table: &str, columns: &[String], order_by: &[OrderBy], filter: Option<&TableFilter>, limit: Option<u64>) -> Result<DataProfile, DatabaseError> {
+        self.with(|c| profile::data_profile_on(c, table, columns, order_by, filter, limit))
     }
 
     pub fn fk_labels(&self, table: &str, key_column: &str, keys: &[String]) -> Result<FkLabels, DatabaseError> {
