@@ -13,8 +13,10 @@ use serde::{Deserialize, Serialize};
 
 pub mod diagram;
 pub mod find;
+pub mod import;
 pub mod profile;
 pub use find::{FindDataResult, FindOptions, FindResult};
+pub use import::{Feed as ImportFeed, Hooks as ImportHooks, ImportMode, ImportSpec, ImportStats, TargetColumn, declared_type};
 pub use profile::DataProfile;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -655,6 +657,12 @@ impl SqliteSession {
 
     pub fn table_profile(&self, table: &str) -> Result<atlas_core::TableProfile, DatabaseError> {
         self.with(|c| profile::table_profile_on(c, table))
+    }
+
+    /// Grava as linhas de uma importação, numa conexão própria ao arquivo e numa transação só.
+    pub fn import(&self, spec: &ImportSpec, feed: &mut dyn FnMut() -> ImportFeed, hooks: ImportHooks<'_>) -> Result<ImportStats, DatabaseError> {
+        let conn = open_connection(&self.path)?;
+        import::run(&conn, spec, feed, hooks)
     }
 
     pub fn schema_diagram(&self) -> Result<atlas_core::SchemaDiagram, DatabaseError> {

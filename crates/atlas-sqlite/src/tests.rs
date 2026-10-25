@@ -326,3 +326,70 @@ fn schema_diagram_lists_columns_keys_and_relations() {
     assert_eq!((r.table.as_str(), r.ref_table.as_str(), r.columns.clone(), r.ref_columns.clone(), r.required), ("orders", "clients", vec!["client_id".to_string()], vec!["id".to_string()], false));
     let _ = std::fs::remove_file(path);
 }
+
+fn import_rows(s: &SqliteSession, table: &str, cols: &[(&str, &str)], keys: &[usize], mode: ImportMode, create: bool, continue_on_error: bool, rows: Vec<Vec<Option<&str>>>) -> ImportStats {
+    let spec = ImportSpec {
+        table: table.into(),
+        create: create.then(|| cols.iter().map(|(n, t)| (n.to_string(), t.to_string())).collect()),
+        columns: cols.iter().map(|(n, t)| TargetColumn { name: n.to_string(), declared_type: declared_type(t) }).collect(),
+        key_columns: keys.to_vec(),
+        mode,
+        extended_insert: true,
+        max_statement_bytes: 1024 * 1024,
+        continue_on_error,
+    };
+    let mut it = rows.into_iter();
+    let mut feed = move || match it.next() {
+        Some(r) => ImportFeed::Row(r.into_iter().map(|v| v.map(String::from)).collect()),
+        None => ImportFeed::End,
+    };
+    let mut log = |_line: String| {};
+    let mut progress = |_s: &ImportStats| {};
+    s.import(&spec, &mut feed, ImportHooks { log: &mut log, progress: &mut progress, cancelled: &|| false }).unwrap()
+}
+
+fn scalar(s: &SqliteSession, sql: &str) -> String {
+    s.execute(sql, 10).unwrap().statements[0].result.as_ref().unwrap().rows[0][0].clone().unwrap_or_default()
+}
+
+#[test]
+fn import_creates_a_table_and_runs_every_mode() {
+    let (s, path) = sample();
+    let cols = [("id", "integer"), ("name", "text"), ("ok", "boolean")];
+    let st = import_rows(&s, "imp", &cols, &[], ImportMode::Append, true, false, vec![vec![Some("1"), Some("a"), Some("true")], vec![Some("2"), Some("b"), Some("false")], vec![Some("3"), None, Some("true")]]);
+    assert_eq!((st.processed, st.added, st.errors, st.rolled_back), (3, 3, 0, false));
+    assert_eq!(scalar(&s, "SELECT sum(ok) FROM imp"), "2");
+    // Atualiza pela chave e acrescenta o que falta.
+    let st = import_rows(&s, "imp", &cols, &[0], ImportMode::AppendUpdate, false, false, vec![vec![Some("2"), Some("B"), Some("true")], vec![Some("9"), Some("z"), Some("false")]]);
+    assert_eq!((st.updated, st.added), (1, 1));
+    assert_eq!(scalar(&s, "SELECT name FROM imp WHERE id = 2"), "B");
+    // Só o que não existe.
+    let st = import_rows(&s, "imp", &cols, &[0], ImportMode::AppendNoUpdate, false, false, vec![vec![Some("1"), Some("x"), None], vec![Some("10"), Some("y"), None]]);
+    assert_eq!(st.added, 1);
+    assert_eq!(scalar(&s, "SELECT name FROM imp WHERE id = 1"), "a");
+    // Exclui pelas chaves.
+    let st = import_rows(&s, "imp", &cols, &[0], ImportMode::Delete, false, false, vec![vec![Some("9"), None, None], vec![Some("10"), None, None]]);
+    assert_eq!(st.deleted, 2);
+    // Copy apaga tudo e repovoa.
+    let st = import_rows(&s, "imp", &cols, &[], ImportMode::Copy, false, false, vec![vec![Some("5"), Some("only"), None]]);
+    assert_eq!((st.deleted, st.added), (3, 1));
+    assert_eq!(scalar(&s, "SELECT count(*) FROM imp"), "1");
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn import_error_rolls_back_unless_it_continues() {
+    let (s, path) = sample();
+    let cols = [("id", "integer"), ("name", "text")];
+    // `clients.id` é chave: o segundo `1` quebra.
+    let bad = || vec![vec![Some("50"), Some("a")], vec![Some("1"), Some("dup")], vec![Some("51"), Some("c")]];
+    let cols_clients = [("id", "integer"), ("name", "text")];
+    let _ = cols;
+    let st = import_rows(&s, "clients", &cols_clients, &[], ImportMode::Append, false, false, bad());
+    assert!(st.rolled_back);
+    assert_eq!(scalar(&s, "SELECT count(*) FROM clients"), "3");
+    let st = import_rows(&s, "clients", &cols_clients, &[], ImportMode::Append, false, true, bad());
+    assert_eq!((st.added, st.errors, st.rolled_back), (2, 1, false));
+    assert_eq!(scalar(&s, "SELECT count(*) FROM clients"), "5");
+    let _ = std::fs::remove_file(path);
+}

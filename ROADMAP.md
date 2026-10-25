@@ -529,7 +529,8 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 - [x] **SQLite — designer de tabela** (nova tabela e alterar): abas Fields, Indexes, Foreign Keys, Uniques, Checks e SQL Preview; tipos do SQLite; **auto incremento** = chave única de uma coluna `integer` (`INTEGER PRIMARY KEY AUTOINCREMENT`; desmarcar troca o tipo para `int`, porque `integer` com chave sempre numera). Coluna nova simples sai por `ALTER TABLE ADD COLUMN`, renomear por `RENAME COLUMN`, índices por `CREATE/DROP INDEX`; qualquer outra mudança **refaz a tabela** (cria, copia os dados, apaga, renomeia; views, chaves de outras tabelas e gatilhos seguem valendo). Os `CHECK` passam a ser lidos do `CREATE TABLE`. Validado ao vivo: criar com auto incremento, ligar e desligar numa tabela com dados *(`src/sql/sqliteDdl.ts`, `crates/atlas-sqlite`)*. Limites: tabela `WITHOUT ROWID` e colunas geradas perdem essa característica ao refazer; gatilhos não se editam
 - [x] **SQLite — rótulos de chave estrangeira, Data Profiling, Table Profile e Find in Database** (estrutura: tabelas, campos, índices, gatilhos, views e corpo das views; dados: `REGEXP` definida em toda conexão, também vale nas consultas do usuário) *(`crates/atlas-sqlite/src/{profile,find}.rs`)*
 - [x] **SQLite — exportação** (assistente de exportação e consulta: CSV, TXT, JSON, XML, HTML, SQL, Excel, DBF; números e booleanos tipados; conexão só de leitura em streaming; cancelável)
-- [ ] SQLite: ainda não fazem para ele — importação, backup, console, menu do schema (hoje mostra itens do PostgreSQL)
+- [x] **SQLite — importação** (os seis modos, tabela nova com os tipos inferidos, continuar em erro por linha, cancelável; conexão própria e uma transação por importação; booleano `0`/`1`)
+- [ ] SQLite: ainda não fazem para ele — backup, console, menu do schema (hoje mostra itens do PostgreSQL)
 - [ ] SQL Server, MySQL, Firebird, MariaDB, Oracle, MongoDB, Redis (nesta ordem)
 
 ## 2. Árvore / Navegação

@@ -137,21 +137,21 @@ pub struct ImportSummary {
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct ProgressEvent<'a> {
-    import_id: &'a str,
-    job: usize,
+pub(crate) struct ProgressEvent<'a> {
+    pub(crate) import_id: &'a str,
+    pub(crate) job: usize,
     #[serde(flatten)]
-    counts: JobResult,
+    pub(crate) counts: JobResult,
 }
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct LogEvent<'a> {
-    import_id: &'a str,
-    line: String,
+pub(crate) struct LogEvent<'a> {
+    pub(crate) import_id: &'a str,
+    pub(crate) line: String,
 }
 
-fn failed_job(table: &str, message: String, app: &AppHandle, id: &str) -> JobResult {
+pub(crate) fn failed_job(table: &str, message: String, app: &AppHandle, id: &str) -> JobResult {
     let _ = app.emit("import-log", LogEvent { import_id: id, line: format!("[ERR] {message}") });
     JobResult { table: table.to_string(), errors: 1, rolled_back: true, ..Default::default() }
 }
