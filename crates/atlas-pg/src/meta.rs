@@ -59,10 +59,13 @@ pub async fn list_schemas(s: &PgSession, include_hidden: bool) -> Result<Vec<Sch
 
 async fn relations(s: &PgSession, schema: &str, kinds: &str) -> Result<Vec<ObjectInfo>, DatabaseError> {
     // `kinds` é uma constante interna (ex.: "'r','p'"), nunca entrada do usuário.
+    // As linhas vêm das estatísticas de uso (`n_live_tup`, atualizadas a cada inserção/exclusão): o `reltuples` do planejador só muda
+    // no ANALYZE e deixaria uma tabela recém-preenchida em 0. Vale o maior dos dois (as estatísticas zeram em alguns casos, como após uma queda do servidor).
     let sql = format!(
-        "SELECT c.relname::text, CASE WHEN c.reltuples < 0 THEN NULL ELSE c.reltuples::bigint END, \
+        "SELECT c.relname::text, CASE WHEN c.reltuples < 0 AND st.n_live_tup IS NULL THEN NULL ELSE GREATEST(c.reltuples::bigint, COALESCE(st.n_live_tup, 0)) END, \
                 obj_description(c.oid, 'pg_class'), pg_get_userbyid(c.relowner)::text, CASE WHEN c.relkind = 'f' THEN 'foreign' END \
            FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+           LEFT JOIN pg_catalog.pg_stat_all_tables st ON st.relid = c.oid \
           WHERE n.nspname = $1 AND c.relkind IN ({kinds}) ORDER BY c.relname"
     );
     let rows = s.client.query(&sql, &[&schema]).await.map_err(|e| map_error(&e))?;
