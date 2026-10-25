@@ -9,6 +9,7 @@ import { SmallIcon, type SmallIconName } from "../icons";
 import { FullscreenButton } from "../components/FullscreenButton";
 import type { CellValue } from "../model";
 import { beautifySql } from "../sql/format";
+import { viewStatementsMssql } from "../sql/mssqlDdl";
 import { viewStatementsSqlite } from "../sql/sqliteDdl";
 import {
   alterMatviewStatements, alterViewStatements, cleanDefinition, createMatviewStatements, createViewStatements, emptyView, refreshMatviewSql, type ViewState,
@@ -40,7 +41,7 @@ interface Props {
   onSaved: (name: string, state: ViewState) => void;
   backend?: ViewBackend;
   /** Banco da conexão; ausente = PostgreSQL. */
-  dialect?: "sqlite";
+  dialect?: "sqlite" | "mssql";
 }
 
 type SubTab = "definition" | "rules" | "advanced" | "comment" | "sql";
@@ -79,6 +80,10 @@ export function ViewDesignerDoc({
 }: Props) {
   const t = useT();
   const sqlite = dialect === "sqlite";
+  const mssql = dialect === "mssql";
+  /** Sem `CREATE OR REPLACE VIEW`/dono/regras do PostgreSQL: só a definição e o SQL. */
+  const lite = sqlite || mssql;
+  const viewSql = (n: string, replace: boolean) => (mssql ? viewStatementsMssql(schema, n, cleanDefinition(d.definition), replace) : viewStatementsSqlite(n, cleanDefinition(d.definition), replace)).map((x) => `${x};`);
   const editor = useRef<SqlEditorHandle | null>(null);
   const [name, setName] = useState(viewName);
   const [original, setOriginal] = useState<ViewState | null>(viewName && !backend ? { ...emptyView(), ...mock } : null);
@@ -121,11 +126,11 @@ export function ViewDesignerDoc({
   const isNew = !name;
   const alterStatements = useMemo(
     () => (name && original
-      ? sqlite
-        ? cleanDefinition(original.definition) === cleanDefinition(d.definition) ? [] : viewStatementsSqlite(name, cleanDefinition(d.definition), true).map((x) => `${x};`)
+      ? lite
+        ? cleanDefinition(original.definition) === cleanDefinition(d.definition) ? [] : viewSql(name, true)
         : materialized ? alterMatviewStatements(schema, name, original, d) : alterViewStatements(schema, name, original, d, serverVersionNum)
       : []),
-    [name, original, d, schema, serverVersionNum, materialized, sqlite],
+    [name, original, d, schema, serverVersionNum, materialized, lite, mssql],
   );
   const dirty = isNew ? cleanDefinition(d.definition) !== "" : alterStatements.length > 0;
 
@@ -187,7 +192,7 @@ export function ViewDesignerDoc({
     if (text.trim()) editor.current?.replaceAll(beautifySql(text));
   };
 
-  const createStatements = (n: string) => (sqlite ? viewStatementsSqlite(n, cleanDefinition(d.definition), false).map((x) => `${x};`) : materialized ? createMatviewStatements(schema, n, d) : createViewStatements(schema, n, d, serverVersionNum));
+  const createStatements = (n: string) => (lite ? viewSql(n, false) : materialized ? createMatviewStatements(schema, n, d) : createViewStatements(schema, n, d, serverVersionNum));
 
   /** REFRESH MATERIALIZED VIEW; o resultado aparece na área de mensagens. */
   const refreshData = (concurrently: boolean) => {
@@ -364,7 +369,7 @@ export function ViewDesignerDoc({
       </div>
 
       <div className="dlg-tabs des-tabs" role="tablist">
-        {SUBTABS.filter((x) => !(materialized && x.id === "rules") && (!sqlite || x.id === "definition" || x.id === "sql")).map((x) => (
+        {SUBTABS.filter((x) => !(materialized && x.id === "rules") && (!lite || x.id === "definition" || x.id === "sql")).map((x) => (
           <button key={x.id} type="button" role="tab" aria-selected={tab === x.id} className={`dlg-tab${tab === x.id ? " is-active" : ""}`} onClick={() => setTab(x.id)}>
             {t(x.label)}
           </button>

@@ -46,6 +46,7 @@ import { liveLookupSource, makeTableBackend } from "./docBackends";
 import { newConnectionId } from "./providerRoute";
 import { hasMenuFilter, hiddenKeys, menuForProvider } from "./sqliteMenu";
 import { createTableStatementsSqlite } from "./sql/sqliteDdl";
+import { renameStatementMssql } from "./sql/mssqlDdl";
 import type { SavedTable } from "./tabWindow";
 import type { SnapshotRef } from "./tabState";
 import { viewKeyOf } from "./tableView";
@@ -2077,10 +2078,10 @@ export default function App() {
         sep,
         item("cmd.copyName", () => { void navigator.clipboard?.writeText(name).catch(() => undefined); }),
         item("cmd.renameTable", live ? () => askName(t("cmd.renameTable"), t("msg.newName"), name, (newName) => askDdl({
-          ...scope, title: t("cmd.renameTable"), statements: [`ALTER TABLE ${target} RENAME TO ${quoteIdent(newName)};`],
+          ...scope, title: t("cmd.renameTable"), statements: conn.provider === "sqlserver" ? [`${renameStatementMssql(scName, name, newName)};`] : [`ALTER TABLE ${target} RENAME TO ${quoteIdent(newName)};`],
         })) : undefined),
         sep,
-        item("cmd.newQuery", () => newQuery(`SELECT * FROM ${target} LIMIT 100;`)),
+        item("cmd.newQuery", () => newQuery(c.connection?.provider === "sqlserver" ? `SELECT TOP 100 * FROM ${target};` : `SELECT * FROM ${target} LIMIT 100;`)),
         sep,
         item("cmd.refresh", live ? () => refreshNode(node) : undefined),
         item("cmd.objectInfo", () => patchLayout({ infoVisible: true })),
@@ -2307,7 +2308,7 @@ export default function App() {
           ...scope, title: t("cmd.renameView"), statements: [`ALTER MATERIALIZED VIEW ${target} RENAME TO ${quoteIdent(newName)};`],
         })) : undefined),
         sep,
-        item("cmd.newQuery", () => newQuery(`SELECT * FROM ${target} LIMIT 100;`)),
+        item("cmd.newQuery", () => newQuery(c.connection?.provider === "sqlserver" ? `SELECT TOP 100 * FROM ${target};` : `SELECT * FROM ${target} LIMIT 100;`)),
         sep,
         item("cmd.refresh", live ? () => refreshNode(node) : undefined),
         item("cmd.objectInfo", () => patchLayout({ infoVisible: true })),
@@ -2331,10 +2332,10 @@ export default function App() {
         sep,
         item("cmd.copyName", () => { void navigator.clipboard?.writeText(name).catch(() => undefined); }),
         item("cmd.renameView", live ? () => askName(t("cmd.renameView"), t("msg.newName"), name, (newName) => askDdl({
-          ...scope, title: t("cmd.renameView"), statements: [`ALTER VIEW ${target} RENAME TO ${quoteIdent(newName)};`],
+          ...scope, title: t("cmd.renameView"), statements: c.connection?.provider === "sqlserver" ? [`${renameStatementMssql(scName, name, newName)};`] : [`ALTER VIEW ${target} RENAME TO ${quoteIdent(newName)};`],
         })) : undefined),
         sep,
-        item("cmd.newQuery", () => newQuery(`SELECT * FROM ${target} LIMIT 100;`)),
+        item("cmd.newQuery", () => newQuery(c.connection?.provider === "sqlserver" ? `SELECT TOP 100 * FROM ${target};` : `SELECT * FROM ${target} LIMIT 100;`)),
         sep,
         item("cmd.refresh", live ? () => refreshNode(node) : undefined),
         item("cmd.objectInfo", () => patchLayout({ infoVisible: true })),
@@ -2998,7 +2999,7 @@ export default function App() {
             if (conn?.live && tab.database && tab.schema) void loadSchema(conn.id, tab.database, tab.schema, true).catch(() => undefined);
           }}
           backend={conn?.live ? viewBackendFor(tab, conn) : undefined}
-          dialect={conn?.provider === "sqlite" ? "sqlite" : undefined}
+          dialect={conn?.provider === "sqlite" ? "sqlite" : conn?.provider === "sqlserver" ? "mssql" : undefined}
         />
       );
     }

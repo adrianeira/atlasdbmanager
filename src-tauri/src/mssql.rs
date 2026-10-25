@@ -452,6 +452,12 @@ pub async fn mssql_import(app: tauri::AppHandle, sessions: State<'_, MssqlSessio
     out
 }
 
+/// Definição de uma view para o designer.
+#[tauri::command]
+pub async fn mssql_view_detail(sessions: State<'_, MssqlSessions>, session_id: String, database: String, schema: String, view: String) -> Result<atlas_core::ViewDetail, DatabaseError> {
+    sessions.session(&session_id)?.view_detail(&database, &schema, &view).await
+}
+
 /// Pede para parar uma busca nos dados.
 #[tauri::command]
 pub async fn mssql_export_cancel(sessions: State<'_, MssqlSessions>, export_id: String) -> Result<(), DatabaseError> {

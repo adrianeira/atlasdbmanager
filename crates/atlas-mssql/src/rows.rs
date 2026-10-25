@@ -69,13 +69,23 @@ async fn apply_on(conn: &mut Conn, statements: &[PlannedStatement], own: bool) -
     let mut affected = Vec::with_capacity(statements.len());
     let mut failure: Option<DatabaseError> = None;
     for (i, st) in statements.iter().enumerate() {
-        let mut query = tiberius::Query::new(st.sql.clone());
-        for p in &st.params {
-            query.bind(p.clone());
-        }
-        match query.execute(conn).await {
-            Ok(res) => {
-                let n = res.total();
+        // Comando sem parâmetros e sem conferência de linhas (DDL, em geral): vai como lote simples, pois `CREATE VIEW`, `CREATE PROCEDURE`
+        // e afins precisam ser o primeiro comando do lote e o `sp_executesql` dos comandos com parâmetros não os aceita.
+        let plain = st.params.is_empty() && !st.expect_one_row && st.expect_rows.is_none();
+        let run = async {
+            if plain {
+                conn.simple_query(st.sql.as_str()).await?.into_results().await?;
+                Ok(0u64)
+            } else {
+                let mut query = tiberius::Query::new(st.sql.clone());
+                for p in &st.params {
+                    query.bind(p.clone());
+                }
+                Ok(query.execute(&mut *conn).await?.total())
+            }
+        };
+        match run.await {
+            Ok(n) => {
                 if let Some(expected) = count_problem(st, n) {
                     let mut err = DatabaseError::new(ErrorKind::ConcurrencyConflict, format!("statement {} affected {n} rows ({expected}); all changes were rolled back", i + 1));
                     err.detail = Some(st.sql.clone());

@@ -72,6 +72,14 @@ export function createTableStatementsMssql(schema: string, table: DbObject, name
   return out;
 }
 
+/** Criar a view; ao alterar, `CREATE OR ALTER` (SQL Server 2016 SP1 em diante). */
+export function viewStatementsMssql(schema: string, name: string, definition: string, replace: boolean): string[] {
+  return [`${replace ? "CREATE OR ALTER" : "CREATE"} VIEW ${q(schema)}.${q(name)} AS\n${definition.trim().replace(/;+\s*$/, "")}`];
+}
+
+/** Renomear tabela ou view. */
+export const renameStatementMssql = (schema: string, name: string, newName: string) => `EXEC sp_rename ${lit(`${q(schema)}.${q(name)}`)}, ${lit(newName)}`;
+
 export interface MssqlAlterPlan { sql: string; statements: string[]; destructive: boolean; notes: string[] }
 
 const sameType = (a: ColumnDef, b: ColumnDef) => mssqlColumnType(a).toLowerCase() === mssqlColumnType(b).toLowerCase();

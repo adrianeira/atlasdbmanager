@@ -25,6 +25,39 @@ pub(crate) async fn rows_of(conn: &mut Conn, sql: &str, params: &[&dyn ToSql]) -
     conn.query(sql, params).await.map_err(map_err)?.into_first_result().await.map_err(map_err)
 }
 
+/// O `SELECT` de um `CREATE VIEW nome [(colunas)] AS SELECT ...`: o que vem depois do primeiro `AS` fora de aspas e parênteses.
+pub(crate) fn select_of(create_sql: &str) -> Option<&str> {
+    let b = create_sql.as_bytes();
+    let (mut i, mut depth) = (0usize, 0i32);
+    while i < b.len() {
+        match b[i] {
+            q @ (b'\'' | b'"' | b'`') => {
+                i += 1;
+                while i < b.len() && b[i] != q {
+                    i += 1;
+                }
+            }
+            b'[' => {
+                while i < b.len() && b[i] != b']' {
+                    i += 1;
+                }
+            }
+            b'(' => depth += 1,
+            b')' => depth -= 1,
+            c if depth == 0 && (c == b'A' || c == b'a') && create_sql.is_char_boundary(i) => {
+                let before_ok = i == 0 || !(b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_');
+                let after = b.get(i + 2).copied();
+                if before_ok && b.get(i + 1).is_some_and(|n| *n == b'S' || *n == b's') && after.is_none_or(|a| !(a.is_ascii_alphanumeric() || a == b'_')) {
+                    return Some(create_sql[i + 2..].trim().trim_end_matches(';').trim_end());
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
 /// Tira os parênteses de fora do valor padrão (`((0))` → `0`, `('x')` → `'x'`).
 fn strip_parens(def: &str) -> String {
     let mut t = def.trim();
@@ -145,6 +178,20 @@ impl MssqlSession {
             .map(|r| ObjectInfo { name: s(r, 0), rows: None, comment: None, owner: None, args: None, return_type: None, language: None, data_type: None, procedure: false })
             .collect();
         Ok(SchemaObjects { tables, views, functions, sequences, ..Default::default() })
+    }
+
+    /// A definição de uma view (só o `SELECT`).
+    pub async fn view_detail(&self, database: &str, schema: &str, view: &str) -> Result<atlas_core::ViewDetail, DatabaseError> {
+        let client = self.client(database).await?;
+        let mut conn = client.lock().await;
+        let object = quote_literal(&format!("{}.{}", quote_ident(schema), quote_ident(view)));
+        let rows = rows_of(&mut conn, &format!("SELECT CAST(OBJECT_DEFINITION(OBJECT_ID({object}, 'V')) AS nvarchar(max))"), &[]).await?;
+        let sql = rows.first().and_then(|r| os(r, 0));
+        let Some(sql) = sql else {
+            return Err(DatabaseError::new(atlas_core::ErrorKind::InvalidInput, format!("view {schema}.{view} does not exist")));
+        };
+        let definition = select_of(&sql).ok_or_else(|| DatabaseError::new(atlas_core::ErrorKind::Internal, "could not read the view definition"))?;
+        Ok(atlas_core::ViewDetail { definition: definition.to_string(), owner: None, comment: None, check_option: None, security_barrier: false, rules: Vec::new(), populated: true })
     }
 
     pub async fn table_detail(&self, database: &str, schema: &str, table: &str) -> Result<TableDetail, DatabaseError> {
