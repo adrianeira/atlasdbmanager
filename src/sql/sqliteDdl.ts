@@ -82,6 +82,12 @@ export function createTableStatementsSqlite(table: DbObject, nameOverride?: stri
   return [createOnly(table, name), ...indexStatements(table, name)];
 }
 
+/** Criar a view (ou, ao alterar, apagar e criar de novo: o SQLite não tem `CREATE OR REPLACE VIEW`). */
+export function viewStatementsSqlite(name: string, definition: string, replace: boolean): string[] {
+  const create = `CREATE VIEW ${quoteIdent(name)} AS\n${definition.trim().replace(/;+\s*$/, "")}`;
+  return replace ? [`DROP VIEW ${quoteIdent(name)}`, create] : [create];
+}
+
 export interface SqliteAlterPlan { sql: string; statements: string[]; destructive: boolean }
 
 const sameType = (a: ColumnDef, b: ColumnDef) => sqliteColumnType(a).toLowerCase() === sqliteColumnType(b).toLowerCase();

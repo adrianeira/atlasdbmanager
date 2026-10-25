@@ -641,6 +641,13 @@ pub async fn sqlite_dump_sql(app: tauri::AppHandle, sessions: State<'_, SqliteSe
     out
 }
 
+/// Definição de uma view para o designer.
+#[tauri::command]
+pub async fn sqlite_view_detail(sessions: State<'_, SqliteSessions>, session_id: String, _database: String, _schema: String, view: String) -> Result<atlas_core::ViewDetail, DatabaseError> {
+    let s = sessions.session(&session_id)?;
+    blocking(move || s.view_detail(&view)).await
+}
+
 /// Pede para parar uma busca nos dados.
 #[tauri::command]
 pub async fn sqlite_export_cancel(sessions: State<'_, SqliteSessions>, export_id: String) -> Result<(), DatabaseError> {

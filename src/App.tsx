@@ -2992,6 +2992,7 @@ export default function App() {
             if (conn?.live && tab.database && tab.schema) void loadSchema(conn.id, tab.database, tab.schema, true).catch(() => undefined);
           }}
           backend={conn?.live ? viewBackendFor(tab, conn) : undefined}
+          dialect={conn?.provider === "sqlite" ? "sqlite" : undefined}
         />
       );
     }

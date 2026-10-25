@@ -12,6 +12,7 @@ use rusqlite::{Connection, InterruptHandle, OpenFlags};
 use serde::{Deserialize, Serialize};
 
 pub mod diagram;
+pub mod view;
 pub mod dump;
 pub mod find;
 pub mod import;
@@ -707,6 +708,11 @@ impl SqliteSession {
     /// Os comandos que recriam as tabelas e views pedidas (`None` = todas) e os dados a copiar; `clean` põe um `DROP ... IF EXISTS` antes.
     pub fn dump_plan(&self, tables: Option<&[String]>, views: Option<&[String]>, clean: bool) -> Result<DumpPlan, DatabaseError> {
         self.with(|c| dump::plan_on(c, tables, views, clean))
+    }
+
+    /// A definição de uma view (só o `SELECT`).
+    pub fn view_detail(&self, view: &str) -> Result<atlas_core::ViewDetail, DatabaseError> {
+        self.with(|c| view::view_detail_on(c, view))
     }
 
     pub fn schema_diagram(&self) -> Result<atlas_core::SchemaDiagram, DatabaseError> {

@@ -8,7 +8,7 @@ import type { MessageKey } from "./i18n";
 const NOT_IN_SQLITE = new Set<MessageKey>([
   "cmd.newDatabase", "cmd.editDatabase", "cmd.deleteDatabase", "cmd.newSchema", "cmd.editSchema", "cmd.deleteSchema",
   "cmd.extractSql", "cmd.reverseToModel", "cmd.share",
-  "cmd.truncateTable", "cmd.console",
+  "cmd.truncateTable", "cmd.console", "cmd.renameView",
 ]);
 
 /** Tira os itens que o SQLite não tem e os separadores que sobrarem soltos (no começo, no fim ou em sequência). */

@@ -532,6 +532,7 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 - [x] **SQLite — importação** (os seis modos, tabela nova com os tipos inferidos, continuar em erro por linha, cancelável; conexão própria e uma transação por importação; booleano `0`/`1`)
 - [x] **SQLite — backup e restauração** (cópia compactada do arquivo com `VACUUM INTO`, com seleção de objetos, comentário, pasta e padrão de nome; lista na categoria Backup; restaurar troca o conteúdo do banco pelo do arquivo; sem as ferramentas do PostgreSQL)
 - [x] **SQLite — Dump SQL File e duplicar tabela** (script com `CREATE` + `INSERT` que o `sqlite3` e o Atlas executam de volta; duplicar estrutura e dados com chaves, UNIQUE, CHECK e índices)
+- [x] **SQLite — designer de view** (nova view e alterar a definição; o SQLite não tem `CREATE OR REPLACE VIEW`, então alterar apaga e cria de novo; sem dono, comentário nem regras; renomear view não existe no SQLite)
 - [ ] SQLite: ainda não fazem para ele — console, menu do schema (hoje mostra itens do PostgreSQL)
 - [ ] SQL Server, MySQL, Firebird, MariaDB, Oracle, MongoDB, Redis (nesta ordem)
 
