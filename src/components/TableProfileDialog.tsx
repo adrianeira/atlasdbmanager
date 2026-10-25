@@ -9,7 +9,7 @@ interface Props {
   load: () => Promise<TableProfile>;
   onClose: () => void;
   /** Banco da tabela; ausente = PostgreSQL. */
-  dialect?: "sqlite";
+  dialect?: "sqlite" | "mssql";
 }
 
 const KIND: Record<string, MessageKey> = { r: "tp.kindTable", p: "tp.kindPartitioned", f: "tp.kindForeign", m: "tp.kindMatview" };
@@ -17,7 +17,7 @@ const REPLICA: Record<string, MessageKey> = { d: "tp.replicaDefault", n: "tp.rep
 
 /** Janela "Table Profile": o resumo de uma tabela (dono, tamanho, estrutura, uso e manutenção). Só leitura. */
 export function TableProfileDialog({ table, load, onClose, dialect }: Props) {
-  const sqlite = dialect === "sqlite";
+  const sqlite = dialect === "sqlite" || dialect === "mssql";
   const t = useT();
   const [p, setP] = useState<TableProfile | null>(null);
   const [error, setError] = useState<string | null>(null);

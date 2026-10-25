@@ -458,6 +458,29 @@ pub async fn mssql_view_detail(sessions: State<'_, MssqlSessions>, session_id: S
     sessions.session(&session_id)?.view_detail(&database, &schema, &view).await
 }
 
+/// Data Profiling: estatísticas de cada coluna sobre os registros que o filtro, a ordenação e o limite escolhem.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn mssql_data_profile(
+    sessions: State<'_, MssqlSessions>,
+    session_id: String,
+    database: String,
+    schema: String,
+    table: String,
+    columns: Vec<String>,
+    order_by: Vec<OrderBy>,
+    filter: Option<TableFilter>,
+    limit: Option<u64>,
+) -> Result<atlas_mssql::DataProfile, DatabaseError> {
+    sessions.session(&session_id)?.data_profile(&database, &schema, &table, &columns, &order_by, filter.as_ref(), limit).await
+}
+
+/// Perfil da tabela: tamanhos, contagens da estrutura e total de linhas.
+#[tauri::command]
+pub async fn mssql_table_profile(sessions: State<'_, MssqlSessions>, session_id: String, database: String, schema: String, table: String) -> Result<atlas_core::TableProfile, DatabaseError> {
+    sessions.session(&session_id)?.table_profile(&database, &schema, &table).await
+}
+
 /// Pede para parar uma busca nos dados.
 #[tauri::command]
 pub async fn mssql_export_cancel(sessions: State<'_, MssqlSessions>, export_id: String) -> Result<(), DatabaseError> {

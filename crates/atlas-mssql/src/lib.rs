@@ -8,10 +8,12 @@ mod extra;
 mod find;
 mod import;
 mod meta;
+mod profile;
 mod rows;
 mod values;
 
 pub use extra::FkLabels;
+pub use profile::DataProfile;
 pub use find::{FindDataResult, FindMode, FindOptions, FindResult};
 pub use import::{Feed as ImportFeed, Hooks as ImportHooks, ImportMode, ImportSpec, ImportStats, TargetColumn, declared_type};
 

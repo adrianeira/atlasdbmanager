@@ -204,6 +204,8 @@ pub fn run() {
             mssql::mssql_export,
             mssql::mssql_import,
             mssql::mssql_view_detail,
+            mssql::mssql_data_profile,
+            mssql::mssql_table_profile,
             mssql::mssql_find,
             mssql::mssql_find_data,
             mssql::mssql_export_cancel,
