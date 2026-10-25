@@ -607,6 +607,10 @@ impl SqliteSession {
         self.with(|c| profile::data_profile_on(c, table, columns, order_by, filter, limit))
     }
 
+    pub fn table_profile(&self, table: &str) -> Result<atlas_core::TableProfile, DatabaseError> {
+        self.with(|c| profile::table_profile_on(c, table))
+    }
+
     pub fn fk_labels(&self, table: &str, key_column: &str, keys: &[String]) -> Result<FkLabels, DatabaseError> {
         self.with(|c| fk_labels_on(c, table, key_column, keys))
     }

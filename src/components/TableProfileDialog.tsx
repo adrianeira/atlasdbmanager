@@ -8,13 +8,16 @@ interface Props {
   table: string;
   load: () => Promise<TableProfile>;
   onClose: () => void;
+  /** Banco da tabela; ausente = PostgreSQL. */
+  dialect?: "sqlite";
 }
 
 const KIND: Record<string, MessageKey> = { r: "tp.kindTable", p: "tp.kindPartitioned", f: "tp.kindForeign", m: "tp.kindMatview" };
 const REPLICA: Record<string, MessageKey> = { d: "tp.replicaDefault", n: "tp.replicaNothing", f: "tp.replicaFull", i: "tp.replicaIndex" };
 
 /** Janela "Table Profile": o resumo de uma tabela (dono, tamanho, estrutura, uso e manutenção). Só leitura. */
-export function TableProfileDialog({ table, load, onClose }: Props) {
+export function TableProfileDialog({ table, load, onClose, dialect }: Props) {
+  const sqlite = dialect === "sqlite";
   const t = useT();
   const [p, setP] = useState<TableProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +57,9 @@ export function TableProfileDialog({ table, load, onClose }: Props) {
           {error && <div className="doc-banner is-warn">{error}</div>}
           {p && (
             <>
-              {section("tp.general", [
+              {section("tp.general", sqlite ? [
+                ["tp.type", t(KIND[p.kind] ?? "tp.kindTable")],
+              ] : [
                 ["tp.owner", p.owner],
                 ["tp.type", t(KIND[p.kind] ?? "tp.kindTable")],
                 ["tp.persistence", t(`tp.persist.${p.persistence}` as MessageKey)],
@@ -78,7 +83,7 @@ export function TableProfileDialog({ table, load, onClose }: Props) {
                 ["tp.checks", n(p.checks)],
                 ["tp.triggers", n(p.triggers)],
               ])}
-              {section("tp.activity", [
+              {!sqlite && section("tp.activity", [
                 ["tp.liveRows", n(p.liveTuples)],
                 ["tp.deadRows", n(p.deadTuples)],
                 ["tp.seqScans", n(p.seqScans)],

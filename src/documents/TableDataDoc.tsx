@@ -894,7 +894,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
         )}
       </div>
 
-      {profileOpen && backend?.loadProfile && <TableProfileDialog table={table.name} load={backend.loadProfile} onClose={() => setProfileOpen(false)} />}
+      {profileOpen && backend?.loadProfile && <TableProfileDialog table={table.name} dialect={backend.dialect} load={backend.loadProfile} onClose={() => setProfileOpen(false)} />}
 
       {cellEditorOpen && view === "grid" && cols[activeCol] && (
         <CellEditorPanel

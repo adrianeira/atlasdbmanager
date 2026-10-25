@@ -175,6 +175,13 @@ pub async fn sqlite_data_profile(
     blocking(move || s.data_profile(&table, &columns, &order_by, filter.as_ref(), limit)).await
 }
 
+/// Perfil da tabela: tamanhos, contagens da estrutura e total de linhas.
+#[tauri::command]
+pub async fn sqlite_table_profile(sessions: State<'_, SqliteSessions>, session_id: String, _database: String, _schema: String, table: String) -> Result<atlas_core::TableProfile, DatabaseError> {
+    let s = sessions.session(&session_id)?;
+    blocking(move || s.table_profile(&table)).await
+}
+
 /// Rótulos de chaves estrangeiras visíveis no grid ("mostrar o valor da chave estrangeira").
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]

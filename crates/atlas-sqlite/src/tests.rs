@@ -268,3 +268,13 @@ fn data_profile_counts_nulls_distinct_unique_and_top_values() {
     assert_eq!(limited.columns[0].top[0].count, 2);
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn table_profile_counts_the_structure_and_the_rows() {
+    let (s, path) = sample();
+    let p = s.table_profile("clients").unwrap();
+    assert_eq!((p.columns, p.primary_keys, p.uniques, p.triggers, p.estimated_rows), (6, 1, 1, 1, 3));
+    let o = s.table_profile("orders").unwrap();
+    assert_eq!((o.foreign_keys, o.indexes), (1, 1));
+    let _ = std::fs::remove_file(path);
+}

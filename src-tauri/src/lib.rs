@@ -199,6 +199,7 @@ pub fn run() {
             sqlite::sqlite_apply,
             sqlite::sqlite_fk_labels,
             sqlite::sqlite_data_profile,
+            sqlite::sqlite_table_profile,
             sqlite::sqlite_unsupported,
             sqlite::sqlite_tx_begin,
             sqlite::sqlite_tx_apply,
