@@ -157,6 +157,9 @@ interface Props {
   valueLabels?: Map<number, Map<string, string>>;
   /** O usuário terminou de ajustar a largura de uma coluna (arrastando a borda ou com duplo clique). */
   onColumnWidth?: (name: string, width: number) => void;
+  /** Data Profiling: um resumo por coluna sob o nome dela (`height` px) e os valores em destaque (linhas e coluna realçadas). */
+  profile?: { height: number; render: (columnIndex: number) => React.ReactNode };
+  spotlight?: { col: number; values: Set<string | null> };
   /** Rolagem vertical atual (para guardar) e a rolagem com que abrir (de uma tela anterior). */
   onScrollTop?: (top: number) => void;
   initialScrollTop?: number;
@@ -207,7 +210,7 @@ interface Props {
 }
 
 export function DataGrid({
-  columns, onColumnWidth, onScrollTop, initialScrollTop, columnOrder, onColumnOrder, valueLabels, rows, readOnly, edited, deletedRows, newRows, activeRow, onActiveRow, onEdit, rowHeight = 23, simpleHeader, lookupCols, onLookup,
+  columns, onColumnWidth, profile, spotlight, onScrollTop, initialScrollTop, columnOrder, onColumnOrder, valueLabels, rows, readOnly, edited, deletedRows, newRows, activeRow, onActiveRow, onEdit, rowHeight = 23, simpleHeader, lookupCols, onLookup,
   sqlTarget, onDeleteRow, onDuplicateRow, onRefresh, findQuery, activeFind, highlightAll, onSaveAs, onSortColumn, onClearSort, onResetLayout, onAddFilter, onActiveCell, onOpenCellEditor,
 }: Props) {
   const t = useT();
@@ -300,7 +303,7 @@ export function DataGrid({
     return () => ro.disconnect();
   }, []);
 
-  const headerHeight = simpleHeader ? 24 : 41;
+  const headerHeight = (simpleHeader ? 24 : 41) + (profile?.height ?? 0);
   const rowHeadWidth = 12;
   const overscan = 8;
   const first = Math.max(0, Math.floor(scrollTop / rowHeight) - overscan);
@@ -608,6 +611,7 @@ export function DataGrid({
               <div className="dg-th-name">{c.name}</div>
               {/* Em lotes com vários comandos o servidor não descreve os tipos: a linha fica vazia. */}
               {!simpleHeader && <div className="dg-th-type">{c.type && <><KindIcon kind={c.kind} /><span>{c.type}</span></>}</div>}
+              {profile && <div className="dg-th-profile" style={{ height: profile.height }}>{profile.render(i)}</div>}
               {/* "⋯" aparece no hover do cabeçalho: Sort Ascending/Descending, Remove All Sorts, Add Filter. */}
               {(onSortColumn || onClearSort || onAddFilter) && (
                 <button
@@ -634,7 +638,7 @@ export function DataGrid({
           const ri = first + k;
           const isActive = ri === activeRow;
           // Linhas zebradas (alternadas), como na referência.
-          const cls = `dg-row${shadeRow(ri) ? " is-alt" : ""}${isActive ? " is-active" : ""}${deletedRows?.has(ri) ? " is-deleted" : ""}${newRows?.has(ri) ? " is-new" : ""}`;
+          const cls = `dg-row${shadeRow(ri) ? " is-alt" : ""}${isActive ? " is-active" : ""}${deletedRows?.has(ri) ? " is-deleted" : ""}${newRows?.has(ri) ? " is-new" : ""}${spotlight && spotlight.values.has(rows[ri][spotlight.col]) ? " is-spot" : ""}`;
           return (
             <div key={ri} className={cls} style={{ top: headerHeight + ri * rowHeight, height: rowHeight }} role="row" aria-rowindex={ri + 1}>
               <div className="dg-rowhead" style={{ width: rowHeadWidth }} />
@@ -647,7 +651,7 @@ export function DataGrid({
                 const missing = !isEditing && !!c.required && !c.hasDefault && v === null && !!newRows?.has(ri);
                 const isFindActive = !!activeFind && activeFind.row === ri && activeFind.col === ci;
                 const isFindMatch = isFindActive || (highlightAll !== false && cellMatches(v, c.kind));
-                const cellCls = `dg-td${c.kind === "number" ? " is-num" : c.kind === "bool" ? " is-bool" : ""}${isActive && ci === activeCol ? " is-focus" : ""}${edited?.has(`${ri}:${ci}`) ? " is-edited" : ""}${missing || editorInvalid ? " is-required" : ""}${isFindMatch ? " is-find-match" : ""}${isFindActive ? " is-find-active" : ""}${c.generated ? " is-generated" : ""}`;
+                const cellCls = `dg-td${c.kind === "number" ? " is-num" : c.kind === "bool" ? " is-bool" : ""}${isActive && ci === activeCol ? " is-focus" : ""}${edited?.has(`${ri}:${ci}`) ? " is-edited" : ""}${missing || editorInvalid ? " is-required" : ""}${isFindMatch ? " is-find-match" : ""}${isFindActive ? " is-find-active" : ""}${c.generated ? " is-generated" : ""}${spotlight?.col === ci && spotlight.values.has(r[ci]) ? " is-spot-col" : ""}`;
                 return (
                   <div
                     key={ci}

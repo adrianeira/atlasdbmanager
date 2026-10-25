@@ -543,9 +543,10 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
       que respeita o filtro (backend extendido com `OrderBy`/`TableFilter`)
       *(`src/components/FilterSortDialog.tsx`, `crates/atlas-pg/src/exec.rs`)*
 - [x] Columns (mostrar/ocultar colunas)
-- [ ] Data Profiling *(sem handler)*
+- [x] **Data Profiling** (botão da tabela): painel para escolher **Todos os registros** ou **Adicionar filtro** (montar pelo diálogo de filtro, ou texto `<Campo> = <Valor> AND ...`, ordenação `<Campo> ASC, <Campo> DESC` e **Sem limite / Os primeiros N**); **Iniciar perfil** calcula, no servidor, por coluna: nulos, distintos, únicos, menor e maior valor e os 100 valores mais frequentes. A grade ganha, sob cada nome de coluna, a barra de nulos, as barras dos valores e "N distintos, M únicos" (dica com as contagens); embaixo, **Estatísticas da coluna** e **Distribuição dos valores** da coluna selecionada; clicar numa barra põe o valor **em destaque** (Ctrl soma): linhas e colunas ficam realçadas e **Valor em destaque ▲▼** pula entre as linhas; **Sair do perfil** volta à grade *(`crates/atlas-pg/src/profile.rs`, `src/components/DataProfiling.tsx`)*
+- [ ] Data Profiling: o botão **Settings** e os botões de layout da barra do perfil (aparecem na captura, sem conteúdo conhecido); a grade mostra a página atual, não os registros do filtro do perfil
 - [x] Data Generation (ver "Data Generation" em Entregues)
-- [ ] Create BI Workspace *(sem handler)*
+- [x] Create BI Workspace: botão **oculto** da tabela (não há BI no Atlas)
 - [x] Begin Transaction manual (ver "Grid de dados" em Entregues)
 - [x] Cell Editor expandido para texto grande / JSON (painel inferior com textarea, quebra de
       linha, "Formatar JSON" e "Definir como NULL"; aberto pelo botão da toolbar — liga/desliga —

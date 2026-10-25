@@ -11,6 +11,7 @@ export function makeTableBackend(connId: string, db: string, schema: string, obj
   let txId: string | null = null;
   return {
     loadDetail: async () => tableFromServer(base, await pg.tableDetail(connId, db, schema, object)),
+    profileData: (columns, orderBy, filter, limit) => pg.dataProfile(connId, db, schema, object, columns, orderBy, filter, limit),
     loadProfile: objectKind === "view" ? undefined : () => pg.tableProfile(connId, db, schema, object),
     beginTx: async () => { txId = await pg.txBegin(connId, db); },
     endTx: async (commit) => {

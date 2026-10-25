@@ -10,6 +10,7 @@ import { MessageDialog } from "../components/MessageDialog";
 import type { StatusCell } from "../components/StatusBar";
 import { useT, type MessageKey } from "../i18n";
 import { SmallIcon, type SmallIconName } from "../icons";
+import { ColumnStatistics, DEFAULT_SCOPE, PROFILE_HEADER_HEIGHT, ProfileCell, ProfileSetup, parseSort, type ProfileScope, type Spotlight } from "../components/DataProfiling";
 import { DuplicateRecordDialog } from "../components/DuplicateRecordDialog";
 import { FullscreenButton } from "../components/FullscreenButton";
 import { plannedStatements } from "../live";
@@ -23,6 +24,8 @@ import { NO_EQUALITY } from "../live";
 /** Acesso ao banco real; ausente = modo de demonstração com dados fictícios. */
 export interface TableDataBackend {
   loadDetail: () => Promise<DbObject>;
+  /** Opcional: Data Profiling (estatísticas de cada coluna sobre os registros escolhidos). */
+  profileData?: (columns: string[], orderBy: OrderBy[], filter: TableFilter | null, limit: number | null) => Promise<import("../backend").DataProfile>;
   /** Opcional: perfil da tabela (botão "Table Profile"). */
   loadProfile?: () => Promise<import("../backend").TableProfile>;
   /** `limit = null`: sem LIMIT ("Limitar registros" desmarcado). */
@@ -117,6 +120,57 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   const [loadError, setLoadError] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
+  /** Data Profiling: fechado, escolhendo o que perfilar ou mostrando as estatísticas. */
+  const [profMode, setProfMode] = useState<"off" | "setup" | "on">("off");
+  const [profScope, setProfScope] = useState<ProfileScope>(DEFAULT_SCOPE);
+  const [prof, setProf] = useState<import("../backend").DataProfile | null>(null);
+  const [profBusy, setProfBusy] = useState(false);
+  const [profError, setProfError] = useState<string | null>(null);
+  const [spot, setSpot] = useState<Spotlight | null>(null);
+  const startProfiling = async () => {
+    if (!backend?.profileData) return;
+    setProfError(null);
+    let filter: TableFilter | null = null;
+    let order: OrderBy[] = [];
+    let limit: number | null = null;
+    if (profScope.mode === "filter") {
+      filter = profScope.filterText.trim() ? { expr: profScope.filterText } : null;
+      const parsed = parseSort(profScope.sortText, cols.map((c) => c.name));
+      if (parsed.bad) return setProfError(t("pf.badSort", { name: parsed.bad }));
+      order = parsed.sort;
+      if (profScope.limited) {
+        limit = Number(profScope.limit);
+        if (!Number.isInteger(limit) || limit < 1) return setProfError(t("pf.badLimit"));
+      }
+    }
+    setProfBusy(true);
+    try {
+      setProf(await backend.profileData(cols.map((c) => c.name), order, filter, limit));
+      setSpot(null);
+      setProfMode("on");
+    } catch (e) {
+      setProfError(errorText(toAtlasError(e)));
+    } finally {
+      setProfBusy(false);
+    }
+  };
+  const toggleSpot = (column: string, value: string | null, additive: boolean) => setSpot((cur) => {
+    const base = cur && cur.column === column ? new Set(cur.values) : new Set<string | null>();
+    if (additive) { if (base.has(value)) base.delete(value); else base.add(value); }
+    else if (base.size === 1 && base.has(value)) base.clear();
+    else { base.clear(); base.add(value); }
+    return base.size ? { column, values: base } : null;
+  });
+  /** Pula para a próxima (ou anterior) linha com o valor em destaque. */
+  const stepSpot = (dir: 1 | -1) => {
+    if (!spot) return;
+    const ci = cols.findIndex((c) => c.name === spot.column);
+    const n = rows.length;
+    for (let k = 1; k <= n; k++) {
+      const r = (activeRow + dir * k + n * k) % n;
+      if (spot.values.has(rows[r][ci])) return setActiveRow(r);
+    }
+  };
   /** Linha que está sendo duplicada (janela "Duplicar registro"). */
   const [dupRow, setDupRow] = useState<number | null>(null);
   // Transação manual (botão "Iniciar transação"): alterações aplicadas só valem de vez ao confirmar.
@@ -735,7 +789,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
         {tool("cellEditor", "data.cellEditor", () => setCellEditorOpen((v) => !v), cellEditorOpen)}
         {tool("filterSort", "data.filterSort", () => { setFilterColumn(undefined); setFilterOpen(true); }, !!filter || sort.length > 0)}
         {tool("columns", "data.columns", () => setColumnsOpen(true))}
-        {tool("profiling", "data.profiling")}
+        {tool("profiling", "data.profiling", backend?.profileData ? () => setProfMode((m) => (m === "off" ? "setup" : "off")) : undefined, profMode !== "off")}
         {tool("import", "data.import")}
         {tool("export", "data.export", onExport ? openExport : undefined)}
         {tool("dataGen", "data.generation")}
@@ -749,6 +803,22 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
       {!loadError && !loading && keyless && !readOnly && <div className="doc-banner is-warn">{t("data.noKeyNote")}</div>}
       {!readOnly && production && <div className="doc-banner is-warn">{t("data.productionBanner")}</div>}
 
+      {profMode === "setup" && <ProfileSetup columns={cols} scope={profScope} onScope={setProfScope} busy={profBusy} error={profError} onStart={() => void startProfiling()} />}
+      {profMode === "on" && prof && (
+        <div className="pf-toolbar">
+          <strong>{t("data.profiling")}</strong>
+          <span className="muted">{t("pf.records2", { n: prof.rows })}</span>
+          <span className="spacer" />
+          {spot && (
+            <>
+              <span>{t("pf.spotlightedValue")}</span>
+              <button type="button" className="icon-button" title={t("pf.prevSpot")} onClick={() => stepSpot(-1)}>▲</button>
+              <button type="button" className="icon-button" title={t("pf.nextSpot")} onClick={() => stepSpot(1)}>▼</button>
+            </>
+          )}
+          <button type="button" className="btn" onClick={() => { setProfMode("off"); setSpot(null); }}>{t("pf.exit")}</button>
+        </div>
+      )}
       <div className="doc-body">
         {loading && !rows.length ? (
           <div className="doc-loading"><span className="spinner" />{t("common.loading")}</div>
@@ -756,6 +826,8 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
           <DataGrid
             columns={columns}
             onColumnWidth={(name, w) => setWidths((ws) => ({ ...ws, [name]: w }))}
+            profile={profMode === "on" && prof ? { height: PROFILE_HEADER_HEIGHT, render: (ci) => { const p = prof.columns.find((x) => x.name === cols[ci]?.name); return p ? <ProfileCell col={p} spotlight={spot} /> : null; } } : undefined}
+            spotlight={spot ? { col: cols.findIndex((c) => c.name === spot.column), values: spot.values } : undefined}
             onScrollTop={(top) => { scrollTopRef.current = top; }}
             initialScrollTop={restored?.scrollTop}
             columnOrder={colOrder}
@@ -1006,6 +1078,10 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
           onCancel={() => setApplyError(null)}
         />
       )}
+      {profMode === "on" && prof && (() => {
+        const column = prof.columns.find((x) => x.name === cols[activeCol]?.name) ?? prof.columns[0];
+        return column ? <ColumnStatistics col={column} spotlight={spot} onToggle={(v, add) => toggleSpot(column.name, v, add)} /> : null;
+      })()}
       {dupRow !== null && rows[dupRow] && backend && (
         <DuplicateRecordDialog
           table={table.name}

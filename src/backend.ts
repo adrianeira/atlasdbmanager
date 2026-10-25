@@ -920,6 +920,20 @@ export interface QueryOutcome {
   elapsedMs: number;
 }
 
+/** Data Profiling: o que se sabe de cada coluna dos registros perfilados. */
+export interface ValueCount { value: string | null; count: number }
+export interface ColumnProfile {
+  name: string;
+  rows: number;
+  nulls: number;
+  distinct: number | null;
+  unique: number | null;
+  min: string | null;
+  max: string | null;
+  top: ValueCount[];
+}
+export interface DataProfile { rows: number; columns: ColumnProfile[] }
+
 export interface PlannedStatement {
   sql: string;
   params: (string | null)[];
@@ -1114,6 +1128,8 @@ export const pg = {
   foreignWrappers: (sessionId: string, database: string) => call<string[]>("pg_foreign_wrappers", { sessionId, database }),
   foreignTableDetail: (sessionId: string, database: string, schema: string, name: string) =>
     call<ForeignTableDetail>("pg_foreign_table_detail", { sessionId, database, schema, name }),
+  dataProfile: (sessionId: string, database: string, schema: string, table: string, columns: string[], orderBy: OrderBy[], filter: TableFilter | null, limit: number | null) =>
+    call<DataProfile>("pg_data_profile", { sessionId, database, schema, table, columns, orderBy, filter, limit }),
   tableProfile: (sessionId: string, database: string, schema: string, table: string) =>
     call<TableProfile>("pg_table_profile", { sessionId, database, schema, table }),
   tablespaceDetail: (sessionId: string, database: string, name: string) => call<TablespaceDetail>("pg_tablespace_detail", { sessionId, database, name }),

@@ -381,6 +381,24 @@ pub async fn pg_fk_labels(
     atlas_pg::fk_labels(&s, &schema, &table, &key_column, &keys).await
 }
 
+/// Data Profiling: estatísticas de cada coluna sobre os registros que o filtro, a ordenação e o limite escolhem.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn pg_data_profile(
+    sessions: State<'_, Sessions>,
+    session_id: String,
+    database: String,
+    schema: String,
+    table: String,
+    columns: Vec<String>,
+    order_by: Vec<OrderBy>,
+    filter: Option<TableFilter>,
+    limit: Option<u64>,
+) -> Result<atlas_pg::DataProfile, DatabaseError> {
+    let s = sessions.get(&session_id, Some(&database)).await?;
+    atlas_pg::data_profile(&s, &schema, &table, &columns, &order_by, filter.as_ref(), limit).await
+}
+
 #[tauri::command]
 pub async fn pg_table_count(
     sessions: State<'_, Sessions>,
