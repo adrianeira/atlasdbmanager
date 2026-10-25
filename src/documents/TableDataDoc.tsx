@@ -116,8 +116,13 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   const [loadError, setLoadError] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
-  /** Aviso depois de gravar (ex.: sem chave, mais linhas afetadas do que alteradas na tela). */
+  /** Aviso depois de gravar (ex.: sem chave, mais linhas afetadas do que alteradas na tela): some sozinho depois de alguns segundos. */
   const [applyNote, setApplyNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (!applyNote) return;
+    const id = window.setTimeout(() => setApplyNote(null), 8000);
+    return () => window.clearTimeout(id);
+  }, [applyNote]);
   // Transação manual (botão "Iniciar transação"): alterações aplicadas só valem de vez ao confirmar.
   const [inTx, setInTx] = useState(false);
   const [txBusy, setTxBusy] = useState(false);
@@ -754,7 +759,12 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
       {!loadError && truncated && <div className="doc-banner is-warn">{t("data.truncatedAll", { n: rows.length.toLocaleString() })}</div>}
       {!loadError && !loading && readOnly && !isView && <div className="doc-banner">{t("data.readOnlyNoKey")}</div>}
       {!loadError && !loading && keyless && !readOnly && <div className="doc-banner is-warn">{t("data.noKeyNote")}</div>}
-      {applyNote && <div className="doc-banner is-warn">{applyNote}</div>}
+      {applyNote && (
+        <div className="doc-banner is-warn doc-banner-note" role="status">
+          <span>{applyNote}</span>
+          <button type="button" className="banner-close" title={t("tab.close")} aria-label={t("tab.close")} onClick={() => setApplyNote(null)}>×</button>
+        </div>
+      )}
       {!readOnly && production && <div className="doc-banner is-warn">{t("data.productionBanner")}</div>}
 
       <div className="doc-body">
