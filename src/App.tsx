@@ -45,6 +45,7 @@ import { buildShareUri } from "./shareUri";
 import { liveLookupSource, makeTableBackend } from "./docBackends";
 import { newConnectionId } from "./providerRoute";
 import { menuForSqlite, sqliteHiddenKeys } from "./sqliteMenu";
+import { createTableStatementsSqlite } from "./sql/sqliteDdl";
 import type { SavedTable } from "./tabWindow";
 import type { SnapshotRef } from "./tabState";
 import { viewKeyOf } from "./tableView";
@@ -2026,7 +2027,22 @@ export default function App() {
       const target = `${quoteIdent(scName)}.${quoteIdent(name)}`;
       const foreign = c.schema?.objects.table?.find((o) => o.name === name)?.dataType === "foreign";
       const scope = { connId: conn.id, database: dbName, schema: scName, refresh: "schema" as const };
-      const duplicate = (withData: boolean) => askName(t("sub.duplicateTable"), t("msg.copyTableName"), `${name}_copy`, (copy) => askDdl({
+      // SQLite: o CREATE da cópia sai da estrutura lida do arquivo (colunas, chaves, UNIQUE, CHECK e índices com nome novo).
+      const duplicateSqlite = (withData: boolean) => askName(t("sub.duplicateTable"), t("msg.copyTableName"), `${name}_copy`, (copy) => {
+        void (async () => {
+          try {
+            const obj = tableFromServer({ name }, await pg.tableDetail(conn.id, dbName, scName, name));
+            obj.columns = (obj.columns ?? []).map((col) => ({ ...col, autoInc: !!col.identity }));
+            obj.indexes = (obj.indexes ?? []).filter((i) => !i.name.startsWith("sqlite_autoindex_")).map((i) => ({ ...i, name: `${copy}_${i.name}` }));
+            const statements = createTableStatementsSqlite(obj, copy);
+            if (withData) statements.push(`INSERT INTO ${quoteIdent(copy)} SELECT * FROM ${quoteIdent(name)}`);
+            askDdl({ ...scope, title: t("sub.duplicateTable"), statements: statements.map((x) => `${x};`) });
+          } catch (e) {
+            showError(t("sub.duplicateTable"), e);
+          }
+        })();
+      });
+      const duplicate = (withData: boolean) => conn.provider === "sqlite" ? duplicateSqlite(withData) : askName(t("sub.duplicateTable"), t("msg.copyTableName"), `${name}_copy`, (copy) => askDdl({
         ...scope, title: t("sub.duplicateTable"),
         statements: [
           `CREATE TABLE ${quoteIdent(scName)}.${quoteIdent(copy)} (LIKE ${target} INCLUDING ALL);`,
