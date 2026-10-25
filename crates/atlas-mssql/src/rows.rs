@@ -167,6 +167,7 @@ impl MssqlTx {
         apply_on(&mut conn, statements, false).await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn table_rows(
         &self,
         schema: &str,

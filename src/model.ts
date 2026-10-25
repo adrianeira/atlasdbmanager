@@ -347,7 +347,10 @@ export const FLAT_CATEGORIES: Category[] = ["table", "view", "matview", "functio
 export const SCHEMA_FOLDERS: Category[] = ["table", "view", "matview", "function", "query", "backup"];
 
 /** As pastas de um schema que o banco tem (o SQLite não tem views materializadas, funções nem backup do PostgreSQL). */
-export const foldersFor = (provider: ProviderId): Category[] => (provider === "sqlite" ? SCHEMA_FOLDERS.filter((c) => c === "table" || c === "view" || c === "query") : SCHEMA_FOLDERS);
+export const foldersFor = (provider: ProviderId): Category[] =>
+  provider === "sqlite" ? SCHEMA_FOLDERS.filter((c) => c === "table" || c === "view" || c === "query")
+  : provider === "sqlserver" ? SCHEMA_FOLDERS.filter((c) => c === "table" || c === "view" || c === "function" || c === "query")
+  : SCHEMA_FOLDERS;
 
 export interface NodeContext {
   connection?: ConnectionMock;

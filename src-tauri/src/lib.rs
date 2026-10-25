@@ -12,6 +12,7 @@ mod export;
 mod import;
 mod local;
 mod sessions;
+mod mssql;
 mod sqlite;
 mod transfer;
 mod tunnel;
@@ -74,6 +75,7 @@ pub fn run() {
         .manage(backup::Backups::default())
         .manage(tx::Transactions::default())
         .manage(sqlite::SqliteSessions::default())
+        .manage(mssql::MssqlSessions::default())
         .manage(datasync::Comparisons::default())
         .manage(structsync::StructComparisons::default())
         .manage(dictionary::DictRuns::default())
@@ -183,6 +185,28 @@ pub fn run() {
             commands::pg_fk_labels,
             commands::pg_table_count,
             commands::pg_data_profile,
+            mssql::mssql_test_connection,
+            mssql::mssql_open,
+            mssql::mssql_close,
+            mssql::mssql_close_database,
+            mssql::mssql_list_databases,
+            mssql::mssql_list_schemas,
+            mssql::mssql_list_objects,
+            mssql::mssql_table_detail,
+            mssql::mssql_list_roles,
+            mssql::mssql_execute,
+            mssql::mssql_cancel,
+            mssql::mssql_table_rows,
+            mssql::mssql_table_count,
+            mssql::mssql_apply,
+            mssql::mssql_fk_labels,
+            mssql::mssql_unsupported,
+            mssql::mssql_tx_begin,
+            mssql::mssql_tx_apply,
+            mssql::mssql_tx_execute,
+            mssql::mssql_tx_table_rows,
+            mssql::mssql_tx_table_count,
+            mssql::mssql_tx_end,
             sqlite::sqlite_test_connection,
             sqlite::sqlite_open,
             sqlite::sqlite_close,

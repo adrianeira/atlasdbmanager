@@ -218,7 +218,7 @@ function paramsFor(c: ConnectionMock): ConnectionParams {
   return {
     host: c.host, port: c.port, database: c.initialDatabase || "postgres", user: c.user,
     password: sessionPasswords.get(c.id) ?? "", sslMode: c.sslMode ?? "disable",
-    ...(c.provider === "sqlite" ? { provider: c.provider } : {}),
+    ...(c.provider !== "postgresql" ? { provider: c.provider } : {}),
     // Sem senha digitada nesta sessão, o núcleo usa a do cofre (`<id>:ssh`).
     ssh: c.ssh ? { host: c.ssh.host, port: c.ssh.port, user: c.ssh.user, password: sessionPasswords.get(`${c.id}:ssh`) ?? "", keyPath: c.ssh.auth === "publickey" ? c.ssh.keyPath : "" } : undefined,
   };

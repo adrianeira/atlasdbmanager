@@ -118,13 +118,13 @@ export function formToParams(f: ConnectionForm, fallbackPassword = ""): Connecti
     user: f.user,
     password: f.password || fallbackPassword,
     sslMode: f.useSsl ? (f.sslMode as SslMode) : "disable",
-    ...(f.provider === "sqlite" ? { provider: f.provider } : {}),
+    ...(f.provider !== "postgresql" ? { provider: f.provider } : {}),
     ssh: f.useSsh ? { host: f.sshHost.trim(), port: Number(f.sshPort) || 22, user: f.sshUser, password: f.sshPassword, keyPath: f.sshAuth === "publickey" ? f.sshKeyPath.trim() : "" } : undefined,
   };
 }
 
 async function liveTest(f: ConnectionForm, fallbackPassword: string, notSupported: string, profileId?: string): Promise<TestState> {
-  if (f.provider !== "postgresql" && f.provider !== "sqlite") return { kind: "fail", message: notSupported };
+  if (f.provider !== "postgresql" && f.provider !== "sqlite" && f.provider !== "sqlserver") return { kind: "fail", message: notSupported };
   try {
     // Campo de senha vazio na edição: o núcleo usa a senha salva no cofre (via profileId).
     const info = await pg.testConnection(formToParams(f, fallbackPassword), profileId);

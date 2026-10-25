@@ -24,7 +24,7 @@ import { NO_EQUALITY } from "../live";
 /** Acesso ao banco real; ausente = modo de demonstração com dados fictícios. */
 export interface TableDataBackend {
   /** Banco dos comandos de gravação; ausente = PostgreSQL. */
-  dialect?: "sqlite";
+  dialect?: "sqlite" | "mssql";
   loadDetail: () => Promise<DbObject>;
   /** Opcional: Data Profiling (estatísticas de cada coluna sobre os registros escolhidos). */
   profileData?: (columns: string[], orderBy: OrderBy[], filter: TableFilter | null, limit: number | null) => Promise<import("../backend").DataProfile>;
@@ -894,7 +894,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
         )}
       </div>
 
-      {profileOpen && backend?.loadProfile && <TableProfileDialog table={table.name} dialect={backend.dialect} load={backend.loadProfile} onClose={() => setProfileOpen(false)} />}
+      {profileOpen && backend?.loadProfile && <TableProfileDialog table={table.name} dialect={backend.dialect === "sqlite" ? "sqlite" : undefined} load={backend.loadProfile} onClose={() => setProfileOpen(false)} />}
 
       {cellEditorOpen && view === "grid" && cols[activeCol] && (
         <CellEditorPanel

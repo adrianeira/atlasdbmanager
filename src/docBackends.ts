@@ -1,6 +1,6 @@
 /** Ligação das abas de tabela e de consulta ao banco real; usada pela janela principal e pelas abas destacadas. */
 import { pg } from "./backend";
-import { isSqliteId } from "./providerRoute";
+import { isMssqlId, isSqliteId } from "./providerRoute";
 import type { FkLookupSource } from "./components/FkLookup";
 import type { TableDataBackend } from "./documents/TableDataDoc";
 import { tableFromServer } from "./live";
@@ -11,11 +11,13 @@ export function makeTableBackend(connId: string, db: string, schema: string, obj
   // Transação manual da aba: enquanto aberta, gravação, leitura e contagem usam a conexão dedicada dela.
   let txId: string | null = null;
   const sqlite = isSqliteId(connId);
+  // Perfis de dados e de tabela: PostgreSQL e SQLite; o SQL Server ainda não.
+  const mssql = isMssqlId(connId);
   return {
-    dialect: sqlite ? "sqlite" : undefined,
+    dialect: sqlite ? "sqlite" : isMssqlId(connId) ? "mssql" : undefined,
     loadDetail: async () => tableFromServer(base, await pg.tableDetail(connId, db, schema, object)),
-    profileData: (columns, orderBy, filter, limit) => pg.dataProfile(connId, db, schema, object, columns, orderBy, filter, limit),
-    loadProfile: objectKind === "view" ? undefined : () => pg.tableProfile(connId, db, schema, object),
+    profileData: mssql ? undefined : (columns, orderBy, filter, limit) => pg.dataProfile(connId, db, schema, object, columns, orderBy, filter, limit),
+    loadProfile: objectKind === "view" || mssql ? undefined : () => pg.tableProfile(connId, db, schema, object),
     beginTx: async () => { txId = await pg.txBegin(connId, db); },
     endTx: async (commit) => {
       const id = txId;

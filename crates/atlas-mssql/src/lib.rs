@@ -22,6 +22,9 @@ pub use rows::*;
 
 pub type Conn = Client<Compat<TcpStream>>;
 
+/// Um result set em montagem: colunas, linhas e se foi cortado pelo limite.
+type Set = (Vec<atlas_core::ResultColumn>, Vec<Vec<Option<String>>>, bool);
+
 /// Entre colchetes, como o SQL Server quer os nomes (`]` dobrado).
 pub fn quote_ident(name: &str) -> String {
     format!("[{}]", name.replace(']', "]]"))
@@ -66,7 +69,11 @@ pub(crate) fn config_for(p: &ConnectionParams, database: &str) -> Config {
         cfg.database(database);
     }
     match p.ssl_mode {
-        SslMode::Disable => cfg.encryption(EncryptionLevel::Off),
+        // `Off` só criptografa o login (o TLS do servidor de teste é um certificado próprio): sem validar nada, como a opção diz.
+        SslMode::Disable => {
+            cfg.encryption(EncryptionLevel::Off);
+            cfg.trust_cert();
+        }
         SslMode::Prefer | SslMode::Require => {
             cfg.encryption(EncryptionLevel::Required);
             cfg.trust_cert();
@@ -180,7 +187,7 @@ pub async fn run_text(conn: &mut Conn, sql: &str, max_rows: usize) -> Result<atl
     use tiberius::QueryItem;
     let started = Instant::now();
     let mut stream = conn.simple_query(sql).await.map_err(map_err)?;
-    let mut sets: Vec<(Vec<ResultColumn>, Vec<Vec<Option<String>>>, bool)> = Vec::new();
+    let mut sets: Vec<Set> = Vec::new();
     let mut first_at: Option<Instant> = None;
     while let Some(item) = stream.try_next().await.map_err(map_err)? {
         match item {

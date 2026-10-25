@@ -217,6 +217,7 @@ dependencies = [
  "atlas-export",
  "atlas-import",
  "atlas-local",
+ "atlas-mssql",
  "atlas-pg",
  "atlas-sqlite",
  "atlas-ssh",
