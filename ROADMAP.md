@@ -533,7 +533,7 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 - [x] Find in Database / Find in Schema (ver "Localizar no banco / schema" em Entregues)
 - [x] Console do servidor (ver "Console" em Entregues)
 - [x] **Share** (menu de uma conexão e de um banco): janela "Share via Atlas URI" com o endereço `atlas://...` para copiar, **Include hosts & ports** e **Include password template** (campo de senha em branco; a senha de verdade nunca vai) e **Copy Atlas URI** *(`src/shareUri.ts`, `src/components/ShareDialog.tsx`)*
-- [ ] Receber um endereço Atlas (colar para criar a conexão ou abrir o banco) e registrar o protocolo `atlas://` no sistema *(não aparece nas capturas; hoje o endereço só é gerado)*
+- [ ] Receber um endereço Atlas (colar para criar a conexão ou abrir o banco) e registrar o protocolo `atlas://` no sistema *(sem captura e sem demanda por enquanto; hoje o endereço só é gerado)*
 - [x] Edit Database / Edit Schema (ver "Navegação / Árvore" em Entregues)
 
 ## 3. Grid de dados
@@ -727,5 +727,5 @@ Hoje o menu Exibir tem só Lista, Detalhe e Ícones (`viewMode` em `src/App.tsx`
 - [x] **Duplicar registro** (menu do botão direito da linha): janela com todos os campos da linha preenchidos; os que o banco gera (identidade, coluna gerada, sequência) ficam bloqueados e vazios, e os demais podem ser alterados (com caixa NULL); **Inserir** faz o `INSERT` na hora e o erro do servidor (chave repetida, campo obrigatório) aparece na própria janela, que continua aberta. Indisponível em view, com alterações pendentes na grade ou sem conexão real *(`src/components/DuplicateRecordDialog.tsx`)*
 - [x] **Restaurar layout padrão** (menu ⋯ do cabeçalho e botão no diálogo Columns): ordem, largura e visibilidade das colunas e a ordenação das linhas voltam ao padrão; o filtro fica
 - [x] **Reordenar abas** arrastando na barra (Objects fica sempre primeira); a posição é gravada e a tabela volta no lugar ao reabrir o banco
-- [ ] Perfis nomeados da visão da tabela (provável conteúdo do menu `Table Profile ▾`): salvar, aplicar, renomear e excluir. Falta a captura do menu
-- [ ] Na referência o botão **Table Profile** tem uma seta (`Table Profile ▾`) que abre um menu; o conteúdo dele não aparece em nenhuma captura, então o Atlas abre a janela direto
+- [x] Perfis nomeados da visão da tabela (menu `Table Profile ▾`): **decidido não fazer**, porque a visão e o estado das telas já são guardados para continuar depois
+- [x] Menu `Table Profile ▾` da referência: **decidido não fazer** (o botão abre a janela de informações direto)
