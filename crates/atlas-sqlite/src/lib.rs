@@ -216,6 +216,47 @@ pub fn select_sql(table: &str, order_by: &[OrderBy], filter: Option<&TableFilter
     sql
 }
 
+/// Como `select_sql`, mas só com as colunas pedidas (vazio = todas).
+pub fn select_columns_sql(table: &str, columns: &[String], order_by: &[OrderBy], filter: Option<&TableFilter>) -> String {
+    let sql = select_sql(table, order_by, filter);
+    if columns.is_empty() {
+        return sql;
+    }
+    let list = columns.iter().map(|c| quote_ident(c)).collect::<Vec<_>>().join(", ");
+    sql.replacen("SELECT *", &format!("SELECT {list}"), 1)
+}
+
+/// Lê o resultado de um `SELECT` linha a linha, sem guardar nada na memória, numa conexão própria só de leitura ao arquivo.
+/// `on_begin` recebe as colunas e `on_row` cada linha; devolver `Ok(false)` encerra a leitura. Devolve quantas linhas foram entregues.
+pub fn stream_rows(
+    path: &Path,
+    sql: &str,
+    on_begin: impl FnOnce(&[ResultColumn]) -> Result<(), DatabaseError>,
+    mut on_row: impl FnMut(&[Option<&str>]) -> Result<bool, DatabaseError>,
+) -> Result<u64, DatabaseError> {
+    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX).map_err(map_err)?;
+    conn.busy_timeout(Duration::from_secs(5)).map_err(map_err)?;
+    let mut stmt = conn.prepare(sql).map_err(map_err)?;
+    let cols: Vec<(String, Option<String>)> = stmt.columns().iter().map(|c| (c.name().to_string(), c.decl_type().map(str::to_string))).collect();
+    if cols.is_empty() {
+        return Ok(0);
+    }
+    let bools: Vec<bool> = cols.iter().map(|(_, d)| is_bool_type(d.as_deref())).collect();
+    let described: Vec<ResultColumn> = cols.into_iter().map(|(name, decl)| ResultColumn { name, type_name: decl.filter(|d| !d.is_empty()) }).collect();
+    on_begin(&described)?;
+    let mut rows = stmt.query([]).map_err(map_err)?;
+    let mut count = 0u64;
+    while let Some(row) = rows.next().map_err(map_err)? {
+        let cells: Vec<Option<String>> = bools.iter().enumerate().map(|(i, b)| row.get_ref(i).map_err(map_err).map(|v| value_text(v, *b))).collect::<Result<_, _>>()?;
+        let refs: Vec<Option<&str>> = cells.iter().map(|c| c.as_deref()).collect();
+        if !on_row(&refs)? {
+            break;
+        }
+        count += 1;
+    }
+    Ok(count)
+}
+
 fn rows_on(conn: &Connection, table: &str, order_by: &[OrderBy], filter: Option<&TableFilter>, limit: Option<u32>, offset: u64, max_rows: usize) -> Result<(String, QueryOutcome), DatabaseError> {
     let mut sql = select_sql(table, order_by, filter);
     let keep = match limit {

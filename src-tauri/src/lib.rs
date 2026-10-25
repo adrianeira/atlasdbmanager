@@ -201,6 +201,7 @@ pub fn run() {
             sqlite::sqlite_data_profile,
             sqlite::sqlite_table_profile,
             sqlite::sqlite_schema_diagram,
+            sqlite::sqlite_export,
             sqlite::sqlite_find,
             sqlite::sqlite_find_data,
             sqlite::sqlite_export_cancel,

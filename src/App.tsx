@@ -2943,7 +2943,7 @@ export default function App() {
           viewKey={isDesktop && conn?.live && tab.database ? viewKeyOf(conn.id, tab.database, tab.schema ?? "", tab.object ?? base.name) : undefined}
           initialState={tabStates.current.get(tab.id)}
           stateRef={stateRefFor(tab.id)}
-          onExport={conn?.live && tab.database && conn.provider !== "sqlite" ? (scope) => {
+          onExport={conn?.live && tab.database ? (scope) => {
             const table = tab.object ?? base.name;
             const sc = conn.databases.find((d) => d.name === tab.database)?.schemas.find((x) => x.name === tab.schema);
             setExportTarget({

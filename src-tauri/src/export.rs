@@ -87,9 +87,9 @@ pub struct ExportResult {
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct Progress<'a> {
-    export_id: &'a str,
-    rows: u64,
+pub(crate) struct Progress<'a> {
+    pub(crate) export_id: &'a str,
+    pub(crate) rows: u64,
 }
 
 pub(crate) fn io_error(e: std::io::Error) -> DatabaseError {
