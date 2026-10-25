@@ -389,12 +389,12 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
     setSelected(Math.max(0, selected - 1));
   };
 
-  const togglePk = () => {
-    const f = d.fields[selected];
+  const togglePk = (at = selected) => {
+    const f = d.fields[at];
     if (!f) return;
     const maxKey = Math.max(0, ...d.fields.map((x) => x.key ?? 0));
     const fields = d.fields.map((x, i) => {
-      if (i !== selected) return x;
+      if (i !== at) return x;
       return x.key ? { ...x, key: undefined } : { ...x, key: maxKey + 1, notNull: true };
     });
     // Renumera a ordem da chave após remover um campo da PK.
@@ -687,8 +687,11 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
           rows={d.fields}
           selected={selected}
           onSelect={setSelected}
+          onBlankDoubleClick={addItem}
           onChange={(i, key, v) => {
             const cur = d.fields[i];
+            // Clique na coluna Key marca ou tira a chave primária do campo.
+            if (key === "key") { setSelected(i); togglePk(i); return; }
             if (key === "autoInc" && v === true) {
               // Só tipo inteiro numera sozinho; sem tipo escolhido vira int4. A coluna passa a ser não nula e sem valor padrão.
               if (cur.type && !AUTO_INC_SERIAL[cur.type]) { setAutoNote(t("des.autoIncType")); return; }
@@ -725,7 +728,7 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
       return <SqlEditor value={text} readOnly />;
     }
     const k = tab as ListKey;
-    return <EditTable<Row> columns={colsFor(k)} rows={d[k]} selected={selected} onSelect={setSelected} onChange={changeList(k)} />;
+    return <EditTable<Row> columns={colsFor(k)} rows={d[k]} selected={selected} onSelect={setSelected} onChange={changeList(k)} onBlankDoubleClick={addItem} />;
   };
 
   const actions = listTabs[tab];
@@ -746,7 +749,7 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
         )}
         {tab === "fields" && (
           <div className="split-button" ref={pkRef}>
-            <button type="button" className="ot-button" disabled={!field} onClick={togglePk}>
+            <button type="button" className="ot-button" disabled={!field} onClick={() => togglePk()}>
               <SmallIcon name="key" />
               <span>{t("des.primaryKey")}</span>
             </button>
@@ -758,7 +761,7 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
                 commands={{}}
                 onClose={() => setPkMenu(false)}
                 items={[
-                  { kind: "item", text: t("des.primaryKey"), icon: "key", run: field ? togglePk : undefined },
+                  { kind: "item", text: t("des.primaryKey"), icon: "key", run: field ? () => togglePk() : undefined },
                   { kind: "item", text: t("des.pkProperties") },
                 ]}
               />

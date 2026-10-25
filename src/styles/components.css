@@ -1903,10 +1903,16 @@ select.et-input {
 
 .et-center {
   text-align: center;
+  vertical-align: middle;
 }
 
 .et-center input {
-  margin: 0;
+  display: block;
+  margin: 0 auto;
+}
+
+.et-key-cell {
+  cursor: pointer;
 }
 
 .et-key {

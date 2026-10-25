@@ -20,13 +20,15 @@ interface Props<T> {
   onChange: (i: number, key: keyof T & string, value: T[keyof T]) => void;
   readOnly?: boolean;
   footer?: ReactNode;
+  /** Duplo clique no espaço vazio abaixo das linhas (acrescenta uma linha). */
+  onBlankDoubleClick?: () => void;
 }
 
-export function EditTable<T>({ columns, rows, selected, onSelect, onChange, readOnly }: Props<T>) {
+export function EditTable<T>({ columns, rows, selected, onSelect, onChange, readOnly, onBlankDoubleClick }: Props<T>) {
   // Linha vazia "fantasma" como na referência quando não há itens.
   const display = rows.length ? rows : null;
   return (
-    <div className="et-wrap">
+    <div className="et-wrap" onDoubleClick={(e) => { if (!readOnly && onBlankDoubleClick && !(e.target as HTMLElement).closest("tbody tr:not(.is-placeholder), thead")) onBlankDoubleClick(); }}>
       <table className="et">
         <colgroup>
           <col style={{ width: 10 }} />
@@ -55,7 +57,7 @@ export function EditTable<T>({ columns, rows, selected, onSelect, onChange, read
                     );
                   }
                   if (c.kind === "key") {
-                    return <td key={c.key} className="et-td">{v ? <span className="et-key"><SmallIcon name="key" />{String(v)}</span> : null}</td>;
+                    return <td key={c.key} className="et-td et-key-cell" onClick={() => !readOnly && onChange(ri, c.key, (!v) as T[keyof T])}>{v ? <span className="et-key"><SmallIcon name="key" />{String(v)}</span> : null}</td>;
                   }
                   if (c.kind === "select" && !c.free) {
                     // Lista fixa. Um valor atual fora da lista (ex.: tipo de array/enum/domínio lido
