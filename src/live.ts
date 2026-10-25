@@ -83,7 +83,7 @@ export function tableFromServer(base: DbObject, d: TableDetail): DbObject {
       identity: c.identity === "a" || c.identity === "d" ? c.identity : undefined,
       generated: c.generated === "s" ? "s" : undefined,
     })),
-    indexes: d.indexes.map((i) => ({ name: i.name, fields: i.fields, method: i.method, unique: i.unique, concurrently: false, comment: i.comment ?? "" })),
+    indexes: d.indexes.map((i) => ({ name: i.name, fields: i.fields, method: i.method, unique: i.unique, concurrently: false, comment: i.comment ?? "", primary: i.primary })),
     foreignKeys: cons("f").map((c) => ({
       name: c.name, fields: c.fields, refSchema: c.refSchema ?? "", refTable: c.refTable ?? "", refFields: c.refFields ?? "",
       onDelete: c.onDelete ?? "NO ACTION", onUpdate: c.onUpdate ?? "NO ACTION", comment: c.comment ?? "",

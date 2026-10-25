@@ -35,7 +35,7 @@ export interface ColumnDef {
   autoInc?: boolean;
 }
 
-export interface IndexDef { name: string; fields: string; method: string; unique: boolean; concurrently: boolean; comment?: string }
+export interface IndexDef { name: string; fields: string; method: string; unique: boolean; concurrently: boolean; comment?: string; /** Sustenta a chave primária (SQL Server). */ primary?: boolean }
 export interface ForeignKeyDef { name: string; fields: string; refSchema: string; refTable: string; refFields: string; onDelete: string; onUpdate: string; comment?: string }
 export interface UniqueDef { name: string; fields: string; comment?: string }
 export interface CheckDef { name: string; expression: string; noInherit: boolean; comment?: string }
