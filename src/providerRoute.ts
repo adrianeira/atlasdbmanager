@@ -6,6 +6,7 @@
 
 export const SQLITE_PREFIX = "sqlite_";
 export const MSSQL_PREFIX = "mssql_";
+export const MYSQL_PREFIX = "mysql_";
 
 interface Provider {
   /** Começo do id da conexão e do nome dos comandos (`sqlite_...`, `mssql_...`). */
@@ -42,7 +43,18 @@ const MSSQL: Provider = {
   ]),
 };
 
-const PROVIDERS = [SQLITE, MSSQL];
+const MYSQL: Provider = {
+  prefix: MYSQL_PREFIX,
+  param: "mysql",
+  console: false,
+  commands: new Set([
+    "test_connection", "open", "close", "close_database", "list_databases", "list_schemas", "list_objects", "table_detail", "list_roles",
+    "execute", "cancel", "table_rows", "table_count", "apply", "fk_labels",
+    ...TX,
+  ]),
+};
+
+const PROVIDERS = [SQLITE, MSSQL, MYSQL];
 
 export interface Routed {
   cmd: string;
@@ -77,6 +89,9 @@ export const idPrefix = (connId: string | undefined | null): string => PROVIDERS
 
 /** A conexão (ou transação) é de SQLite? */
 export const isSqliteId = (id: string | undefined | null): boolean => typeof id === "string" && id.startsWith(SQLITE_PREFIX);
+
+/** A conexão (ou transação) é de MySQL? */
+export const isMysqlId = (id: string | undefined | null): boolean => typeof id === "string" && id.startsWith(MYSQL_PREFIX);
 
 /** A conexão (ou transação) é de SQL Server? */
 export const isMssqlId = (id: string | undefined | null): boolean => typeof id === "string" && id.startsWith(MSSQL_PREFIX);

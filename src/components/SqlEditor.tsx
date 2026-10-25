@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { defaultKeymap, history, historyKeymap, indentWithTab, toggleComment } from "@codemirror/commands";
-import { MSSQL, PostgreSQL, SQLite, sql, type SQLNamespace } from "@codemirror/lang-sql";
+import { MSSQL, MySQL, PostgreSQL, SQLite, sql, type SQLNamespace } from "@codemirror/lang-sql";
 import { bracketMatching, foldGutter, HighlightStyle, indentOnInput, indentUnit, syntaxHighlighting } from "@codemirror/language";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import {
@@ -66,7 +66,7 @@ interface Props {
   /** Nomes para o autocomplete: tabelas (com colunas), views e funções; ver `completionNamespace`. */
   schema?: SQLNamespace;
   /** Dialeto da consulta; ausente = PostgreSQL. */
-  dialect?: "sqlite" | "mssql";
+  dialect?: "sqlite" | "mssql" | "mysql";
   defaultSchema?: string;
   placeholder?: string;
   /** Linhas (a partir de 1) com o fundo marcado: `add` em verde e `remove` em vermelho (comparação de DDL). */
@@ -141,7 +141,7 @@ export function SqlEditor({ value, readOnly, schema, dialect, defaultSchema, pla
       highlightSelectionMatches(),
       search({ top: true }),
       atlasTheme,
-      langConf.current.of(sql({ dialect: dialect === "sqlite" ? SQLite : dialect === "mssql" ? MSSQL : PostgreSQL, schema, defaultSchema, upperCaseKeywords: true })),
+      langConf.current.of(sql({ dialect: dialect === "sqlite" ? SQLite : dialect === "mssql" ? MSSQL : dialect === "mysql" ? MySQL : PostgreSQL, schema, defaultSchema, upperCaseKeywords: true })),
       marksConf.current.of([]),
       runKeys,
       keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...completionKeymap, indentWithTab]),
@@ -235,7 +235,7 @@ export function SqlEditor({ value, readOnly, schema, dialect, defaultSchema, pla
 
   // Autocomplete acompanha o schema selecionado.
   useEffect(() => {
-    view.current?.dispatch({ effects: langConf.current.reconfigure(sql({ dialect: dialect === "sqlite" ? SQLite : dialect === "mssql" ? MSSQL : PostgreSQL, schema, defaultSchema, upperCaseKeywords: true })) });
+    view.current?.dispatch({ effects: langConf.current.reconfigure(sql({ dialect: dialect === "sqlite" ? SQLite : dialect === "mssql" ? MSSQL : dialect === "mysql" ? MySQL : PostgreSQL, schema, defaultSchema, upperCaseKeywords: true })) });
   }, [schema, defaultSchema, dialect]);
 
   return <div className="sql-editor" ref={host} />;

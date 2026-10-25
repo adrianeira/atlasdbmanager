@@ -124,7 +124,7 @@ export function formToParams(f: ConnectionForm, fallbackPassword = ""): Connecti
 }
 
 async function liveTest(f: ConnectionForm, fallbackPassword: string, notSupported: string, profileId?: string): Promise<TestState> {
-  if (f.provider !== "postgresql" && f.provider !== "sqlite" && f.provider !== "sqlserver") return { kind: "fail", message: notSupported };
+  if (f.provider !== "postgresql" && f.provider !== "sqlite" && f.provider !== "sqlserver" && f.provider !== "mysql") return { kind: "fail", message: notSupported };
   try {
     // Campo de senha vazio na edição: o núcleo usa a senha salva no cofre (via profileId).
     const info = await pg.testConnection(formToParams(f, fallbackPassword), profileId);

@@ -1,0 +1,17 @@
+[package]
+name = "atlas-mysql"
+description = "Atlas DB Manager — driver MySQL"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+atlas-core.workspace = true
+mysql_async = { version = "0.35", default-features = false, features = ["minimal-rust", "native-tls-tls"] }
+tokio.workspace = true
+futures-util.workspace = true
+regex = "1"
+serde.workspace = true
+serde_json.workspace = true

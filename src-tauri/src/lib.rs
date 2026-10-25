@@ -13,6 +13,7 @@ mod import;
 mod local;
 mod sessions;
 mod mssql;
+mod mysql;
 mod sqlite;
 mod transfer;
 mod tunnel;
@@ -76,6 +77,7 @@ pub fn run() {
         .manage(tx::Transactions::default())
         .manage(sqlite::SqliteSessions::default())
         .manage(mssql::MssqlSessions::default())
+        .manage(mysql::MysqlSessions::default())
         .manage(datasync::Comparisons::default())
         .manage(structsync::StructComparisons::default())
         .manage(dictionary::DictRuns::default())
@@ -185,6 +187,28 @@ pub fn run() {
             commands::pg_fk_labels,
             commands::pg_table_count,
             commands::pg_data_profile,
+            mysql::mysql_test_connection,
+            mysql::mysql_open,
+            mysql::mysql_close,
+            mysql::mysql_close_database,
+            mysql::mysql_list_databases,
+            mysql::mysql_list_schemas,
+            mysql::mysql_list_objects,
+            mysql::mysql_table_detail,
+            mysql::mysql_list_roles,
+            mysql::mysql_execute,
+            mysql::mysql_cancel,
+            mysql::mysql_table_rows,
+            mysql::mysql_table_count,
+            mysql::mysql_apply,
+            mysql::mysql_fk_labels,
+            mysql::mysql_unsupported,
+            mysql::mysql_tx_begin,
+            mysql::mysql_tx_apply,
+            mysql::mysql_tx_execute,
+            mysql::mysql_tx_table_rows,
+            mysql::mysql_tx_table_count,
+            mysql::mysql_tx_end,
             mssql::mssql_test_connection,
             mssql::mssql_open,
             mssql::mssql_close,

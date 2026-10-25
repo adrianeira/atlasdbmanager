@@ -347,9 +347,15 @@ export const FLAT_CATEGORIES: Category[] = ["table", "view", "matview", "functio
 export const SCHEMA_FOLDERS: Category[] = ["table", "view", "matview", "function", "query", "backup"];
 
 /** As pastas de um schema que o banco tem (o SQLite não tem views materializadas, funções nem backup do PostgreSQL). */
+/** O dialeto das telas para cada banco (o PostgreSQL é o padrão e fica sem dialeto). */
+export const dialectOf = (provider: ProviderId | undefined): "sqlite" | "mssql" | "mysql" | undefined => (provider === "sqlite" ? "sqlite" : provider === "sqlserver" ? "mssql" : provider === "mysql" ? "mysql" : undefined);
+
+/** O dialeto dos designers: o MySQL ainda não tem os seus (volta `undefined`). */
+export const designerDialectOf = (provider: ProviderId | undefined): "sqlite" | "mssql" | undefined => (provider === "sqlite" ? "sqlite" : provider === "sqlserver" ? "mssql" : undefined);
+
 export const foldersFor = (provider: ProviderId): Category[] =>
   provider === "sqlite" ? SCHEMA_FOLDERS.filter((c) => c === "table" || c === "view" || c === "query")
-  : provider === "sqlserver" ? SCHEMA_FOLDERS.filter((c) => c === "table" || c === "view" || c === "function" || c === "query")
+  : provider === "sqlserver" || provider === "mysql" ? SCHEMA_FOLDERS.filter((c) => c === "table" || c === "view" || c === "function" || c === "query")
   : SCHEMA_FOLDERS;
 
 export interface NodeContext {

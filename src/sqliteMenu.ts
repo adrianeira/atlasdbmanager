@@ -16,7 +16,14 @@ const NOT_IN_MSSQL = new Set<MessageKey>([
   "cmd.extractSql", "cmd.reverseToModel", "cmd.share",
 ]);
 
-const SETS: Record<string, Set<MessageKey>> = { sqlite: NOT_IN_SQLITE, sqlserver: NOT_IN_MSSQL };
+const NOT_IN_MYSQL = new Set<MessageKey>([
+  "cmd.newDatabase", "cmd.editDatabase", "cmd.deleteDatabase", "cmd.newSchema", "cmd.editSchema", "cmd.deleteSchema",
+  "cmd.newBackup", "cmd.restoreBackup", "cmd.extractSql", "cmd.reverseToModel", "cmd.share",
+  "sub.duplicateTable", "sub.dumpSql", "act.importWizard", "act.exportWizard", "cmd.console", "cmd.findInDatabase", "cmd.findInSchema",
+  "cmd.renameTable", "cmd.renameView", "cmd.truncateTable",
+]);
+
+const SETS: Record<string, Set<MessageKey>> = { sqlite: NOT_IN_SQLITE, sqlserver: NOT_IN_MSSQL, mysql: NOT_IN_MYSQL };
 
 /** Os bancos que têm lista de itens a esconder (o PostgreSQL não tem). */
 export const hasMenuFilter = (provider: string | undefined): boolean => !!provider && provider in SETS;
@@ -39,4 +46,4 @@ export function menuForProvider(provider: string, items: MenuEntry[], labels: Ma
 }
 
 /** Os textos dos itens que algum banco esconde (o menu guarda o texto, não a chave). */
-export const hiddenKeys = (): MessageKey[] => [...new Set([...NOT_IN_SQLITE, ...NOT_IN_MSSQL])].filter((k) => k.startsWith("cmd.") || k.startsWith("act."));
+export const hiddenKeys = (): MessageKey[] => [...new Set([...NOT_IN_SQLITE, ...NOT_IN_MSSQL, ...NOT_IN_MYSQL])].filter((k) => k.startsWith("cmd.") || k.startsWith("act."));

@@ -13,7 +13,7 @@ import type { StatusCell } from "../components/StatusBar";
 import { useT, type MessageKey } from "../i18n";
 import { ProviderIcon, SmallIcon, type SmallIconName } from "../icons";
 import { FullscreenButton } from "../components/FullscreenButton";
-import { mockRows, type CellValue, type ConnectionMock } from "../model";
+import { dialectOf, mockRows, type CellValue, type ConnectionMock } from "../model";
 import { columnType } from "../sql/ddl";
 import { beautifySql, minifySql } from "../sql/format";
 import { ParametersDialog } from "../components/ParametersDialog";
@@ -652,7 +652,7 @@ export function QueryDoc({
           <SqlEditor
             value={initialSql ?? ""}
             schema={completionSchema}
-            dialect={conn?.provider === "sqlite" ? "sqlite" : conn?.provider === "sqlserver" ? "mssql" : undefined}
+            dialect={dialectOf(conn?.provider)}
             onChange={(text) => { onDirty(true); onText?.(text); }}
             onCursor={(line, col) => setCursor({ line, col })}
             onRun={run}

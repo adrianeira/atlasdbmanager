@@ -72,7 +72,7 @@ import { FunctionDesignerDoc, type FunctionBackend } from "./documents/FunctionD
 import { detectLang, I18nContext, makeTranslator, type Lang, type MessageKey } from "./i18n";
 import { ProviderIcon, SmallIcon } from "./icons";
 import {
-  buildVisibleTree, DEFAULT_FILTER_OPTIONS, databaseVisible, makeMatcher, schemaVisible, type FilterOptions, CONNECTION_COLORS, INITIAL_CONNECTIONS, mockRows, quoteIdent, resolveNode, seg,
+  buildVisibleTree, DEFAULT_FILTER_OPTIONS, databaseVisible, makeMatcher, schemaVisible, type FilterOptions, CONNECTION_COLORS, designerDialectOf, INITIAL_CONNECTIONS, mockRows, quoteIdent, resolveNode, seg,
   type Category, type ConnectionColor, type ConnectionMock, type DatabaseMock, type DbObject, type NodeContext, type ProviderId, type TreeNode,
 } from "./model";
 
@@ -2487,7 +2487,7 @@ export default function App() {
       id: "dataTransfer", label: "cmd.dataTransfer",
       run: () => {
         // Estas ferramentas ainda são do PostgreSQL: o SQLite não entra na lista de conexões delas.
-        const live = connections.filter((c) => c.live && c.provider !== "sqlite");
+        const live = connections.filter((c) => c.live && c.provider === "postgresql");
         if (live.length === 0) return;
         void openDataTransfer(t("dt.title"), {
           connections: live.map((c) => ({
@@ -2495,7 +2495,7 @@ export default function App() {
             version: c.serverVersion, versionNum: c.serverVersionNum, open: openConnections.has(c.id),
             initialDatabase: c.initialDatabase, sslMode: c.sslMode, hasPassword: c.hasPassword,
           })),
-          source: ctx.connection?.live && ctx.connection.provider !== "sqlite" && ctx.database && ctx.schema ? { connId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name } : undefined,
+          source: ctx.connection?.live && ctx.connection.provider === "postgresql" && ctx.database && ctx.schema ? { connId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name } : undefined,
         }).catch((e) => showError(t("dt.title"), e));
       },
     },
@@ -2582,7 +2582,7 @@ export default function App() {
       id: "monitorPostgres", label: "mon.postgres",
       run: () => {
         // O monitor lê as tabelas de sistema do PostgreSQL.
-        if (!connections.some((c) => c.live && c.provider !== "sqlite") || ctx.connection?.provider === "sqlite") return;
+        if (!connections.some((c) => c.live && c.provider === "postgresql") || (ctx.connection && ctx.connection.provider !== "postgresql")) return;
         openTab({ kind: "monitor", title: `${t("mon.title")} - PostgreSQL`, windowTitle: `${t("mon.title")} - PostgreSQL`, icon: "settings", object: "monitor", connectionId: ctx.connection?.id });
       },
     },
@@ -3040,7 +3040,7 @@ export default function App() {
             if (conn?.live && tab.database && tab.schema) void loadSchema(conn.id, tab.database, tab.schema, true).catch(() => undefined);
           }}
           backend={conn?.live ? viewBackendFor(tab, conn) : undefined}
-          dialect={conn?.provider === "sqlite" ? "sqlite" : conn?.provider === "sqlserver" ? "mssql" : undefined}
+          dialect={designerDialectOf(conn?.provider)}
         />
       );
     }
@@ -3264,7 +3264,7 @@ export default function App() {
             if (conn?.live && tab.database && tab.schema) void loadSchema(conn.id, tab.database, tab.schema, true).catch(() => undefined);
           }}
           loadDetail={liveBackend && tab.object ? liveBackend.loadDetail : undefined}
-          dialect={conn?.provider === "sqlite" ? "sqlite" : conn?.provider === "sqlserver" ? "mssql" : undefined}
+          dialect={designerDialectOf(conn?.provider)}
           applyDdl={conn?.live ? async (statements) => {
             await pg.apply(conn.id, tab.database ?? "", statements.map((sql) => ({ sql, params: [], expectOneRow: false })));
           } : undefined}
