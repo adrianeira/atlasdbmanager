@@ -408,7 +408,8 @@ export function DataGrid({
       case "Enter": e.preventDefault(); startEdit(activeRow, activeCol); break;
       default:
         if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-          if (e.key === " ") e.preventDefault();
+          // O editor já abre com a tecla digitada; sem isso o navegador a digita de novo no campo recém-aberto ("x" vira "xx").
+          e.preventDefault();
           startEdit(activeRow, activeCol, e.key);
         }
     }
