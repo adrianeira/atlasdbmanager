@@ -5,6 +5,7 @@
 //! alguém pede). Os valores voltam em texto, como a grade os espera.
 
 mod console;
+mod dump;
 mod extra;
 mod find;
 mod import;
@@ -14,6 +15,7 @@ mod rows;
 mod values;
 
 pub use console::{Completion as ConsoleCompletion, ConsoleOptions, ConsoleOutput, is_complete as console_is_complete};
+pub use dump::{DumpPlan, DumpTable, literal};
 pub use extra::FkLabels;
 pub use profile::DataProfile;
 pub use find::{FindDataResult, FindMode, FindOptions, FindResult};

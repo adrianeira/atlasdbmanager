@@ -6,7 +6,7 @@ import {
 import { useT } from "../i18n";
 import { formatBytes } from "../model";
 import { SmallIcon } from "../icons";
-import { isSqliteId } from "../providerRoute";
+import { idPrefix, isMssqlId, isSqliteId } from "../providerRoute";
 
 export interface DumpTarget {
   connId: string;
@@ -31,7 +31,7 @@ export function DumpDialog({ target, onClose }: Props) {
   const [structure, setStructure] = useState(true);
   const [data, setData] = useState(!target.structureOnly);
   // O SQLite só tem `INSERT` (não há COPY).
-  const sqlite = isSqliteId(target.connId);
+  const sqlite = isSqliteId(target.connId) || isMssqlId(target.connId);
   const [format, setFormat] = useState<"copy" | "insert">(sqlite ? "insert" : "copy");
   const [rowsPerInsert, setRowsPerInsert] = useState(100);
   const [clean, setClean] = useState(false);
@@ -78,7 +78,7 @@ export function DumpDialog({ target, onClose }: Props) {
     setRows(0);
     setElapsed(0);
     setRunning(true);
-    const id = `${isSqliteId(target.connId) ? "sqlite_" : ""}${crypto.randomUUID()}`;
+    const id = `${idPrefix(target.connId)}${crypto.randomUUID()}`;
     dumpId.current = id;
     const unlisten = await onExportProgress(id, (n) => setRows(n));
     try {

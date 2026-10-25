@@ -211,6 +211,7 @@ pub fn run() {
             mssql::mssql_console_complete,
             mssql::mssql_console_is_complete,
             mssql::mssql_routine_definition,
+            mssql::mssql_dump_sql,
             mssql::mssql_find,
             mssql::mssql_find_data,
             mssql::mssql_export_cancel,

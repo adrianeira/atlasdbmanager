@@ -7,6 +7,7 @@ use crate::local::Local;
 use crate::import::{ImportRequest, ImportSummary, JobResult, LogEvent, ProgressEvent, failed_job};
 use atlas_import::convert::{TargetKind, convert, kind_of};
 use atlas_mssql::{ImportFeed, ImportHooks, ImportMode, ImportSpec, TargetColumn};
+use crate::dump::{DumpRequest, DumpResult};
 use crate::export::{ExportRequest, ExportResult, PartFile, Progress, io_error, part_path, validate_path};
 use atlas_export::ExportColumn;
 use std::fs::{self, File};
@@ -526,6 +527,122 @@ pub fn mssql_console_is_complete(input: String) -> bool {
 #[tauri::command]
 pub async fn mssql_routine_definition(sessions: State<'_, MssqlSessions>, session_id: String, database: String, schema: String, name: String) -> Result<String, DatabaseError> {
     sessions.session(&session_id)?.routine_definition(&database, &schema, &name).await
+}
+
+/// Destino do dump.
+type DumpOut = std::io::BufWriter<File>;
+
+/// Dump SQL: o DDL lido do catálogo e os dados em `INSERT`, num script com lotes separados por `GO`.
+#[tauri::command]
+pub async fn mssql_dump_sql(app: tauri::AppHandle, sessions: State<'_, MssqlSessions>, req: DumpRequest) -> Result<DumpResult, DatabaseError> {
+    use std::io::Write;
+    let started = Instant::now();
+    let dest = validate_path(&req.path)?;
+    if !req.options.structure && !req.options.data {
+        return Err(DatabaseError::new(ErrorKind::InvalidInput, "escolha ao menos estrutura ou dados"));
+    }
+    let s = sessions.session(&req.session_id)?;
+    let cancel = Arc::new(AtomicBool::new(false));
+    if let Ok(mut m) = sessions.finds.lock() {
+        m.insert(req.dump_id.clone(), cancel.clone());
+    }
+    let out = async {
+        let (schema, tables, views): (Option<String>, Option<Vec<String>>, Option<Vec<String>>) = match &req.options.scope {
+            atlas_pg::DumpScope::Database => (None, None, None),
+            atlas_pg::DumpScope::Schema { schema } => (Some(schema.clone()), None, None),
+            atlas_pg::DumpScope::Tables { schema, tables } => (Some(schema.clone()), Some(tables.clone()), Some(Vec::new())),
+            atlas_pg::DumpScope::Selection { schema, tables, views, .. } => (Some(schema.clone()), Some(tables.clone()), Some(views.clone())),
+        };
+        let plan = s.dump_plan(&req.database, schema.as_deref(), tables.as_deref(), views.as_deref(), req.options.clean).await?;
+        let mut part = PartFile::new(part_path(&dest));
+        let mut out: DumpOut = std::io::BufWriter::with_capacity(256 * 1024, File::create(&part.path).map_err(io_error)?);
+        let canceled = || DatabaseError::new(ErrorKind::Canceled, "dump canceled");
+        let write = |text: &str, out: &mut DumpOut| -> Result<(), DatabaseError> { out.write_all(text.as_bytes()).map_err(io_error) };
+        write(&format!("-- Atlas DB Manager: SQL dump\n-- SQL Server {}; banco: {}\n\nSET QUOTED_IDENTIFIER ON;\nGO\n", s.version, req.database), &mut out)?;
+        if req.options.structure {
+            for stmt in &plan.pre_data {
+                write(&format!("\n{stmt}\n"), &mut out)?;
+            }
+            write("\nGO\n", &mut out)?;
+        }
+        let mut rows = 0u64;
+        let mut last_emit = Instant::now();
+        let per = req.rows_per_insert.clamp(1, 1000) as usize;
+        if req.options.data {
+            for table in &plan.data_tables {
+                if cancel.load(Ordering::Relaxed) {
+                    return Err(canceled());
+                }
+                let target = format!("{}.{}", atlas_mssql::quote_ident(&table.schema), atlas_mssql::quote_ident(&table.name));
+                if table.columns.is_empty() {
+                    continue;
+                }
+                let list = table.columns.iter().map(|(n, _)| atlas_mssql::quote_ident(n)).collect::<Vec<_>>().join(", ");
+                write(&format!("\n-- Dados de {target}\n"), &mut out)?;
+                if table.has_identity {
+                    write(&format!("SET IDENTITY_INSERT {target} ON;\n"), &mut out)?;
+                }
+                let mut batch: Vec<String> = Vec::new();
+                let mut table_rows = 0u64;
+                let flush = |batch: &mut Vec<String>, out: &mut DumpOut| -> Result<(), DatabaseError> {
+                    if batch.is_empty() {
+                        return Ok(());
+                    }
+                    let text = format!("INSERT INTO {target} ({list}) VALUES\n{};\n", batch.join(",\n"));
+                    batch.clear();
+                    out.write_all(text.as_bytes()).map_err(io_error)
+                };
+                s.stream_rows(
+                    &req.database,
+                    &format!("SELECT {list} FROM {target}"),
+                    |_| Ok(()),
+                    |values| {
+                        if cancel.load(Ordering::Relaxed) {
+                            return Ok(false);
+                        }
+                        let cells: Vec<String> = values.iter().zip(&table.columns).map(|(v, (_, ty))| atlas_mssql::literal(*v, ty)).collect();
+                        batch.push(format!("({})", cells.join(", ")));
+                        table_rows += 1;
+                        if batch.len() >= per {
+                            flush(&mut batch, &mut out)?;
+                        }
+                        if last_emit.elapsed() >= Duration::from_millis(200) {
+                            last_emit = Instant::now();
+                            let _ = app.emit("export-progress", Progress { export_id: &req.dump_id, rows: rows + table_rows });
+                        }
+                        Ok(true)
+                    },
+                )
+                .await?;
+                if cancel.load(Ordering::Relaxed) {
+                    return Err(canceled());
+                }
+                flush(&mut batch, &mut out)?;
+                if table.has_identity {
+                    write(&format!("SET IDENTITY_INSERT {target} OFF;\n"), &mut out)?;
+                }
+                write("GO\n", &mut out)?;
+                rows += table_rows;
+            }
+        }
+        if req.options.structure {
+            for stmt in &plan.post_data {
+                write(&format!("\n{stmt}\n"), &mut out)?;
+            }
+            write("\nGO\n", &mut out)?;
+        }
+        out.flush().map_err(io_error)?;
+        drop(out);
+        fs::rename(&part.path, &dest).map_err(io_error)?;
+        part.keep = true;
+        let _ = app.emit("export-progress", Progress { export_id: &req.dump_id, rows });
+        Ok(DumpResult { objects: plan.objects, tables: plan.data_tables.len(), rows, bytes: fs::metadata(&dest).map(|m| m.len()).unwrap_or(0), elapsed_ms: started.elapsed().as_millis() as u64, path: dest.to_string_lossy().into_owned() })
+    }
+    .await;
+    if let Ok(mut m) = sessions.finds.lock() {
+        m.remove(&req.dump_id);
+    }
+    out
 }
 
 /// Pede para parar uma busca nos dados.
