@@ -121,10 +121,13 @@ export interface RowChanges {
 export function plannedStatements(c: RowChanges): PlannedStatement[] {
   const target = `${quoteIdent(c.schema)}.${quoteIdent(c.table)}`;
   const keys = c.columns.map((col, i) => ({ col, i })).filter((x) => x.col.key).sort((a, b) => (a.col.key ?? 0) - (b.col.key ?? 0));
-  // Sem chave primária, a linha é achada por todos os valores (menos os de tipos sem igualdade): linhas iguais são todas afetadas.
+  // Sem chave primária, a linha é achada por todos os valores (menos os de tipos sem igualdade). Linhas iguais marcadas juntas viram um
+  // comando só que mexe em exatamente quantas foram marcadas (o banco escolhe quais, entre as iguais, pelo identificador interno da linha,
+  // dentro do próprio comando).
   const keyless = keys.length === 0;
   const cast = (col: ColumnDef) => col.castType ?? col.type;
   const out: PlannedStatement[] = [];
+  const loose: { head: string; where: string; params: (string | null)[] }[] = [];
 
   const whereFor = (row: CellValue[], params: (string | null)[], extra: number[]) => {
     const conds: string[] = [];
@@ -153,7 +156,8 @@ export function plannedStatements(c: RowChanges): PlannedStatement[] {
       params.push(c.current[r][i]);
       return `${quoteIdent(c.columns[i].name)} = $${params.length}::text::${cast(c.columns[i])}`;
     });
-    out.push({ sql: `UPDATE ${target} SET ${set.join(", ")} WHERE ${whereFor(c.original[r], params, cols)}`, params, expectOneRow: !keyless, expectAtLeastOne: keyless });
+    if (keyless) loose.push({ head: `UPDATE ${target} SET ${set.join(", ")}`, where: whereFor(c.original[r], params, cols), params });
+    else out.push({ sql: `UPDATE ${target} SET ${set.join(", ")} WHERE ${whereFor(c.original[r], params, cols)}`, params, expectOneRow: true });
   }
   for (const r of c.newRows) {
     const filled = c.columns.map((col, i) => ({ col, v: c.current[r][i] })).filter((x) => x.v !== null);
@@ -170,16 +174,19 @@ export function plannedStatements(c: RowChanges): PlannedStatement[] {
   }
   for (const r of c.deleted) {
     const params: (string | null)[] = [];
-    out.push({ sql: `DELETE FROM ${target} WHERE ${whereFor(c.original[r], params, [])}`, params, expectOneRow: !keyless, expectAtLeastOne: keyless });
+    if (keyless) loose.push({ head: `DELETE FROM ${target}`, where: whereFor(c.original[r], params, []), params });
+    else out.push({ sql: `DELETE FROM ${target} WHERE ${whereFor(c.original[r], params, [])}`, params, expectOneRow: true });
   }
-  // Sem chave, linhas iguais marcadas juntas viram o mesmo comando: ele já afeta todas, e repeti-lo daria "0 linhas" (conflito).
-  if (!keyless) return out;
-  const seen = new Set<string>();
-  return out.filter((st) => {
-    if (st.expectAtLeastOne !== true) return true;
-    const key = `${st.sql} ${JSON.stringify(st.params)}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  // Sem chave: comandos idênticos (linhas iguais marcadas juntas) viram um, com a contagem de linhas esperada.
+  const groups = new Map<string, { st: { head: string; where: string; params: (string | null)[] }; n: number }>();
+  for (const st of loose) {
+    const key = `${st.head} ${st.where} ${JSON.stringify(st.params)}`;
+    const g = groups.get(key);
+    if (g) g.n++;
+    else groups.set(key, { st, n: 1 });
+  }
+  for (const { st, n } of groups.values()) {
+    out.push({ sql: `${st.head} WHERE ctid = ANY(ARRAY(SELECT ctid FROM ${target} WHERE ${st.where} LIMIT ${n}))`, params: st.params, expectOneRow: false, expectRows: n });
+  }
+  return out;
 }

@@ -119,13 +119,6 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   const [applyError, setApplyError] = useState<string | null>(null);
   /** Linha que está sendo duplicada (janela "Duplicar registro"). */
   const [dupRow, setDupRow] = useState<number | null>(null);
-  /** Aviso depois de gravar (ex.: sem chave, mais linhas afetadas do que alteradas na tela): some sozinho depois de alguns segundos. */
-  const [applyNote, setApplyNote] = useState<string | null>(null);
-  useEffect(() => {
-    if (!applyNote) return;
-    const id = window.setTimeout(() => setApplyNote(null), 8000);
-    return () => window.clearTimeout(id);
-  }, [applyNote]);
   // Transação manual (botão "Iniciar transação"): alterações aplicadas só valem de vez ao confirmar.
   const [inTx, setInTx] = useState(false);
   const [txBusy, setTxBusy] = useState(false);
@@ -448,17 +441,9 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
     if (backend) {
       setApplying(true);
       setApplyError(null);
-      setApplyNote(null);
       try {
         const planned = plannedStatements({ schema, table: table.name, columns: cols, original, current: rows, edited, newRows, deleted });
-        const counts = await backend.apply(planned);
-        // Sem chave, linhas iguais são todas afetadas: avisa quantas linhas o servidor realmente mudou.
-        if (keyless && counts) {
-          // O que o usuário marcou: linhas alteradas, excluídas e novas. Mais que isso afetado = havia linhas iguais.
-          const expected = updatedRows + deleted.size + newRows.size;
-          const total = counts.reduce((a, b) => a + b, 0);
-          setApplyNote(total > expected ? t("data.keylessAffected", { n: total }) : null);
-        }
+        await backend.apply(planned);
       } catch (e) {
         setApplyError(errorText(toAtlasError(e)));
         setApplying(false);
@@ -763,12 +748,6 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
       {!loadError && truncated && <div className="doc-banner is-warn">{t("data.truncatedAll", { n: rows.length.toLocaleString() })}</div>}
       {!loadError && !loading && readOnly && !isView && <div className="doc-banner">{t("data.readOnlyNoKey")}</div>}
       {!loadError && !loading && keyless && !readOnly && <div className="doc-banner is-warn">{t("data.noKeyNote")}</div>}
-      {applyNote && (
-        <div className="doc-banner is-warn doc-banner-note" role="status">
-          <span>{applyNote}</span>
-          <button type="button" className="banner-close" title={t("tab.close")} aria-label={t("tab.close")} onClick={() => setApplyNote(null)}>×</button>
-        </div>
-      )}
       {!readOnly && production && <div className="doc-banner is-warn">{t("data.productionBanner")}</div>}
 
       <div className="doc-body">

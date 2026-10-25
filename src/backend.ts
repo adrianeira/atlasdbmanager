@@ -924,8 +924,8 @@ export interface PlannedStatement {
   sql: string;
   params: (string | null)[];
   expectOneRow: boolean;
-  /** Tabela sem chave: linhas iguais são todas afetadas; só nenhuma linha afetada é conflito. */
-  expectAtLeastOne?: boolean;
+  /** Tabela sem chave: o comando precisa mexer em exatamente esta quantidade de linhas (as marcadas na tela). */
+  expectRows?: number;
 }
 
 const call = async <T>(cmd: string, args?: Record<string, unknown>): Promise<T> => {

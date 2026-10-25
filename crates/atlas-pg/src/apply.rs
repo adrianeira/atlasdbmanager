@@ -17,17 +17,19 @@ pub struct PlannedStatement {
     /// UPDATE/DELETE de linha: precisa afetar exatamente 1 linha, senão é conflito (spec §31.4).
     #[serde(default)]
     pub expect_one_row: bool,
-    /// UPDATE/DELETE em tabela sem chave: a linha é achada por todos os valores, então linhas iguais são todas afetadas; só zero é conflito.
+    /// UPDATE/DELETE em tabela sem chave: o comando mexe em exatamente esta quantidade de linhas iguais (as marcadas na tela); outra contagem é conflito.
     #[serde(default)]
-    pub expect_at_least_one: bool,
+    pub expect_rows: Option<u64>,
 }
 
 /// O que há de errado com a contagem de linhas afetadas, se houver.
-fn count_problem(st: &PlannedStatement, n: u64) -> Option<&'static str> {
+fn count_problem(st: &PlannedStatement, n: u64) -> Option<String> {
     if st.expect_one_row && n != 1 {
-        Some("expected exactly 1")
-    } else if st.expect_at_least_one && n == 0 {
-        Some("expected at least 1")
+        Some("expected exactly 1".to_string())
+    } else if let Some(k) = st.expect_rows
+        && n != k
+    {
+        Some(format!("expected exactly {k}"))
     } else {
         None
     }
@@ -118,10 +120,10 @@ mod tests {
         let one = PlannedStatement { expect_one_row: true, ..Default::default() };
         assert!(count_problem(&one, 1).is_none());
         assert!(count_problem(&one, 0).is_some() && count_problem(&one, 2).is_some());
-        // Tabela sem chave: linhas iguais são todas afetadas (vale 3), só zero é conflito.
-        let keyless = PlannedStatement { expect_at_least_one: true, ..Default::default() };
-        assert!(count_problem(&keyless, 1).is_none() && count_problem(&keyless, 3).is_none());
-        assert!(count_problem(&keyless, 0).is_some());
+        // Tabela sem chave: o comando mexe só nas linhas marcadas (aqui 2 de várias iguais); outra contagem é conflito.
+        let keyless = PlannedStatement { expect_rows: Some(2), ..Default::default() };
+        assert!(count_problem(&keyless, 2).is_none());
+        assert!(count_problem(&keyless, 0).is_some() && count_problem(&keyless, 3).is_some());
         // INSERT e DDL não conferem a contagem.
         assert!(count_problem(&PlannedStatement::default(), 0).is_none());
     }
