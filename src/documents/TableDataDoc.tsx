@@ -647,8 +647,18 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   const refresh = () => {
     if (dirty) return;
     setTotalRows(null); // relê a contagem na próxima vez que precisar
-    if (backend) void loadPage(page, table, limit);
-    else setRefreshedAt(new Date());
+    if (backend) {
+      // Relê também a estrutura: uma coluna criada, renomeada ou removida depois de abrir a tabela passa a valer.
+      const shape = (t: DbObject) => JSON.stringify((t.columns ?? []).map((c) => [c.name, c.type, c.key, c.identity, c.generated]));
+      void backend
+        .loadDetail()
+        .then((obj) => {
+          const next = shape(obj) === shape(table) ? table : obj;
+          if (next !== table) setTable(obj);
+          return loadPage(page, next, limit);
+        })
+        .catch(() => loadPage(page, table, limit));
+    } else setRefreshedAt(new Date());
   };
 
   // "Parar" (botão ⏹): cancela a consulta em andamento no servidor.
