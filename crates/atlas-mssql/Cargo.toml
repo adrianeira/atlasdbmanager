@@ -1,0 +1,18 @@
+[package]
+name = "atlas-mssql"
+description = "Atlas DB Manager — driver SQL Server (TDS)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+atlas-core.workspace = true
+tiberius = { version = "0.12", default-features = false, features = ["tds73", "native-tls", "chrono", "rust_decimal", "bigdecimal"] }
+tokio = { workspace = true, features = ["net"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+futures-util.workspace = true
+chrono = "0.4"
+serde.workspace = true
+serde_json.workspace = true
