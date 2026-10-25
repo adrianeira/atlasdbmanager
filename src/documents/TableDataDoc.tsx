@@ -10,6 +10,7 @@ import { MessageDialog } from "../components/MessageDialog";
 import type { StatusCell } from "../components/StatusBar";
 import { useT, type MessageKey } from "../i18n";
 import { SmallIcon, type SmallIconName } from "../icons";
+import { DuplicateRecordDialog } from "../components/DuplicateRecordDialog";
 import { FullscreenButton } from "../components/FullscreenButton";
 import { plannedStatements } from "../live";
 import { mockRows, quoteIdent, type CellValue, type DbObject, type ForeignKeyDef } from "../model";
@@ -116,6 +117,8 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
   const [loadError, setLoadError] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
+  /** Linha que está sendo duplicada (janela "Duplicar registro"). */
+  const [dupRow, setDupRow] = useState<number | null>(null);
   /** Aviso depois de gravar (ex.: sem chave, mais linhas afetadas do que alteradas na tela): some sozinho depois de alguns segundos. */
   const [applyNote, setApplyNote] = useState<string | null>(null);
   useEffect(() => {
@@ -788,6 +791,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
             onEdit={onEdit}
             sqlTarget={`${quoteIdent(schema)}.${quoteIdent(table.name)}`}
             onDeleteRow={readOnly ? undefined : (r) => { setActiveRow(r); deleteRow(r); }}
+            onDuplicateRow={readOnly || !backend || dirty || newRows.has(0) ? undefined : (r) => setDupRow(r)}
             onRefresh={dirty || loading ? undefined : refresh}
             lookupCols={lookup ? lookupCols : undefined}
             valueLabels={fkValues ? valueLabels : undefined}
@@ -1021,6 +1025,20 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
           danger
           onOk={() => setApplyError(null)}
           onCancel={() => setApplyError(null)}
+        />
+      )}
+      {dupRow !== null && rows[dupRow] && backend && (
+        <DuplicateRecordDialog
+          table={table.name}
+          columns={cols}
+          row={rows[dupRow]}
+          onClose={() => setDupRow(null)}
+          onInsert={async (values) => {
+            // Um INSERT só com os campos preenchidos (os automáticos o banco gera); o erro do servidor (chave repetida...) volta para a janela.
+            await backend.apply(plannedStatements({ schema, table: table.name, columns: cols, original: [], current: [values], edited: new Set(), newRows: new Set([0]), deleted: new Set() }));
+            setDupRow(null);
+            await loadPage(page, table, limit);
+          }}
         />
       )}
       {confirmApply && (

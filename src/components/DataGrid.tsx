@@ -181,6 +181,8 @@ interface Props {
   /** `"schema"."tabela"` para "Copiar como INSERT/UPDATE"; ausente (ex.: resultado de consulta) desabilita. */
   sqlTarget?: string;
   onDeleteRow?: (row: number) => void;
+  /** "Duplicar registro" no menu da linha (some se não for possível, ex.: há alterações pendentes). */
+  onDuplicateRow?: (row: number) => void;
   onRefresh?: () => void;
   /** Barra "Find Data": destaca células que contêm o texto. Vazio = sem busca. */
   findQuery?: string;
@@ -206,7 +208,7 @@ interface Props {
 
 export function DataGrid({
   columns, onColumnWidth, onScrollTop, initialScrollTop, columnOrder, onColumnOrder, valueLabels, rows, readOnly, edited, deletedRows, newRows, activeRow, onActiveRow, onEdit, rowHeight = 23, simpleHeader, lookupCols, onLookup,
-  sqlTarget, onDeleteRow, onRefresh, findQuery, activeFind, highlightAll, onSaveAs, onSortColumn, onClearSort, onResetLayout, onAddFilter, onActiveCell, onOpenCellEditor,
+  sqlTarget, onDeleteRow, onDuplicateRow, onRefresh, findQuery, activeFind, highlightAll, onSaveAs, onSortColumn, onClearSort, onResetLayout, onAddFilter, onActiveCell, onOpenCellEditor,
 }: Props) {
   const t = useT();
   const opts = useOptions();
@@ -491,6 +493,7 @@ export function DataGrid({
       },
       item("grid.cellEditor", onOpenCellEditor ? () => onOpenCellEditor(row, col) : undefined),
       sep,
+      item("grid.duplicateRecord", !readOnly && onDuplicateRow ? () => onDuplicateRow(row) : undefined),
       item("grid.deleteRecord", !readOnly && onDeleteRow ? () => onDeleteRow(row) : undefined),
       sep,
       item("grid.copy", () => copyText(rows[row][col] ?? "")),
