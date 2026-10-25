@@ -1,4 +1,4 @@
-import { isSqliteId } from "./providerRoute";
+import { idPrefix } from "./providerRoute";
 import { defaultExportDir, pg } from "./backend";
 import { formatBackupName } from "./components/BackupDialog";
 import { readToolsDir } from "./components/RestoreDialog";
@@ -10,7 +10,7 @@ import { joinPath, type ScheduledTask } from "./tasks";
  */
 export async function runTask(task: ScheduledTask, ensureOpen: (connId: string) => Promise<void>, now = new Date()): Promise<string> {
   await ensureOpen(task.connId);
-  const id = `${isSqliteId(task.connId) ? "sqlite_" : ""}${crypto.randomUUID()}`;
+  const id = `${idPrefix(task.connId)}${crypto.randomUUID()}`;
   const job = task.job;
   if (job.kind === "backup") {
     const r = await pg.backup({

@@ -1,4 +1,4 @@
-import { isSqliteId } from "../../providerRoute";
+import { idPrefix } from "../../providerRoute";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MenuEntry } from "../../commands";
 import {
@@ -300,7 +300,7 @@ export function ExportWizard({ target, onClose }: Props) {
           .catch(() => undefined);
       }
       // O id leva o nome do banco quando a conexão não é do PostgreSQL (o cancelamento é roteado por ele).
-      const id = `${isSqliteId(target.connId) ? "sqlite_" : ""}${crypto.randomUUID()}`;
+      const id = `${idPrefix(target.connId)}${crypto.randomUUID()}`;
       exportId.current = id;
       const unlisten = await onExportProgress(id, (n) => setCurrent((c) => (c && c.table === tb.name ? { ...c, processed: n } : c)));
       try {

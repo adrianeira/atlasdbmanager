@@ -44,6 +44,16 @@ pub fn select_sql(schema: &str, table: &str, order_by: &[OrderBy], filter: Optio
     sql
 }
 
+/// Como `select_sql` (sem página), mas só com as colunas pedidas (vazio = todas).
+pub fn select_columns_sql(schema: &str, table: &str, columns: &[String], order_by: &[OrderBy], filter: Option<&TableFilter>) -> String {
+    let sql = select_sql(schema, table, order_by, filter, None);
+    if columns.is_empty() {
+        return sql;
+    }
+    let list = columns.iter().map(|c| quote_ident(c)).collect::<Vec<_>>().join(", ");
+    sql.replacen("SELECT *", &format!("SELECT {list}"), 1)
+}
+
 fn count_problem(st: &PlannedStatement, affected: u64) -> Option<String> {
     if let Some(n) = st.expect_rows {
         return (affected != n).then(|| format!("expected {n} rows"));
@@ -141,6 +151,42 @@ impl MssqlSession {
         let client = self.client(database).await?;
         let mut conn = client.lock().await;
         apply_on(&mut conn, statements, true).await
+    }
+
+    /// Lê o resultado de um `SELECT` linha a linha, sem guardar nada na memória, numa conexão só desta leitura. `on_begin` recebe as
+    /// colunas e `on_row` cada linha; devolver `Ok(false)` encerra a leitura. Devolve quantas linhas foram entregues.
+    pub async fn stream_rows(
+        &self,
+        database: &str,
+        sql: &str,
+        on_begin: impl FnOnce(&[atlas_core::ResultColumn]) -> Result<(), DatabaseError>,
+        mut on_row: impl FnMut(&[Option<&str>]) -> Result<bool, DatabaseError>,
+    ) -> Result<u64, DatabaseError> {
+        use futures_util::TryStreamExt;
+        use tiberius::QueryItem;
+        let mut conn = self.dedicated(database).await?;
+        let mut stream = conn.simple_query(sql).await.map_err(map_err)?;
+        let mut on_begin = Some(on_begin);
+        let mut count = 0u64;
+        while let Some(item) = stream.try_next().await.map_err(map_err)? {
+            match item {
+                QueryItem::Metadata(meta) => {
+                    if let Some(begin) = on_begin.take() {
+                        let cols: Vec<atlas_core::ResultColumn> = meta.columns().iter().map(|c| atlas_core::ResultColumn { name: c.name().to_string(), type_name: Some(crate::values::type_name(c.column_type())) }).collect();
+                        begin(&cols)?;
+                    }
+                }
+                QueryItem::Row(row) => {
+                    let cells = crate::values::row_text(&row);
+                    let refs: Vec<Option<&str>> = cells.iter().map(|c| c.as_deref()).collect();
+                    if !on_row(&refs)? {
+                        break;
+                    }
+                    count += 1;
+                }
+            }
+        }
+        Ok(count)
     }
 
     /// Abre uma transação manual: uma conexão só dela, com `BEGIN TRANSACTION`.

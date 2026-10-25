@@ -3,6 +3,10 @@
 //! Os comandos do PostgreSQL não são tocados.
 
 use crate::commands::{TABLE_ROWS_CAP, TableRows};
+use crate::export::{ExportRequest, ExportResult, PartFile, Progress, io_error, part_path, validate_path};
+use atlas_export::ExportColumn;
+use std::fs::{self, File};
+use std::time::Duration;
 use atlas_core::{ConnectionParams, DatabaseError, DatabaseList, ErrorKind, OrderBy, QueryOutcome, RoleInfo, SchemaInfo, SchemaObjects, ServerInfo, TableDetail, TableFilter};
 use atlas_mssql::{MssqlSession, MssqlTx, PlannedStatement};
 use std::collections::HashMap;
@@ -197,6 +201,98 @@ pub async fn mssql_find_data(
     let out = s.find_data(&database, &options, &move || flag.load(Ordering::Relaxed)).await;
     if let Ok(mut m) = sessions.finds.lock() {
         m.remove(&find_id);
+    }
+    out
+}
+
+/// O tipo do SQL Server com o nome que os gravadores de exportação conhecem (os do PostgreSQL).
+fn export_type(t: &str) -> String {
+    match t.to_ascii_lowercase().as_str() {
+        "bit" => "bool",
+        "tinyint" | "smallint" | "int" | "bigint" => "int8",
+        "decimal" | "numeric" | "money" | "smallmoney" => "numeric",
+        "float" | "real" => "float8",
+        "date" => "date",
+        "datetime" | "datetime2" | "smalldatetime" | "datetimeoffset" => "timestamp",
+        "time" => "time",
+        "uniqueidentifier" => "uuid",
+        "varbinary" | "binary" | "image" | "timestamp" => "bytea",
+        _ => "text",
+    }
+    .to_string()
+}
+
+/// Exporta uma tabela, view ou consulta para arquivo (CSV, JSON, SQL, Excel...), em streaming e numa conexão só da exportação.
+#[tauri::command]
+pub async fn mssql_export(app: tauri::AppHandle, sessions: State<'_, MssqlSessions>, req: ExportRequest) -> Result<ExportResult, DatabaseError> {
+    let started = Instant::now();
+    let dest = validate_path(&req.path)?;
+    let sql = match &req.query {
+        Some(q) => {
+            if q.sql.trim().is_empty() || !atlas_pg::is_single_statement(&q.sql) {
+                return Err(DatabaseError::new(ErrorKind::InvalidInput, "a exportação aceita uma única consulta (um SELECT): selecione só o comando desejado"));
+            }
+            let body = q.sql.trim().trim_end_matches(';').trim_end().to_string();
+            if req.columns.is_empty() {
+                body
+            } else {
+                format!("SELECT {} FROM (\n{body}\n) AS atlas_export", req.columns.iter().map(|c| atlas_mssql::quote_ident(c)).collect::<Vec<_>>().join(", "))
+            }
+        }
+        None => atlas_mssql::select_columns_sql(&req.schema, &req.table, &req.columns, &req.order_by, req.filter.as_ref()),
+    };
+    let s = sessions.session(&req.session_id)?;
+    let cancel = Arc::new(AtomicBool::new(false));
+    if let Ok(mut m) = sessions.finds.lock() {
+        m.insert(req.export_id.clone(), cancel.clone());
+    }
+    let out = async {
+        let mut part = PartFile::new(part_path(&dest));
+        let file = File::create(&part.path).map_err(io_error)?;
+        let target = format!("{}.{}", atlas_mssql::quote_ident(&req.schema), atlas_mssql::quote_ident(&req.table));
+        let writer = Mutex::new(atlas_export::create(&req.format, &atlas_export::WriterTarget { sql: &target, title: &req.table }, file).map_err(io_error)?);
+        let began = AtomicBool::new(false);
+        let mut last_emit = Instant::now();
+        let mut rows = 0u64;
+        let streamed = s
+            .stream_rows(
+                &req.database,
+                &sql,
+                |cols| {
+                    let cols: Vec<ExportColumn> = cols.iter().map(|c| ExportColumn { name: c.name.clone(), type_name: c.type_name.as_deref().map(export_type) }).collect();
+                    began.store(true, Ordering::Relaxed);
+                    writer.lock().unwrap().begin(&cols).map_err(io_error)
+                },
+                |values| {
+                    if cancel.load(Ordering::Relaxed) {
+                        return Ok(false);
+                    }
+                    writer.lock().unwrap().row(values).map_err(io_error)?;
+                    rows += 1;
+                    if last_emit.elapsed() >= Duration::from_millis(200) {
+                        last_emit = Instant::now();
+                        let _ = app.emit("export-progress", Progress { export_id: &req.export_id, rows });
+                    }
+                    Ok(true)
+                },
+            )
+            .await;
+        if cancel.load(Ordering::Relaxed) {
+            return Err(DatabaseError::new(ErrorKind::Canceled, "export canceled"));
+        }
+        streamed?;
+        if !began.load(Ordering::Relaxed) {
+            return Err(DatabaseError::new(ErrorKind::InvalidInput, "o comando não retorna linhas para exportar"));
+        }
+        writer.into_inner().unwrap().finish().map_err(io_error)?;
+        fs::rename(&part.path, &dest).map_err(io_error)?;
+        part.keep = true;
+        let _ = app.emit("export-progress", Progress { export_id: &req.export_id, rows });
+        Ok(ExportResult { rows, bytes: fs::metadata(&dest).map(|m| m.len()).unwrap_or(0), elapsed_ms: started.elapsed().as_millis() as u64, path: dest.to_string_lossy().into_owned() })
+    }
+    .await;
+    if let Ok(mut m) = sessions.finds.lock() {
+        m.remove(&req.export_id);
     }
     out
 }
