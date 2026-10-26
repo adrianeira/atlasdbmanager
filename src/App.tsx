@@ -24,6 +24,7 @@ import { TabBar, type DocTab } from "./components/TabBar";
 import { QueryDoc, type QueryActions } from "./documents/QueryDoc";
 import { TableDataDoc } from "./documents/TableDataDoc";
 import { TableDesignerDoc } from "./documents/TableDesignerDoc";
+import { RoutineDesignerDoc, type RoutineBackend } from "./documents/RoutineDesignerDoc";
 import { ViewDesignerDoc, type ViewBackend } from "./documents/ViewDesignerDoc";
 import { refreshMatviewSql } from "./sql/view";
 import { dropFuncSql } from "./sql/func";
@@ -43,7 +44,7 @@ import { ShareDialog } from "./components/ShareDialog";
 import { TextContextMenu } from "./components/TextContextMenu";
 import { buildShareUri } from "./shareUri";
 import { liveLookupSource, makeTableBackend } from "./docBackends";
-import { newConnectionId } from "./providerRoute";
+import { isMssqlId, newConnectionId } from "./providerRoute";
 import { hasMenuFilter, hiddenKeys, menuForProvider } from "./sqliteMenu";
 import { createTableStatementsSqlite } from "./sql/sqliteDdl";
 import { createTableStatementsMssql, q as quoteMssql, renameStatementMssql } from "./sql/mssqlDdl";
@@ -59,6 +60,7 @@ import { dropTypeSql } from "./sql/typedef";
 import { dropRoleSql } from "./sql/role";
 import { RoleDesignerDoc, type RoleBackend } from "./documents/RoleDesignerDoc";
 import { ColumnsDialog } from "./components/ColumnsDialog";
+import { EditMysqlDatabaseDialog } from "./components/EditMysqlDatabaseDialog";
 import { EditDatabaseDialog } from "./components/EditDatabaseDialog";
 import { EditSchemaDialog } from "./components/EditSchemaDialog";
 import { databaseStatements, schemaStatements, type DatabaseEditState, type SchemaEditState } from "./sql/dbedit";
@@ -296,7 +298,7 @@ type Dialog =
   | { kind: "execFile"; connId: string; database: string; fileName: string; size: number; sql: string; busy?: boolean; error?: string }
   | { kind: "options" }
   | { kind: "chooseColumns" }
-  | { kind: "editDatabase"; connId: string; /** Id do nó do banco na árvore (para fechá-lo se for renomeado). */ nodeId: string; detail: DatabaseDetail }
+  | { kind: "editDatabase"; connId: string; /** Id do nó do banco na árvore (para fechá-lo se for renomeado). */ nodeId: string; detail: DatabaseDetail; /** MySQL: collations do servidor. */ collations?: [string, string][] }
   | { kind: "editSchema"; connId: string; database: string; detail: SchemaDetail }
   | ({ kind: "dump" } & DumpTarget)
   | ({ kind: "backup" } & BackupTarget)
@@ -942,7 +944,9 @@ export default function App() {
   /** Editar banco: lê os atributos no servidor e abre o diálogo. */
   const openEditDatabase = async (connId: string, dbName: string, nodeId: string) => {
     try {
-      setDialog({ kind: "editDatabase", connId, nodeId, detail: await pg.databaseDetail(connId, dbName) });
+      const detail = await pg.databaseDetail(connId, dbName);
+      const collations = connectionsRef.current.find((c) => c.id === connId)?.provider === "mysql" ? await pg.collations(connId) : undefined;
+      setDialog({ kind: "editDatabase", connId, nodeId, detail, collations });
     } catch (e) {
       showError(t("cmd.editDatabase").replace(/\.\.\.$/, ""), e);
     }
@@ -1050,15 +1054,9 @@ export default function App() {
 
   const newFunction = () => {
     if (!ctx.connection || !ctx.database || !ctx.schema) return;
-    if (ctx.connection.provider === "mysql") {
-      const schema = ctx.schema.name;
-      openTab({ kind: "query", title: t("tab.untitledQuery"), windowTitle: t("tab.untitledQuery"), icon: "query", connectionId: ctx.connection.id, database: ctx.database.name, schema, sql: `CREATE PROCEDURE ${quoteMysql(schema)}.\`new_procedure\`()\nBEGIN\n  SELECT 1 AS x;\nEND;` });
-      return;
-    }
-    if (ctx.connection.provider === "sqlserver") {
-      // SQL Server: o procedimento nasce num modelo numa aba de consulta (não há designer de procedimento).
-      const schema = ctx.schema.name;
-      openTab({ kind: "query", title: t("tab.untitledQuery"), windowTitle: t("tab.untitledQuery"), icon: "query", connectionId: ctx.connection.id, database: ctx.database.name, schema, sql: `CREATE PROCEDURE [${schema}].[new_procedure]\nAS\nBEGIN\n  SET NOCOUNT ON;\n  SELECT 1 AS x;\nEND` });
+    if (ctx.connection.provider === "mysql" || ctx.connection.provider === "sqlserver") {
+      const title = objectTitle(t("des.untitled"), "tb.function");
+      openTab({ kind: "routineDesigner", title, windowTitle: title, icon: "function", connectionId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name });
       return;
     }
     const title = objectTitle(t("des.untitled"), "tb.function");
@@ -1087,6 +1085,10 @@ export default function App() {
     if (hit.kind === "function") {
       const title = objectTitle(hit.name, "tb.function", c);
       const identity = hit.identity ?? "";
+      if (conn.provider === "sqlserver" || conn.provider === "mysql") {
+        openTab({ kind: "routineDesigner", connectionId: connId, database, schema: schemaName, object: hit.name, title, windowTitle: title, icon: "function" });
+        return;
+      }
       openTab({
         kind: "functionDesigner", connectionId: connId, database, schema: schemaName, object: `${hit.name}(${identity})`, fnName: hit.name,
         fnIdentity: identity, title, windowTitle: title, icon: "function",
@@ -1292,14 +1294,10 @@ export default function App() {
         const title = objectTitle(name, "tb.view", c);
         openTab({ ...base, kind: "viewDesigner", title, windowTitle: title, icon: "view" }, `${t("act.designView")} - ${name}`);
       } else if (cat === "function" && c.connection?.live && (c.connection.provider === "sqlserver" || c.connection.provider === "mysql")) {
-        // SQL Server e MySQL: o texto do procedimento abre numa aba de consulta, pronto para recriar (`CREATE OR ALTER` / `DROP` + `CREATE`).
-        const conn = c.connection;
-        const schemaName = c.schema?.name ?? (conn.provider === "mysql" ? base.database ?? "" : "dbo");
-        const mysqlRoutine = conn.provider === "mysql";
+        // SQL Server e MySQL: o designer de rotinas (texto do procedimento ou função).
         const routine = c.schema?.objects.function?.find((o) => o.name === name)?.fnName ?? name;
-        void pg.routineDefinition(conn.id, base.database ?? "", schemaName, routine)
-          .then((def) => openTab({ kind: "query", title: `${routine} - ${t("tb.function")}`, windowTitle: routine, icon: "function", connectionId: conn.id, database: base.database, schema: schemaName, sql: mysqlRoutine ? `DROP ${/^\s*CREATE\s+PROCEDURE\b/i.test(def) ? "PROCEDURE" : "FUNCTION"} IF EXISTS ${quoteMysql(routine)};\n\n${def};` : def.replace(/^\s*CREATE\s+(PROC|PROCEDURE|FUNCTION)\b/i, "CREATE OR ALTER $1") }))
-          .catch((e) => showError(t("act.designFunction"), e));
+        const title = objectTitle(routine, "tb.function", c);
+        openTab({ ...base, kind: "routineDesigner", object: routine, title, windowTitle: title, icon: "function" }, `${t("act.designFunction")} - ${routine}`);
       } else if (cat === "function" && c.connection?.live) {
         const fn = c.schema?.objects.function?.find((o) => o.name === name);
         const title = objectTitle(fn?.fnName ?? name, "tb.function", c);
@@ -2779,7 +2777,7 @@ export default function App() {
 
   const tabsForBar = tabs.map((x) => (x.kind === "objects" ? { ...x, title: t("tab.objects") } : x));
   const highlight: Category = active.kind === "query" ? "query"
-    : active.kind === "functionDesigner" ? "function"
+    : active.kind === "functionDesigner" || active.kind === "routineDesigner" ? "function"
     : active.kind === "sequenceDesigner" ? "sequence"
     : active.kind === "typeDesigner" ? "type"
     : active.kind === "extensionDesigner" ? "extension"
@@ -2841,7 +2839,7 @@ export default function App() {
     const conn = connections.find((c) => c.id === tab.connectionId);
     const sc = conn?.databases.find((d) => d.name === tab.database)?.schemas.find((s) => s.name === tab.schema);
     const tables = sc?.objects.table ?? [];
-    const own = tab.kind === "functionDesigner" ? sc?.objects.function ?? []
+    const own = tab.kind === "functionDesigner" || tab.kind === "routineDesigner" ? sc?.objects.function ?? []
       : tab.objectKind === "matview" ? sc?.objects.matview ?? []
       : tab.objectKind === "view" || tab.kind === "viewDesigner" ? sc?.objects.view ?? [] : tables;
     return { conn, table: own.find((x) => x.name === tab.object), tables };
@@ -2858,6 +2856,22 @@ export default function App() {
       execute: (sqlText, maxRows) => pg.execute(conn.id, db, sqlText, maxRows, tab.schema),
       apply: async (statements) => {
         await pg.apply(conn.id, db, statements.map((sql) => ({ sql, params: [], expectOneRow: false })));
+      },
+    });
+  };
+
+  const routineBackends = useRef<Record<string, RoutineBackend>>({});
+  const routineBackendFor = (tab: DocTab, conn: ConnectionMock): RoutineBackend => {
+    const db = tab.database ?? "";
+    const mysql = conn.provider === "mysql";
+    return (routineBackends.current[tab.id] ??= {
+      loadDefinition: async (name) => {
+        const def = await pg.routineDefinition(conn.id, db, tab.schema ?? "", name);
+        // SQL Server: a definição volta como `CREATE ...`; o designer grava com `CREATE OR ALTER`.
+        return mysql ? def : def.replace(/^\s*CREATE\s+(PROC|PROCEDURE|FUNCTION)\b/i, "CREATE OR ALTER $1");
+      },
+      run: async (sqlText) => {
+        await pg.execute(conn.id, db, sqlText, 1, tab.schema);
       },
     });
   };
@@ -3230,6 +3244,29 @@ export default function App() {
         />
       );
     }
+    if (tab.kind === "routineDesigner") {
+      const { conn } = lookupTable(tab);
+      const completion: Record<string, string[]> = {};
+      for (const tb of lookupTable(tab).tables) completion[tb.name] = (tb.columns ?? []).map((c) => c.name);
+      const mysqlRoutine = conn?.provider === "mysql";
+      return (
+        <RoutineDesignerDoc
+          dialect={mysqlRoutine ? "mysql" : "mssql"}
+          schema={tab.schema ?? (mysqlRoutine ? tab.database ?? "" : "dbo")}
+          routineName={tab.object}
+          active={isActive}
+          completionSchema={completion}
+          onStatus={statusFor(tab.id)}
+          onDirty={(dirty) => setTabDirty(tab.id, dirty)}
+          onSaved={(name) => {
+            const title = objectTitle(name, "tb.function", resolveNode(`schema:${seg(tab.connectionId ?? "")}/${seg(tab.database ?? "")}/${seg(tab.schema ?? "")}`, connections));
+            setTabs((ts) => ts.map((x) => (x.id === tab.id ? { ...x, object: name, title, windowTitle: title } : x)));
+            if (conn?.live && tab.database && tab.schema) void loadSchema(conn.id, tab.database, tab.schema, true).catch(() => undefined);
+          }}
+          backend={conn?.live ? routineBackendFor(tab, conn) : undefined}
+        />
+      );
+    }
     if (tab.kind === "functionDesigner") {
       const { conn } = lookupTable(tab);
       const completion: Record<string, string[]> = {};
@@ -3433,7 +3470,7 @@ export default function App() {
           onOk={() => {
             const d = dialog;
             setDialog(null);
-            void Promise.all(d.files.map((f) => pg.backupDelete(f.path, f.metaPath)))
+            void Promise.all(d.files.map((f) => pg.backupDelete(f.path, f.metaPath, isMssqlId(d.connId) ? d.connId : undefined)))
               .catch((e) => showError(t("act.deleteBackup"), e))
               .finally(() => refreshBackups(d.connId, d.database));
           }}
@@ -3462,7 +3499,22 @@ export default function App() {
         );
       })()}
 
-      {dialog?.kind === "editDatabase" && (() => {
+      {dialog?.kind === "editDatabase" && dialog.collations && (
+        <EditMysqlDatabaseDialog
+          detail={dialog.detail}
+          collations={dialog.collations}
+          onApply={(charset, collation) => {
+            const d = dialog;
+            askDdl({
+              title: t("cmd.editDatabase").replace(/\.\.\.$/, ""),
+              statements: [`ALTER DATABASE ${quoteMysql(d.detail.name)} CHARACTER SET ${charset} COLLATE ${collation};`],
+              connId: d.connId, database: d.detail.name, refresh: "connection",
+            });
+          }}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {dialog?.kind === "editDatabase" && !dialog.collations && (() => {
         const conn = connections.find((c) => c.id === dialog.connId);
         return (
           <EditDatabaseDialog

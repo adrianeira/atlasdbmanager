@@ -89,6 +89,36 @@ impl MysqlSession {
         Ok(SchemaObjects { tables, views, functions, ..Default::default() })
     }
 
+    /// Conjunto de caracteres e collation do banco (o MySQL não tem dono, limite de conexões nem tablespace por banco).
+    pub async fn database_detail(&self, database: &str) -> Result<atlas_core::DatabaseDetail, DatabaseError> {
+        let client = self.client("").await?;
+        let mut conn = client.lock().await;
+        let rows = rows_of(&mut conn, "SELECT default_character_set_name, default_collation_name FROM information_schema.schemata WHERE schema_name = ?", vec![v(database)]).await?;
+        let Some(r) = rows.first() else {
+            return Err(DatabaseError::new(atlas_core::ErrorKind::DatabaseNotFound, format!("database `{database}` does not exist")));
+        };
+        Ok(atlas_core::DatabaseDetail {
+            name: database.to_string(),
+            owner: String::new(),
+            encoding: s(r, 0),
+            collate: s(r, 1),
+            ctype: String::new(),
+            tablespace: String::new(),
+            connection_limit: -1,
+            allow_connections: true,
+            is_template: false,
+            comment: None,
+        })
+    }
+
+    /// Todas as collations do servidor com o conjunto de caracteres de cada uma (a padrão do conjunto vem primeiro).
+    pub async fn collations(&self) -> Result<Vec<[String; 2]>, DatabaseError> {
+        let client = self.client("").await?;
+        let mut conn = client.lock().await;
+        let rows = rows_of(&mut conn, "SELECT collation_name, character_set_name FROM information_schema.collations ORDER BY character_set_name, is_default = 'Yes' DESC, collation_name", Vec::new()).await?;
+        Ok(rows.iter().map(|r| [s(r, 0), s(r, 1)]).collect())
+    }
+
     /// O texto de uma função ou procedimento (`CREATE ...`), sem o `DEFINER`.
     pub async fn routine_definition(&self, database: &str, name: &str) -> Result<String, DatabaseError> {
         let client = self.client(database).await?;

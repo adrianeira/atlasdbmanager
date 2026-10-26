@@ -677,6 +677,12 @@ pub async fn mssql_backup_list(sessions: State<'_, MssqlSessions>, session_id: S
         .collect())
 }
 
+/// Exclui um backup: o arquivo no disco do servidor e o registro no histórico.
+#[tauri::command]
+pub async fn mssql_backup_delete(sessions: State<'_, MssqlSessions>, session_id: String, path: String) -> Result<(), DatabaseError> {
+    sessions.session(&session_id)?.backup_delete(&path).await
+}
+
 /// Restaura um backup (caminho no servidor): o banco passa a ter o conteúdo do arquivo.
 #[tauri::command]
 pub async fn mssql_restore(sessions: State<'_, MssqlSessions>, req: RestoreRequest) -> Result<BackupResult, DatabaseError> {

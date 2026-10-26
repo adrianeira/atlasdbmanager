@@ -38,7 +38,7 @@ const MSSQL: Provider = {
   console: true,
   commands: new Set([
     "test_connection", "open", "close", "close_database", "list_databases", "list_schemas", "list_objects", "table_detail", "list_roles",
-    "execute", "cancel", "table_rows", "table_count", "apply", "fk_labels", "schema_diagram", "find", "find_data", "export_cancel", "export", "import", "view_detail", "data_profile", "table_profile", "routine_definition", "dump_sql", "backup", "backup_list", "restore",
+    "execute", "cancel", "table_rows", "table_count", "apply", "fk_labels", "schema_diagram", "find", "find_data", "export_cancel", "export", "import", "view_detail", "data_profile", "table_profile", "routine_definition", "dump_sql", "backup", "backup_list", "backup_delete", "restore",
     ...TX,
   ]),
 };
@@ -49,7 +49,7 @@ const MYSQL: Provider = {
   console: true,
   commands: new Set([
     "test_connection", "open", "close", "close_database", "list_databases", "list_schemas", "list_objects", "table_detail", "list_roles",
-    "execute", "cancel", "table_rows", "table_count", "apply", "fk_labels", "schema_diagram", "view_detail", "export", "export_cancel", "import", "dump_sql", "routine_definition", "find", "find_data", "data_profile", "table_profile",
+    "execute", "cancel", "table_rows", "table_count", "apply", "fk_labels", "schema_diagram", "view_detail", "export", "export_cancel", "import", "dump_sql", "routine_definition", "find", "find_data", "data_profile", "table_profile", "database_detail", "collations", "backup", "backup_list", "restore",
     ...TX,
   ]),
 };

@@ -228,6 +228,7 @@ dependencies = [
  "atlas-pg",
  "atlas-sqlite",
  "atlas-ssh",
+ "flate2",
  "log",
  "reqwest",
  "serde",

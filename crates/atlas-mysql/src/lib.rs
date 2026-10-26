@@ -204,6 +204,8 @@ pub async fn run_text(conn: &mut Conn, sql: &str, max_rows: usize) -> Result<Que
             break;
         }
     }
+    // Um comando que falha depois do último conjunto de resultados só mostra o erro ao esvaziar o que sobrou.
+    result.drop_result().await.map_err(map_err)?;
     Ok(QueryOutcome { statements, elapsed_ms: started.elapsed().as_millis() as u64 })
 }
 

@@ -4,7 +4,7 @@ import { SmallIcon, type SmallIconName } from "../icons";
 
 export interface DocTab {
   id: string;
-  kind: "objects" | "query" | "data" | "designer" | "viewDesigner" | "functionDesigner" | "sequenceDesigner" | "typeDesigner" | "extensionDesigner" | "foreignServerDesigner" | "foreignTableDesigner" | "tablespaceDesigner" | "roleDesigner" | "monitor" | "historyLog" | "find" | "console" | "placeholder";
+  kind: "objects" | "query" | "data" | "designer" | "viewDesigner" | "functionDesigner" | "routineDesigner" | "sequenceDesigner" | "typeDesigner" | "extensionDesigner" | "foreignServerDesigner" | "foreignTableDesigner" | "tablespaceDesigner" | "roleDesigner" | "monitor" | "historyLog" | "find" | "console" | "placeholder";
   /** Aba "data": tabela ou view (view abre só leitura). */
   objectKind?: "table" | "view" | "matview";
   title: string;

@@ -6,6 +6,7 @@ use crate::commands::{TABLE_ROWS_CAP, TableRows};
 use crate::import::{ImportRequest, ImportSummary, JobResult, LogEvent, ProgressEvent, failed_job};
 use atlas_import::convert::{TargetKind, convert, kind_of};
 use crate::dump::{DumpRequest, DumpResult};
+use crate::backup::{BackupEntry, BackupRequest, BackupResult, LogLine, RestoreRequest, Sidecar, safe_segment, store_dir};
 use crate::export::{ExportRequest, ExportResult, PartFile, Progress, io_error, part_path, validate_path};
 use crate::local::Local;
 use atlas_export::ExportColumn;
@@ -504,13 +505,112 @@ pub async fn mysql_import(app: tauri::AppHandle, sessions: State<'_, MysqlSessio
     out
 }
 
+/// Marca que separa os comandos de um backup (a restauração executa um comando por vez).
+const STMT_MARK: &str = "-- ATLAS-STMT";
+
+/// O que o dump leva e como sai.
+struct DumpSpec {
+    database: String,
+    structure: bool,
+    data: bool,
+    clean: bool,
+    rows_per_insert: usize,
+    tables: Option<Vec<String>>,
+    views: Option<Vec<String>>,
+    /// Põe `STMT_MARK` depois de cada comando (formato do backup).
+    marked: bool,
+}
+
+/// Escreve o script do dump em `out`: o DDL lido com `SHOW CREATE` e os dados em `INSERT`. Devolve (objetos, tabelas, linhas).
+async fn write_dump<W: std::io::Write + Send>(
+    s: &MysqlSession,
+    spec: &DumpSpec,
+    out: &mut W,
+    cancel: &AtomicBool,
+    mut progress: impl FnMut(u64) + Send,
+) -> Result<(usize, usize, u64), DatabaseError> {
+    let plan = s.dump_plan(&spec.database, spec.tables.as_deref(), spec.views.as_deref(), spec.clean).await?;
+    let canceled = || DatabaseError::new(ErrorKind::Canceled, "dump canceled");
+    let io = io_error;
+    let emit = |out: &mut W, stmt: &str| -> Result<(), DatabaseError> {
+        out.write_all(format!("\n{stmt}\n").as_bytes()).map_err(io)?;
+        if spec.marked {
+            out.write_all(format!("{STMT_MARK}\n").as_bytes()).map_err(io)?;
+        }
+        Ok(())
+    };
+    out.write_all(format!("-- Atlas DB Manager: SQL dump\n-- MySQL {}; banco: {}\n", s.version, spec.database).as_bytes()).map_err(io)?;
+    emit(out, "SET NAMES utf8mb4;")?;
+    emit(out, "SET FOREIGN_KEY_CHECKS = 0;")?;
+    if spec.structure {
+        for stmt in &plan.pre_data {
+            emit(out, stmt)?;
+        }
+    }
+    let mut rows = 0u64;
+    if spec.data {
+        for table in &plan.data_tables {
+            if cancel.load(Ordering::Relaxed) {
+                return Err(canceled());
+            }
+            if table.columns.is_empty() {
+                continue;
+            }
+            let target = atlas_mysql::quote_ident(&table.name);
+            let list = table.columns.iter().map(|(n, _)| atlas_mysql::quote_ident(n)).collect::<Vec<_>>().join(", ");
+            out.write_all(format!("\n-- Dados de {target}\n").as_bytes()).map_err(io)?;
+            let mut batch: Vec<String> = Vec::new();
+            let mut table_rows = 0u64;
+            let flush = |batch: &mut Vec<String>, out: &mut W| -> Result<(), DatabaseError> {
+                if batch.is_empty() {
+                    return Ok(());
+                }
+                let text = format!("INSERT INTO {target} ({list}) VALUES\n{};", batch.join(",\n"));
+                batch.clear();
+                emit(out, &text)
+            };
+            s.stream_rows(
+                &spec.database,
+                &format!("SELECT {list} FROM {}.{target}", atlas_mysql::quote_ident(&spec.database)),
+                |_| Ok(()),
+                |values| {
+                    if cancel.load(Ordering::Relaxed) {
+                        return Ok(false);
+                    }
+                    let cells: Vec<String> = values.iter().zip(&table.columns).map(|(v, (_, ty))| atlas_mysql::literal(*v, ty)).collect();
+                    batch.push(format!("({})", cells.join(", ")));
+                    table_rows += 1;
+                    if batch.len() >= spec.rows_per_insert {
+                        flush(&mut batch, out)?;
+                    }
+                    progress(rows + table_rows);
+                    Ok(true)
+                },
+            )
+            .await?;
+            if cancel.load(Ordering::Relaxed) {
+                return Err(canceled());
+            }
+            flush(&mut batch, out)?;
+            rows += table_rows;
+        }
+    }
+    if spec.structure {
+        for stmt in &plan.post_data {
+            emit(out, stmt)?;
+        }
+    }
+    emit(out, "SET FOREIGN_KEY_CHECKS = 1;")?;
+    out.flush().map_err(io)?;
+    Ok((plan.objects, plan.data_tables.len(), rows))
+}
+
 /// Destino do dump.
 type DumpOut = std::io::BufWriter<File>;
 
 /// Dump SQL: o DDL lido com `SHOW CREATE` e os dados em `INSERT`, num script que o `mysql` e o Atlas executam de volta.
 #[tauri::command]
 pub async fn mysql_dump_sql(app: tauri::AppHandle, sessions: State<'_, MysqlSessions>, req: DumpRequest) -> Result<DumpResult, DatabaseError> {
-    use std::io::Write;
     let started = Instant::now();
     let dest = validate_path(&req.path)?;
     if !req.options.structure && !req.options.data {
@@ -529,88 +629,129 @@ pub async fn mysql_dump_sql(app: tauri::AppHandle, sessions: State<'_, MysqlSess
             atlas_pg::DumpScope::Tables { schema, tables } => (schema.clone(), Some(tables.clone()), Some(Vec::new())),
             atlas_pg::DumpScope::Selection { schema, tables, views, .. } => (schema.clone(), Some(tables.clone()), Some(views.clone())),
         };
-        let plan = s.dump_plan(&database, tables.as_deref(), views.as_deref(), req.options.clean).await?;
+        let spec = DumpSpec { database, structure: req.options.structure, data: req.options.data, clean: req.options.clean, rows_per_insert: req.rows_per_insert.clamp(1, 1000) as usize, tables, views, marked: false };
         let mut part = PartFile::new(part_path(&dest));
         let mut out: DumpOut = std::io::BufWriter::with_capacity(256 * 1024, File::create(&part.path).map_err(io_error)?);
-        let canceled = || DatabaseError::new(ErrorKind::Canceled, "dump canceled");
-        let write = |text: &str, out: &mut DumpOut| -> Result<(), DatabaseError> { out.write_all(text.as_bytes()).map_err(io_error) };
-        write(&format!("-- Atlas DB Manager: SQL dump\n-- MySQL {}; banco: {}\n\nSET NAMES utf8mb4;\nSET FOREIGN_KEY_CHECKS = 0;\n", s.version, database), &mut out)?;
-        if req.options.structure {
-            for stmt in &plan.pre_data {
-                write(&format!("\n{stmt}\n"), &mut out)?;
-            }
-        }
-        let mut rows = 0u64;
         let mut last_emit = Instant::now();
-        let per = req.rows_per_insert.clamp(1, 1000) as usize;
-        if req.options.data {
-            for table in &plan.data_tables {
-                if cancel.load(Ordering::Relaxed) {
-                    return Err(canceled());
-                }
-                let target = atlas_mysql::quote_ident(&table.name);
-                if table.columns.is_empty() {
-                    continue;
-                }
-                let list = table.columns.iter().map(|(n, _)| atlas_mysql::quote_ident(n)).collect::<Vec<_>>().join(", ");
-                write(&format!("\n-- Dados de {target}\n"), &mut out)?;
-                let mut batch: Vec<String> = Vec::new();
-                let mut table_rows = 0u64;
-                let flush = |batch: &mut Vec<String>, out: &mut DumpOut| -> Result<(), DatabaseError> {
-                    if batch.is_empty() {
-                        return Ok(());
-                    }
-                    let text = format!("INSERT INTO {target} ({list}) VALUES\n{};\n", batch.join(",\n"));
-                    batch.clear();
-                    out.write_all(text.as_bytes()).map_err(io_error)
-                };
-                s.stream_rows(
-                    &database,
-                    &format!("SELECT {list} FROM {}.{target}", atlas_mysql::quote_ident(&database)),
-                    |_| Ok(()),
-                    |values| {
-                        if cancel.load(Ordering::Relaxed) {
-                            return Ok(false);
-                        }
-                        let cells: Vec<String> = values.iter().zip(&table.columns).map(|(v, (_, ty))| atlas_mysql::literal(*v, ty)).collect();
-                        batch.push(format!("({})", cells.join(", ")));
-                        table_rows += 1;
-                        if batch.len() >= per {
-                            flush(&mut batch, &mut out)?;
-                        }
-                        if last_emit.elapsed() >= Duration::from_millis(200) {
-                            last_emit = Instant::now();
-                            let _ = app.emit("export-progress", Progress { export_id: &req.dump_id, rows: rows + table_rows });
-                        }
-                        Ok(true)
-                    },
-                )
-                .await?;
-                if cancel.load(Ordering::Relaxed) {
-                    return Err(canceled());
-                }
-                flush(&mut batch, &mut out)?;
-                rows += table_rows;
+        let (objects, tables, rows) = write_dump(&s, &spec, &mut out, &cancel, |n| {
+            if last_emit.elapsed() >= Duration::from_millis(200) {
+                last_emit = Instant::now();
+                let _ = app.emit("export-progress", Progress { export_id: &req.dump_id, rows: n });
             }
-        }
-        if req.options.structure {
-            for stmt in &plan.post_data {
-                write(&format!("\n{stmt}\n"), &mut out)?;
-            }
-        }
-        write("\nSET FOREIGN_KEY_CHECKS = 1;\n", &mut out)?;
-        out.flush().map_err(io_error)?;
+        })
+        .await?;
         drop(out);
         fs::rename(&part.path, &dest).map_err(io_error)?;
         part.keep = true;
         let _ = app.emit("export-progress", Progress { export_id: &req.dump_id, rows });
-        Ok(DumpResult { objects: plan.objects, tables: plan.data_tables.len(), rows, bytes: fs::metadata(&dest).map(|m| m.len()).unwrap_or(0), elapsed_ms: started.elapsed().as_millis() as u64, path: dest.to_string_lossy().into_owned() })
+        Ok(DumpResult { objects, tables, rows, bytes: fs::metadata(&dest).map(|m| m.len()).unwrap_or(0), elapsed_ms: started.elapsed().as_millis() as u64, path: dest.to_string_lossy().into_owned() })
     }
     .await;
     if let Ok(mut m) = sessions.finds.lock() {
         m.remove(&req.dump_id);
     }
     out
+}
+
+/// Backup do banco: o script do dump (estrutura + dados, com `DROP` antes de cada objeto) compactado em `.dump`, guardado na pasta de
+/// backups do app (ou na escolhida), com o comentário ao lado. A extensão é a mesma dos outros backups, para a lista e a exclusão serem as mesmas.
+#[tauri::command]
+pub async fn mysql_backup(app: tauri::AppHandle, sessions: State<'_, MysqlSessions>, req: BackupRequest) -> Result<BackupResult, DatabaseError> {
+    let started = Instant::now();
+    let s = sessions.session(&req.session_id)?;
+    let store = store_dir(&app, &req.session_id, &req.database, req.schema.as_deref())?;
+    fs::create_dir_all(&store).map_err(io_error)?;
+    let folder = match req.folder.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
+        Some(f) => {
+            let p = std::path::PathBuf::from(f);
+            if !p.is_absolute() || !p.is_dir() {
+                return Err(DatabaseError::new(ErrorKind::InvalidInput, "a pasta do backup precisa existir"));
+            }
+            p
+        }
+        None => store.clone(),
+    };
+    let name = safe_segment(&req.file_name);
+    let dest = folder.join(format!("{name}.dump"));
+    let meta = store.join(format!("{name}.json"));
+    if dest.exists() || meta.exists() {
+        return Err(DatabaseError::new(ErrorKind::InvalidInput, format!("já existe um backup chamado {name}")));
+    }
+    let database = req.schema.clone().filter(|x| !x.is_empty()).unwrap_or_else(|| req.database.clone());
+    // O que o usuário desmarcou (`banco.nome`) fica de fora.
+    let objects = s.list_objects(&database).await?;
+    let excluded = |n: &str| req.exclude.iter().any(|e| e.rsplit('.').next() == Some(n));
+    let spec = DumpSpec {
+        database: database.clone(),
+        structure: true,
+        data: true,
+        clean: true,
+        rows_per_insert: 200,
+        tables: Some(objects.tables.iter().filter(|t| !excluded(&t.name)).map(|t| t.name.clone()).collect()),
+        views: if objects.views.iter().any(|v| excluded(&v.name)) || objects.functions.iter().any(|f| excluded(&f.name)) { Some(objects.views.iter().filter(|v| !excluded(&v.name)).map(|v| v.name.clone()).collect()) } else { None },
+        marked: true,
+    };
+    let cancel = AtomicBool::new(false);
+    let mut part = PartFile::new(part_path(&dest));
+    let file = File::create(&part.path).map_err(io_error)?;
+    let mut gz = flate2::write::GzEncoder::new(std::io::BufWriter::new(file), flate2::Compression::default());
+    let _ = app.emit("backup-log", LogLine { job_id: &req.job_id, line: &format!("dumping database {database}") });
+    let (_, tables, rows) = write_dump(&s, &spec, &mut gz, &cancel, |_| {}).await?;
+    gz.finish().map_err(io_error)?;
+    fs::rename(&part.path, &dest).map_err(io_error)?;
+    part.keep = true;
+    let _ = app.emit("backup-log", LogLine { job_id: &req.job_id, line: &format!("{tables} table(s), {rows} row(s)") });
+    let external = (folder != store).then(|| dest.to_string_lossy().into_owned());
+    let sidecar = serde_json::to_string(&Sidecar { comment: req.comment, path: external }).unwrap_or_default();
+    let _ = fs::write(&meta, sidecar);
+    Ok(BackupResult { bytes: fs::metadata(&dest).map(|m| m.len()).unwrap_or(0), elapsed_ms: started.elapsed().as_millis() as u64, path: dest.to_string_lossy().into_owned(), tool: "mysql".into(), name })
+}
+
+/// Backups guardados do banco (a lista é a mesma dos outros bancos: pastas e registros do app).
+#[tauri::command]
+pub async fn mysql_backup_list(app: tauri::AppHandle, session_id: String, database: String, schema: String) -> Result<Vec<BackupEntry>, DatabaseError> {
+    crate::backup::pg_backup_list(app, session_id, database, schema).await
+}
+
+/// Lê o script de um backup `.dump` (gzip) para a memória.
+fn read_backup(path: &std::path::Path) -> Result<String, DatabaseError> {
+    use std::io::Read;
+    let file = File::open(path).map_err(io_error)?;
+    let mut text = String::new();
+    flate2::read::GzDecoder::new(std::io::BufReader::new(file))
+        .read_to_string(&mut text)
+        .map_err(|_| DatabaseError::new(ErrorKind::InvalidInput, "o arquivo não é um backup do MySQL feito pelo Atlas"))?;
+    if !text.contains(STMT_MARK) {
+        return Err(DatabaseError::new(ErrorKind::InvalidInput, "o arquivo não é um backup do MySQL feito pelo Atlas"));
+    }
+    Ok(text)
+}
+
+/// Restaura um backup (os objetos do arquivo substituem os do banco) ou, com `extract_to`, grava o SQL do backup num arquivo.
+#[tauri::command]
+pub async fn mysql_restore(app: tauri::AppHandle, sessions: State<'_, MysqlSessions>, req: RestoreRequest) -> Result<BackupResult, DatabaseError> {
+    let started = Instant::now();
+    let source = std::path::PathBuf::from(&req.path);
+    if !source.exists() {
+        return Err(DatabaseError::new(ErrorKind::InvalidInput, "o arquivo de backup não existe"));
+    }
+    let text = read_backup(&source)?;
+    if let Some(target) = &req.extract_to {
+        let dest = validate_path(target)?;
+        let plain: String = text.lines().filter(|l| *l != STMT_MARK).collect::<Vec<_>>().join("\n");
+        fs::write(&dest, plain).map_err(io_error)?;
+        return Ok(BackupResult { bytes: fs::metadata(&dest).map(|m| m.len()).unwrap_or(0), elapsed_ms: started.elapsed().as_millis() as u64, path: dest.to_string_lossy().into_owned(), tool: "mysql".into(), name: String::new() });
+    }
+    let s = sessions.session(&req.session_id)?;
+    let log = |line: String| {
+        let _ = app.emit("backup-log", LogLine { job_id: &req.job_id, line: &line });
+    };
+    log(format!("restoring {}", source.display()));
+    let marker = format!("{STMT_MARK}\n");
+    let chunks: Vec<&str> = text.split(marker.as_str()).map(str::trim).filter(|c| c.lines().any(|l| !l.trim().is_empty() && !l.trim_start().starts_with("--"))).collect();
+    s.run_chunks(&req.database, &chunks).await?;
+    log(format!("{} command(s) executed", chunks.len()));
+    Ok(BackupResult { bytes: fs::metadata(&source).map(|m| m.len()).unwrap_or(0), elapsed_ms: started.elapsed().as_millis() as u64, path: source.to_string_lossy().into_owned(), tool: "mysql".into(), name: String::new() })
 }
 
 /// Console (estilo `mysql`): `input` é um comando completo, SQL ou com `.`.
@@ -629,6 +770,18 @@ pub async fn mysql_console_prompt(sessions: State<'_, MysqlSessions>, session_id
 #[tauri::command]
 pub async fn mysql_console_complete(sessions: State<'_, MysqlSessions>, session_id: String, database: String, text: String) -> Result<atlas_mysql::ConsoleCompletion, DatabaseError> {
     sessions.session(&session_id)?.console_complete(&database, &text).await
+}
+
+/// Conjunto de caracteres e collation do banco, para o diálogo Editar banco.
+#[tauri::command]
+pub async fn mysql_database_detail(sessions: State<'_, MysqlSessions>, session_id: String, name: String) -> Result<atlas_core::DatabaseDetail, DatabaseError> {
+    sessions.session(&session_id)?.database_detail(&name).await
+}
+
+/// As collations do servidor, com o conjunto de caracteres de cada uma.
+#[tauri::command]
+pub async fn mysql_collations(sessions: State<'_, MysqlSessions>, session_id: String) -> Result<Vec<[String; 2]>, DatabaseError> {
+    sessions.session(&session_id)?.collations().await
 }
 
 /// O texto de uma função ou procedimento, para abrir numa aba de consulta.

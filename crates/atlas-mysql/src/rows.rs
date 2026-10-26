@@ -184,6 +184,19 @@ impl MysqlSession {
         Ok(count)
     }
 
+    /// Executa os comandos de um script (um por vez) numa conexão própria. O primeiro que falhar interrompe e diz qual era.
+    pub async fn run_chunks(&self, database: &str, chunks: &[&str]) -> Result<(), DatabaseError> {
+        let mut conn = self.dedicated(database).await?;
+        for (i, chunk) in chunks.iter().enumerate() {
+            conn.query_drop(*chunk).await.map_err(|e| {
+                let mut err = map_err(e);
+                err.message = format!("command {}: {}", i + 1, err.message);
+                err
+            })?;
+        }
+        Ok(())
+    }
+
     /// Abre uma transação manual: uma conexão só dela, com `START TRANSACTION`.
     pub async fn begin(&self, database: &str) -> Result<MysqlTx, DatabaseError> {
         let mut conn = self.dedicated(database).await?;

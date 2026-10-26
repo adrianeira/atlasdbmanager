@@ -1121,7 +1121,8 @@ export const pg = {
   restore: (req: RestoreRequest) => call<BackupResult>("pg_restore", { req }),
   backupCancel: (jobId: string) => call<void>("pg_backup_cancel", { jobId }),
   backupList: (sessionId: string, database: string, schema: string) => call<BackupEntry[]>("pg_backup_list", { sessionId, database, schema }),
-  backupDelete: (path: string, metaPath: string) => call<void>("pg_backup_delete", { path, metaPath }),
+  /** `sessionId` só nos bancos cujo arquivo fica no servidor (SQL Server). */
+  backupDelete: (path: string, metaPath: string, sessionId?: string) => call<void>("pg_backup_delete", { path, metaPath, sessionId }),
   /** Rótulos (coluna de descrição da tabela referenciada) das chaves pedidas; `labelColumn` nulo = a tabela não tem uma que sirva. */
   fkLabels: (sessionId: string, database: string, schema: string, table: string, keyColumn: string, keys: string[]) =>
     call<{ labelColumn: string | null; labels: [string, string][] }>("pg_fk_labels", { sessionId, database, schema, table, keyColumn, keys }),
@@ -1145,6 +1146,8 @@ export const pg = {
   extensionDetail: (sessionId: string, database: string, name: string) =>
     call<ExtensionDetail>("pg_extension_detail", { sessionId, database, name }),
   databaseDetail: (sessionId: string, name: string) => call<DatabaseDetail>("pg_database_detail", { sessionId, name }),
+  /** MySQL: [collation, conjunto de caracteres] de todas as collations do servidor. */
+  collations: (sessionId: string) => call<[string, string][]>("pg_collations", { sessionId }),
   schemaDetail: (sessionId: string, database: string, name: string) =>
     call<SchemaDetail>("pg_schema_detail", { sessionId, database, name }),
   roleDetail: (sessionId: string, name: string) => call<RoleDetail>("pg_role_detail", { sessionId, name }),

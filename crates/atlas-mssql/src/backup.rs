@@ -63,6 +63,31 @@ impl MssqlSession {
             .collect())
     }
 
+    /// Apaga o arquivo do backup no disco do servidor (`xp_delete_file`) e tira o conjunto do histórico do `msdb`.
+    /// O arquivo que já não existe não é erro: o histórico sai do mesmo jeito.
+    pub async fn backup_delete(&self, path: &str) -> Result<(), DatabaseError> {
+        let mut conn = self.dedicated("master").await?;
+        let file = quote_literal(path);
+        let _ = conn.simple_query(format!("EXEC master.dbo.xp_delete_file 0, {file}")).await.map_err(map_err)?.into_results().await;
+        let sql = format!(
+            "DECLARE @m int = (SELECT TOP 1 media_set_id FROM msdb.dbo.backupmediafamily WHERE physical_device_name = {file}); \
+             IF @m IS NOT NULL BEGIN \
+               DECLARE @sets TABLE (id int); INSERT INTO @sets SELECT backup_set_id FROM msdb.dbo.backupset WHERE media_set_id = @m; \
+               DECLARE @rh TABLE (id int); INSERT INTO @rh SELECT restore_history_id FROM msdb.dbo.restorehistory WHERE backup_set_id IN (SELECT id FROM @sets); \
+               DELETE FROM msdb.dbo.restorefile WHERE restore_history_id IN (SELECT id FROM @rh); \
+               DELETE FROM msdb.dbo.restorefilegroup WHERE restore_history_id IN (SELECT id FROM @rh); \
+               DELETE FROM msdb.dbo.restorehistory WHERE restore_history_id IN (SELECT id FROM @rh); \
+               DELETE FROM msdb.dbo.backupfile WHERE backup_set_id IN (SELECT id FROM @sets); \
+               DELETE FROM msdb.dbo.backupfilegroup WHERE backup_set_id IN (SELECT id FROM @sets); \
+               DELETE FROM msdb.dbo.backupset WHERE media_set_id = @m; \
+               DELETE FROM msdb.dbo.backupmediafamily WHERE media_set_id = @m; \
+               DELETE FROM msdb.dbo.backupmediaset WHERE media_set_id = @m; \
+             END"
+        );
+        conn.simple_query(sql).await.map_err(map_err)?.into_results().await.map_err(map_err)?;
+        Ok(())
+    }
+
     /// Troca o conteúdo do banco pelo do backup (`REPLACE`): as conexões do banco são derrubadas e o banco volta a aceitar todos.
     pub async fn restore(&self, database: &str, path: &str) -> Result<(), DatabaseError> {
         self.close_database(database).await;

@@ -92,3 +92,13 @@ async fn live_cancel_stops_a_long_query() {
     assert!(started.elapsed() < std::time::Duration::from_secs(10));
     assert!(out.is_ok() || out.unwrap_err().kind == ErrorKind::Canceled);
 }
+
+#[tokio::test]
+async fn later_statement_error_is_reported() {
+    let Some(p) = params() else { return };
+    let s = MysqlSession::open(p).await.unwrap();
+    let r = s.execute("", "SELECT 1; SELEC 2;", 10).await;
+    assert!(r.is_err(), "o erro do segundo comando foi engolido: {r:?}");
+    let r = s.execute("", "SELECT 1; SELEC 2; SELECT 3", 10).await;
+    assert!(r.is_err(), "o erro do meio foi engolido: {r:?}");
+}
