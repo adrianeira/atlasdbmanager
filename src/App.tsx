@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as R
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   appReady, chooseExportPath, chooseOpenFile, errorText, isDesktop, local, onOpenScript, emitTabEvent, onSessionOpened, onTabWindow, openDataDictionary, openDataGen, openDataSync, openDataTransfer, openStructSync, openTabWindow, pg, toAtlasError, type OpenScriptRequest,
-  type ConnectionParams, type DatabaseDetail, type DumpScope, type ProfileRecord, type SchemaDetail,
+  type ConnectionParams, type DatabaseDetail, type DumpScope, type ProfileRecord, type QueryOutcome, type SchemaDetail,
 } from "./backend";
 import { entries, matchesShortcut, sub, type CommandMap, type MenuDef, type MenuEntry } from "./commands";
 import { ConnectionDialog, type ConnectionForm } from "./components/ConnectionDialog";
@@ -86,6 +86,13 @@ const COLOR_HEX: Record<ConnectionColor, string> = {
 
 /** Limite para "Executar arquivo SQL" (o arquivo é lido inteiro na memória). */
 const MAX_SQL_FILE_BYTES = 50 * 1024 * 1024;
+
+/** O arquivo SQL falhou e a transação dele já foi desfeita. */
+class RolledBack extends Error {
+  constructor(readonly original: unknown) {
+    super("rolled back");
+  }
+}
 
 type Theme = "system" | "light" | "dark";
 
@@ -889,18 +896,42 @@ export default function App() {
 
   const runSqlFile = async (d: Extract<Dialog, { kind: "execFile" }>) => {
     setDialog({ ...d, busy: true, error: undefined });
+    const provider = connectionsRef.current.find((c) => c.id === d.connId)?.provider;
+    // Fora do PostgreSQL (que já roda o arquivo como um comando só) o arquivo vai numa transação: ou entra inteiro ou nada entra.
+    const atomic = provider !== undefined && provider !== "postgresql";
     try {
-      const out = await pg.execute(d.connId, d.database, d.sql, 1);
-      const affected = out.statements.reduce((s, st) => s + (st.result ? 0 : st.rowsAffected ?? 0), 0);
+      let statements = 0;
+      let affected = 0;
+      let elapsedMs = 0;
+      const tally = (out: QueryOutcome) => {
+        statements += out.statements.length;
+        affected += out.statements.reduce((s, st) => s + (st.result ? 0 : st.rowsAffected ?? 0), 0);
+        elapsedMs += out.elapsedMs;
+      };
+      if (atomic) {
+        // SQL Server: as linhas `GO` separam os lotes (não são comandos do servidor).
+        const batches = provider === "sqlserver" ? d.sql.split(/^[ \t]*go[ \t]*;?[ \t]*\r?$/gim).filter((b) => b.trim()) : [d.sql];
+        const txId = await pg.txBegin(d.connId, d.database);
+        try {
+          for (const batch of batches) tally(await pg.txExecute(txId, batch, 1));
+        } catch (e) {
+          await pg.txEnd(txId, false).catch(() => undefined);
+          throw new RolledBack(e);
+        }
+        await pg.txEnd(txId, true);
+      } else {
+        tally(await pg.execute(d.connId, d.database, d.sql, 1));
+      }
       setDialog({
         kind: "info", title: t("cmd.executeSqlFile"),
-        message: t("msg.execFileDone", { n: out.statements.length, rows: affected, s: (out.elapsedMs / 1000).toFixed(2) }),
+        message: t("msg.execFileDone", { n: statements, rows: affected, s: (elapsedMs / 1000).toFixed(2) }),
       });
       const conn = connectionsRef.current.find((c) => c.id === d.connId);
       if (conn?.databases.find((x) => x.name === d.database)?.loaded) void loadDatabase(d.connId, d.database, true).catch(() => undefined);
     } catch (e) {
-      // Sem transação explícita no arquivo, comandos anteriores ao erro já foram efetivados.
-      setDialog({ ...d, busy: false, error: `${errorText(toAtlasError(e))}\n\n${t("msg.execFilePartial")}` });
+      // No PostgreSQL, sem transação explícita no arquivo, comandos anteriores ao erro já foram efetivados.
+      if (e instanceof RolledBack) setDialog({ ...d, busy: false, error: `${errorText(toAtlasError(e.original))}\n\n${t("msg.execFileRolledBack")}` });
+      else setDialog({ ...d, busy: false, error: `${errorText(toAtlasError(e))}\n\n${t("msg.execFilePartial")}` });
     }
   };
 
