@@ -281,11 +281,21 @@ impl MysqlSession {
         }
 
         let trg = rows_of(&mut conn, "SELECT trigger_name, action_timing, event_manipulation, action_statement FROM information_schema.triggers WHERE event_object_schema = ? AND event_object_table = ? ORDER BY trigger_name", vec![v(database), v(table)]).await?;
+        // A definição é o `CREATE TRIGGER` inteiro (sem o `DEFINER`), para recriar o gatilho em outro banco.
+        let mut full = BTreeMap::new();
+        for r in &trg {
+            let name = s(r, 0);
+            if let Ok(rows) = rows_of(&mut conn, &format!("SHOW CREATE TRIGGER {}", super::quote_ident(&name)), vec![]).await
+                && let Some(sql) = rows.first().and_then(|x| text(x, 2))
+            {
+                full.insert(name, crate::dump::without_definer(&sql));
+            }
+        }
         let triggers = trg
             .iter()
             .map(|r| TriggerInfo {
                 name: s(r, 0),
-                definition: s(r, 3),
+                definition: full.get(&s(r, 0)).cloned().unwrap_or_else(|| s(r, 3)),
                 enabled: true,
                 timing: s(r, 1),
                 events: vec![s(r, 2)],

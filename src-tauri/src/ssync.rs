@@ -301,8 +301,8 @@ fn diff_table(d: Dialect, src: &TableDetail, dst: &TableDetail, target: &str, na
             out.add("index", &i.name, StructOp::Add, 5, n, vec![index_sql(d, target, i)]);
         }
     }
-    // Gatilhos (no MySQL a definição guardada é só o corpo, então eles não entram).
-    if d != Dialect::Mysql {
+    // Gatilhos.
+    {
         let drop_trigger = |t: &str| match d {
             Dialect::Mssql => format!("DROP TRIGGER {}", d.target(dst_schema, t)),
             _ => format!("DROP TRIGGER {}", d.q(t)),
