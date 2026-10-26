@@ -47,6 +47,7 @@ import { newConnectionId } from "./providerRoute";
 import { hasMenuFilter, hiddenKeys, menuForProvider } from "./sqliteMenu";
 import { createTableStatementsSqlite } from "./sql/sqliteDdl";
 import { createTableStatementsMssql, q as quoteMssql, renameStatementMssql } from "./sql/mssqlDdl";
+import { q as quoteMysql, renameStatementMysql } from "./sql/mysqlDdl";
 import type { SavedTable } from "./tabWindow";
 import type { SnapshotRef } from "./tabState";
 import { viewKeyOf } from "./tableView";
@@ -2039,7 +2040,7 @@ export default function App() {
       const dbName = c.database.name;
       const scName = c.schema.name;
       const name = c.objectName;
-      const target = `${quoteIdent(scName)}.${quoteIdent(name)}`;
+      const target = conn.provider === "mysql" ? `${quoteMysql(scName)}.${quoteMysql(name)}` : `${quoteIdent(scName)}.${quoteIdent(name)}`;
       const foreign = c.schema?.objects.table?.find((o) => o.name === name)?.dataType === "foreign";
       const scope = { connId: conn.id, database: dbName, schema: scName, refresh: "schema" as const };
       // SQLite: o CREATE da cópia sai da estrutura lida do arquivo (colunas, chaves, UNIQUE, CHECK e índices com nome novo).
@@ -2084,7 +2085,13 @@ export default function App() {
           }
         })();
       });
-      const duplicate = (withData: boolean) => conn.provider === "sqlserver" ? duplicateMssql(withData) : conn.provider === "sqlite" ? duplicateSqlite(withData) : askName(t("sub.duplicateTable"), t("msg.copyTableName"), `${name}_copy`, (copy) => askDdl({
+      const duplicate = (withData: boolean) => conn.provider === "mysql" ? askName(t("sub.duplicateTable"), t("msg.copyTableName"), `${name}_copy`, (copy) => askDdl({
+        ...scope, title: t("sub.duplicateTable"),
+        statements: [
+          `CREATE TABLE ${quoteMysql(scName)}.${quoteMysql(copy)} LIKE ${target};`,
+          ...(withData ? [`INSERT INTO ${quoteMysql(scName)}.${quoteMysql(copy)} SELECT * FROM ${target};`] : []),
+        ],
+      })) : conn.provider === "sqlserver" ? duplicateMssql(withData) : conn.provider === "sqlite" ? duplicateSqlite(withData) : askName(t("sub.duplicateTable"), t("msg.copyTableName"), `${name}_copy`, (copy) => askDdl({
         ...scope, title: t("sub.duplicateTable"),
         statements: [
           `CREATE TABLE ${quoteIdent(scName)}.${quoteIdent(copy)} (LIKE ${target} INCLUDING ALL);`,
@@ -2119,7 +2126,7 @@ export default function App() {
         sep,
         item("cmd.copyName", () => { void navigator.clipboard?.writeText(name).catch(() => undefined); }),
         item("cmd.renameTable", live ? () => askName(t("cmd.renameTable"), t("msg.newName"), name, (newName) => askDdl({
-          ...scope, title: t("cmd.renameTable"), statements: conn.provider === "sqlserver" ? [`${renameStatementMssql(scName, name, newName)};`] : [`ALTER TABLE ${target} RENAME TO ${quoteIdent(newName)};`],
+          ...scope, title: t("cmd.renameTable"), statements: conn.provider === "mysql" ? [`${renameStatementMysql(scName, name, newName)};`] : conn.provider === "sqlserver" ? [`${renameStatementMssql(scName, name, newName)};`] : [`ALTER TABLE ${target} RENAME TO ${quoteIdent(newName)};`],
         })) : undefined),
         sep,
         item("cmd.newQuery", () => newQuery(c.connection?.provider === "sqlserver" ? `SELECT TOP 100 * FROM ${target};` : `SELECT * FROM ${target} LIMIT 100;`)),
@@ -2359,7 +2366,7 @@ export default function App() {
     if (node.kind === "object" && node.category === "view" && c.connection && c.database && c.schema && c.objectName) {
       const scName = c.schema.name;
       const name = c.objectName;
-      const target = `${quoteIdent(scName)}.${quoteIdent(name)}`;
+      const target = c.connection?.provider === "mysql" ? `${quoteMysql(scName)}.${quoteMysql(name)}` : `${quoteIdent(scName)}.${quoteIdent(name)}`;
       const scope = { connId: c.connection.id, database: c.database.name, schema: scName, refresh: "schema" as const };
       items.push(
         item("act.openView", () => openObjects("open", [name], "view", c)),
@@ -2373,7 +2380,7 @@ export default function App() {
         sep,
         item("cmd.copyName", () => { void navigator.clipboard?.writeText(name).catch(() => undefined); }),
         item("cmd.renameView", live ? () => askName(t("cmd.renameView"), t("msg.newName"), name, (newName) => askDdl({
-          ...scope, title: t("cmd.renameView"), statements: c.connection?.provider === "sqlserver" ? [`${renameStatementMssql(scName, name, newName)};`] : [`ALTER VIEW ${target} RENAME TO ${quoteIdent(newName)};`],
+          ...scope, title: t("cmd.renameView"), statements: c.connection?.provider === "mysql" ? [`${renameStatementMysql(scName, name, newName)};`] : c.connection?.provider === "sqlserver" ? [`${renameStatementMssql(scName, name, newName)};`] : [`ALTER VIEW ${target} RENAME TO ${quoteIdent(newName)};`],
         })) : undefined),
         sep,
         item("cmd.newQuery", () => newQuery(c.connection?.provider === "sqlserver" ? `SELECT TOP 100 * FROM ${target};` : `SELECT * FROM ${target} LIMIT 100;`)),
