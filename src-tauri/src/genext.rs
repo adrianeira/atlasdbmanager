@@ -63,6 +63,26 @@ impl Exec {
         })
     }
 
+    /// As colunas, chaves e índices de uma tabela.
+    pub(crate) async fn table_detail(&self, schema: &str, table: &str) -> Result<atlas_core::TableDetail, DatabaseError> {
+        match self {
+            Exec::Mysql(s, _) => s.table_detail(schema, table).await,
+            Exec::Mssql(s, db) => s.table_detail(db, schema, table).await,
+            Exec::Sqlite(s) => s.table_detail(table),
+            Exec::MysqlTx(_) | Exec::MssqlTx(_) | Exec::SqliteTx(_) => Err(DatabaseError::new(ErrorKind::Internal, "table_detail needs a session")),
+        }
+    }
+
+    /// Tabelas, views e rotinas de um schema.
+    pub(crate) async fn objects(&self, schema: &str) -> Result<atlas_core::SchemaObjects, DatabaseError> {
+        match self {
+            Exec::Mysql(s, _) => s.list_objects(schema).await,
+            Exec::Mssql(s, db) => s.list_objects(db, schema).await,
+            Exec::Sqlite(s) => s.list_objects(),
+            _ => Err(DatabaseError::new(ErrorKind::Internal, "objects needs a session")),
+        }
+    }
+
     pub(crate) async fn finish(&self, commit: bool) -> Result<(), DatabaseError> {
         match self {
             Exec::MysqlTx(t) => t.finish(commit).await,
@@ -117,6 +137,45 @@ impl Dialect {
     pub(crate) fn release(self) -> Option<&'static str> {
         (self != Dialect::Mssql).then_some("RELEASE SAVEPOINT atlas_dg")
     }
+}
+
+/// A conexão `conn` (aberta, de qualquer um dos três produtos), no banco `database` e no schema `schema`.
+pub(crate) fn exec_for(conn: &str, database: &str, schema: &str, mysql: &MysqlSessions, mssql: &MssqlSessions, sqlite: &SqliteSessions) -> Result<(Dialect, Exec), DatabaseError> {
+    if conn.starts_with("mysql_") {
+        Ok((Dialect::Mysql, Exec::Mysql(mysql.session(conn)?, mysql_db(database, schema).to_string())))
+    } else if conn.starts_with("mssql_") {
+        Ok((Dialect::Mssql, Exec::Mssql(mssql.session(conn)?, database.to_string())))
+    } else if conn.starts_with("sqlite_") {
+        Ok((Dialect::Sqlite, Exec::Sqlite(sqlite.session(conn)?)))
+    } else {
+        Err(DatabaseError::new(ErrorKind::InvalidInput, "this connection is not a SQL Server, MySQL or SQLite connection"))
+    }
+}
+
+/// Troca o schema `from` por `to` nos nomes qualificados de um texto do SQL Server (`[from].` e `from.`, fora de outras palavras).
+pub(crate) fn mssql_schema_rewrite(sql: &str, from: &str, to: &str) -> String {
+    if from.eq_ignore_ascii_case(to) {
+        return sql.to_string();
+    }
+    let bracketed = sql.replace(&format!("[{from}]."), &format!("[{to}]."));
+    let lower = bracketed.to_lowercase();
+    let needle = format!("{}.", from.to_lowercase());
+    let mut out = String::with_capacity(bracketed.len());
+    let (mut last, mut at) = (0usize, 0usize);
+    while let Some(pos) = lower[at..].find(&needle) {
+        let i = at + pos;
+        let before = bracketed[..i].chars().next_back();
+        let boundary = before.is_none_or(|c| !(c.is_alphanumeric() || matches!(c, '_' | '[' | '.' | '@' | '#' | '$')));
+        if boundary && bracketed.is_char_boundary(i) && bracketed.is_char_boundary(i + needle.len()) {
+            out.push_str(&bracketed[last..i]);
+            out.push_str(to);
+            out.push('.');
+            last = i + needle.len();
+        }
+        at = i + needle.len();
+    }
+    out.push_str(&bracketed[last..]);
+    out
 }
 
 /// Uma coluna como o catálogo a devolve.
@@ -618,7 +677,7 @@ struct ProgressEvent<'a> {
 }
 
 /// O banco e o schema que a geração usa: no MySQL o schema é o próprio banco.
-fn mysql_db<'a>(database: &'a str, schema: &'a str) -> &'a str {
+pub(crate) fn mysql_db<'a>(database: &'a str, schema: &'a str) -> &'a str {
     if schema.is_empty() { database } else { schema }
 }
 

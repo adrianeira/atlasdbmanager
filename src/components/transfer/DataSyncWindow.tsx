@@ -5,6 +5,7 @@ import {
   errorText, local, onSyncDeployProgress, onSyncLog, onSyncProgress, pg, toAtlasError,
   type DataTransferParams, type SyncRow, type SyncSelection, type SyncTableSummary, type TransferFieldMap,
 } from "../../backend";
+import { idPrefix } from "../../providerRoute";
 import { useT } from "../../i18n";
 import { SmallIcon } from "../../icons";
 import { Dropdown } from "../Dropdown";
@@ -171,7 +172,7 @@ function Wizard({ params }: { params: Params }) {
     if (chosen.length === 0) { setMessage(t("ds.needTables")); return; }
     setMessage(null);
     if (compareId.current) void pg.syncForget(compareId.current).catch(() => undefined);
-    const id = crypto.randomUUID();
+    const id = `${idPrefix(source.connId)}${crypto.randomUUID()}`;
     compareId.current = id;
     setComparing({ text: "", fraction: 0 });
     const unlisten = await onSyncProgress(id, (text, fraction) => setComparing({ text, fraction }));
@@ -247,7 +248,7 @@ function Wizard({ params }: { params: Params }) {
 
   const deploy = async (list: ResultTable[] = result ?? []) => {
     if (running) return;
-    const id = crypto.randomUUID();
+    const id = `${idPrefix(source.connId)}${crypto.randomUUID()}`;
     deployId.current = id;
     setTab("log");
     setLog([]);

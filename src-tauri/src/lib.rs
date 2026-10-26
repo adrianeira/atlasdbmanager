@@ -4,6 +4,8 @@ mod commands;
 mod datagen;
 mod monitor;
 mod dictionary;
+mod dsync;
+mod ssync;
 mod genext;
 mod xfer;
 mod dictsrc;
@@ -82,6 +84,8 @@ pub fn run() {
         .manage(mssql::MssqlSessions::default())
         .manage(mysql::MysqlSessions::default())
         .manage(datasync::Comparisons::default())
+        .manage(dsync::ExtComparisons::default())
+        .manage(ssync::ExtStructComparisons::default())
         .manage(structsync::StructComparisons::default())
         .manage(dictionary::DictRuns::default())
         .setup(|app| {
@@ -219,6 +223,16 @@ pub fn run() {
             genext::sqlite_datagen_describe,
             genext::sqlite_datagen_preview,
             genext::sqlite_datagen_run,
+            dsync::ext_datasync_compare,
+            dsync::ext_datasync_rows,
+            dsync::ext_datasync_script,
+            dsync::ext_datasync_script_full,
+            dsync::ext_datasync_deploy,
+            dsync::ext_datasync_forget,
+            ssync::ext_structsync_compare,
+            ssync::ext_structsync_script,
+            ssync::ext_structsync_deploy,
+            ssync::ext_structsync_forget,
             xfer::mysql_transfer,
             xfer::mssql_transfer,
             xfer::sqlite_transfer,

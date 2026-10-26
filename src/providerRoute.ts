@@ -62,10 +62,14 @@ export interface Routed {
 }
 
 const idOf = (args?: Record<string, unknown>): unknown =>
-  args?.sessionId ?? args?.txId ?? args?.exportId ?? args?.conn ?? (args?.req as { sourceConn?: string } | undefined)?.sourceConn ?? (args?.req as { sessionId?: string; conn?: string } | undefined)?.sessionId ?? (args?.req as { conn?: string } | undefined)?.conn;
+  args?.sessionId ?? args?.txId ?? args?.exportId ?? args?.conn ?? (args?.req as { sourceConn?: string } | undefined)?.sourceConn ?? args?.compareId ?? (args?.req as { compareId?: string; targetConn?: string } | undefined)?.compareId ?? (args?.req as { targetConn?: string } | undefined)?.targetConn ?? (args?.req as { sessionId?: string; conn?: string } | undefined)?.sessionId ?? (args?.req as { conn?: string } | undefined)?.conn;
 
 export function routeCommand(cmd: string, args?: Record<string, unknown>): Routed {
   const id = idOf(args);
+  if ((cmd.startsWith("datasync_") || cmd.startsWith("structsync_")) && typeof id === "string") {
+    // Os outros bancos têm as próprias comparações (`ext_*`), escolhidas pelo prefixo do id.
+    if (PROVIDERS.some((x) => id.startsWith(x.prefix))) return { cmd: `ext_${cmd}`, args };
+  }
   if ((cmd.startsWith("monitor_") || cmd.startsWith("datagen_")) && typeof id === "string") {
     const p = PROVIDERS.find((x) => id.startsWith(x.prefix));
     if (p) return { cmd: `${p.prefix}${cmd}`, args };

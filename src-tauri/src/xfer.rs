@@ -4,7 +4,7 @@
 //! gravados no destino como `INSERT` (SQLite: `INSERT ... SELECT` de um arquivo anexado). Eventos e contadores são os do
 //! PostgreSQL (`transfer-log`, `transfer-progress`, cancelamento por `export_cancel`).
 
-use crate::genext::{Dialect, Exec};
+use crate::genext::{Dialect, Exec, mssql_schema_rewrite};
 use crate::mssql::MssqlSessions;
 use crate::mysql::MysqlSessions;
 use crate::sqlite::SqliteSessions;
@@ -128,7 +128,7 @@ impl Pair {
         match self {
             Pair::Mssql(..) => {
                 if spec.source_schema != spec.target_schema {
-                    out = out.replace(&format!("[{}].", spec.source_schema), &format!("[{}].", spec.target_schema));
+                    out = mssql_schema_rewrite(&out, &spec.source_schema, &spec.target_schema);
                 }
                 for (from, to) in renames {
                     out = out.replacen(&format!("[{}].[{}]", spec.target_schema, from), &format!("[{}].[{}]", spec.target_schema, to), 1);
