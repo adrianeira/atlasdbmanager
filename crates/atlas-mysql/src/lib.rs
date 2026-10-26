@@ -10,6 +10,7 @@ mod extra;
 mod find;
 mod import;
 mod meta;
+mod profile;
 mod rows;
 mod values;
 
@@ -24,6 +25,7 @@ use tokio::sync::Mutex;
 pub use console::{Completion as ConsoleCompletion, ConsoleOptions, ConsoleOutput};
 pub use dump::{DumpPlan, DumpTable, literal};
 pub use extra::FkLabels;
+pub use profile::DataProfile;
 pub use find::{FindDataResult, FindMode, FindOptions, FindResult};
 pub use import::{Feed as ImportFeed, Hooks as ImportHooks, ImportMode, ImportSpec, ImportStats, TargetColumn, declared_type};
 pub use rows::*;

@@ -219,6 +219,29 @@ pub async fn mysql_find_data(
     out
 }
 
+/// Data Profiling: estatísticas de cada coluna sobre os registros que o filtro, a ordenação e o limite escolhem.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn mysql_data_profile(
+    sessions: State<'_, MysqlSessions>,
+    session_id: String,
+    database: String,
+    _schema: String,
+    table: String,
+    columns: Vec<String>,
+    order_by: Vec<OrderBy>,
+    filter: Option<TableFilter>,
+    limit: Option<u64>,
+) -> Result<atlas_mysql::DataProfile, DatabaseError> {
+    sessions.session(&session_id)?.data_profile(&database, &table, &columns, &order_by, filter.as_ref(), limit).await
+}
+
+/// Table Profile: tamanhos, contagens da estrutura e total de linhas.
+#[tauri::command]
+pub async fn mysql_table_profile(sessions: State<'_, MysqlSessions>, session_id: String, database: String, _schema: String, table: String) -> Result<atlas_core::TableProfile, DatabaseError> {
+    sessions.session(&session_id)?.table_profile(&database, &table).await
+}
+
 /// O tipo do MySQL com o nome que os gravadores de exportação conhecem (os do PostgreSQL).
 fn export_type(t: &str) -> String {
     match t.to_ascii_lowercase().as_str() {

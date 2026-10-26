@@ -11,13 +11,11 @@ export function makeTableBackend(connId: string, db: string, schema: string, obj
   // Transação manual da aba: enquanto aberta, gravação, leitura e contagem usam a conexão dedicada dela.
   let txId: string | null = null;
   const sqlite = isSqliteId(connId);
-  // Perfis de dados e de tabela: ainda não existem para o MySQL.
-  const mysql = isMysqlId(connId);
   return {
     dialect: sqlite ? "sqlite" : isMssqlId(connId) ? "mssql" : isMysqlId(connId) ? "mysql" : undefined,
     loadDetail: async () => tableFromServer(base, await pg.tableDetail(connId, db, schema, object)),
-    profileData: mysql ? undefined : (columns, orderBy, filter, limit) => pg.dataProfile(connId, db, schema, object, columns, orderBy, filter, limit),
-    loadProfile: objectKind === "view" || mysql ? undefined : () => pg.tableProfile(connId, db, schema, object),
+    profileData: (columns, orderBy, filter, limit) => pg.dataProfile(connId, db, schema, object, columns, orderBy, filter, limit),
+    loadProfile: objectKind === "view" ? undefined : () => pg.tableProfile(connId, db, schema, object),
     beginTx: async () => { txId = await pg.txBegin(connId, db); },
     endTx: async (commit) => {
       const id = txId;
