@@ -3,7 +3,12 @@
 //! Os comandos do PostgreSQL não são tocados.
 
 use crate::commands::{TABLE_ROWS_CAP, TableRows};
+use crate::export::{ExportRequest, ExportResult, PartFile, Progress, io_error, part_path, validate_path};
 use crate::local::Local;
+use atlas_export::ExportColumn;
+use std::fs::{self, File};
+use std::sync::atomic::AtomicBool;
+use std::time::Duration;
 use atlas_core::{ConnectionParams, DatabaseError, DatabaseList, ErrorKind, OrderBy, QueryOutcome, RoleInfo, SchemaInfo, SchemaObjects, ServerInfo, TableDetail, TableFilter};
 use atlas_mysql::{MysqlSession, MysqlTx, PlannedStatement};
 use std::collections::HashMap;
@@ -22,6 +27,8 @@ pub struct MysqlSessions {
     next_tx: AtomicU64,
     /// Túneis SSH das conexões abertas (vivem enquanto a conexão existir).
     tunnels: Mutex<HashMap<String, atlas_ssh::Tunnel>>,
+    /// Exportações e buscas em andamento (id → pedido de parada).
+    finds: Mutex<HashMap<String, Arc<AtomicBool>>>,
 }
 
 impl MysqlSessions {
@@ -179,6 +186,109 @@ pub async fn mysql_fk_labels(
 #[tauri::command]
 pub async fn mysql_schema_diagram(sessions: State<'_, MysqlSessions>, session_id: String, database: String, _schema: String) -> Result<atlas_core::SchemaDiagram, DatabaseError> {
     sessions.session(&session_id)?.schema_diagram(&database).await
+}
+
+/// O tipo do MySQL com o nome que os gravadores de exportação conhecem (os do PostgreSQL).
+fn export_type(t: &str) -> String {
+    match t.to_ascii_lowercase().as_str() {
+        "tinyint" | "smallint" | "mediumint" | "int" | "bigint" | "year" => "int8",
+        "decimal" => "numeric",
+        "float" | "double" => "float8",
+        "bit" => "bool",
+        "date" => "date",
+        "datetime" | "timestamp" => "timestamp",
+        "time" => "time",
+        "json" => "json",
+        "blob" | "binary" | "varbinary" => "bytea",
+        _ => "text",
+    }
+    .to_string()
+}
+
+/// Exporta uma tabela, view ou consulta para arquivo (CSV, JSON, SQL, Excel...), em streaming e numa conexão só da exportação.
+#[tauri::command]
+pub async fn mysql_export(app: tauri::AppHandle, sessions: State<'_, MysqlSessions>, req: ExportRequest) -> Result<ExportResult, DatabaseError> {
+    let started = Instant::now();
+    let dest = validate_path(&req.path)?;
+    // No MySQL o schema é o próprio banco.
+    let database = if req.schema.is_empty() { req.database.clone() } else { req.schema.clone() };
+    let sql = match &req.query {
+        Some(q) => {
+            if q.sql.trim().is_empty() || !atlas_pg::is_single_statement(&q.sql) {
+                return Err(DatabaseError::new(ErrorKind::InvalidInput, "a exportação aceita uma única consulta (um SELECT): selecione só o comando desejado"));
+            }
+            let body = q.sql.trim().trim_end_matches(';').trim_end().to_string();
+            if req.columns.is_empty() {
+                body
+            } else {
+                format!("SELECT {} FROM (\n{body}\n) AS atlas_export", req.columns.iter().map(|c| atlas_mysql::quote_ident(c)).collect::<Vec<_>>().join(", "))
+            }
+        }
+        None => atlas_mysql::select_columns_sql(&database, &req.table, &req.columns, &req.order_by, req.filter.as_ref()),
+    };
+    let s = sessions.session(&req.session_id)?;
+    let cancel = Arc::new(AtomicBool::new(false));
+    if let Ok(mut m) = sessions.finds.lock() {
+        m.insert(req.export_id.clone(), cancel.clone());
+    }
+    let out = async {
+        let mut part = PartFile::new(part_path(&dest));
+        let file = File::create(&part.path).map_err(io_error)?;
+        let target = format!("{}.{}", atlas_mysql::quote_ident(&database), atlas_mysql::quote_ident(&req.table));
+        let writer = Mutex::new(atlas_export::create(&req.format, &atlas_export::WriterTarget { sql: &target, title: &req.table }, file).map_err(io_error)?);
+        let began = AtomicBool::new(false);
+        let mut last_emit = Instant::now();
+        let mut rows = 0u64;
+        let streamed = s
+            .stream_rows(
+                &req.database,
+                &sql,
+                |cols| {
+                    let cols: Vec<ExportColumn> = cols.iter().map(|c| ExportColumn { name: c.name.clone(), type_name: c.type_name.as_deref().map(export_type) }).collect();
+                    began.store(true, Ordering::Relaxed);
+                    writer.lock().unwrap().begin(&cols).map_err(io_error)
+                },
+                |values| {
+                    if cancel.load(Ordering::Relaxed) {
+                        return Ok(false);
+                    }
+                    writer.lock().unwrap().row(values).map_err(io_error)?;
+                    rows += 1;
+                    if last_emit.elapsed() >= Duration::from_millis(200) {
+                        last_emit = Instant::now();
+                        let _ = app.emit("export-progress", Progress { export_id: &req.export_id, rows });
+                    }
+                    Ok(true)
+                },
+            )
+            .await;
+        if cancel.load(Ordering::Relaxed) {
+            return Err(DatabaseError::new(ErrorKind::Canceled, "export canceled"));
+        }
+        streamed?;
+        if !began.load(Ordering::Relaxed) {
+            return Err(DatabaseError::new(ErrorKind::InvalidInput, "o comando não retorna linhas para exportar"));
+        }
+        writer.into_inner().unwrap().finish().map_err(io_error)?;
+        fs::rename(&part.path, &dest).map_err(io_error)?;
+        part.keep = true;
+        let _ = app.emit("export-progress", Progress { export_id: &req.export_id, rows });
+        Ok(ExportResult { rows, bytes: fs::metadata(&dest).map(|m| m.len()).unwrap_or(0), elapsed_ms: started.elapsed().as_millis() as u64, path: dest.to_string_lossy().into_owned() })
+    }
+    .await;
+    if let Ok(mut m) = sessions.finds.lock() {
+        m.remove(&req.export_id);
+    }
+    out
+}
+
+/// Pede para parar uma exportação.
+#[tauri::command]
+pub async fn mysql_export_cancel(sessions: State<'_, MysqlSessions>, export_id: String) -> Result<(), DatabaseError> {
+    if let Some(stop) = sessions.finds.lock().ok().and_then(|m| m.get(&export_id).cloned()) {
+        stop.store(true, Ordering::Relaxed);
+    }
+    Ok(())
 }
 
 /// Definição de uma view para o designer.
