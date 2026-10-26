@@ -374,10 +374,10 @@ export function ConnectionDialog({ editing, recentProviders, knownPassword = "",
       <span>{t(label)}</span>
     </label>
   );
-  const browse = (k: keyof ConnectionForm, disabled: boolean, pick?: () => void) => (
+  const browse = (k: keyof ConnectionForm, disabled: boolean, pick?: () => void, hint?: MessageKey) => (
     <div className="field-with-button">
       {text(k, { disabled })}
-      <button type="button" className="btn btn-ellipsis" disabled={disabled || !pick} title={pick ? undefined : t("notImplemented")} onClick={pick}>…</button>
+      <button type="button" className="btn btn-ellipsis" disabled={disabled || !pick} title={pick ? (hint ? t(hint) : undefined) : t("notImplemented")} onClick={pick}>…</button>
     </div>
   );
 
@@ -441,7 +441,7 @@ export function ConnectionDialog({ editing, recentProviders, knownPassword = "",
         <>
           {row("conn.host", text("host"))}
           {row("conn.port", text("port", { width: 48 }))}
-          {row("conn.initialDb", text("initialDatabase"))}
+          {row("conn.initialDb", form.provider === "firebird" ? browse("initialDatabase", false, () => { void chooseOpenFile(["fdb", "gdb"]).then((f) => { if (f) set("initialDatabase", f); }); }, "conn.pickFile") : text("initialDatabase"))}
           {row("conn.user", text("user", { width: 200 }))}
           {row("conn.password", (
             <input
