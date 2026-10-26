@@ -188,6 +188,13 @@ fn live_routines_views_round_trip() {
         assert!(objs.functions.iter().any(|o| o.name == "ATLAS_F" && !o.procedure));
         s.execute("DROP FUNCTION ATLAS_F", 10).unwrap();
     }
+    s.execute("CREATE OR ALTER TRIGGER ATLAS_TR FOR ATLAS_R ACTIVE BEFORE INSERT POSITION 3 AS BEGIN IF (NEW.N IS NULL) THEN NEW.N = 'x'; END", 10).unwrap();
+    let objs = s.list_objects().unwrap();
+    assert!(objs.functions.iter().any(|o| o.name == "ATLAS_TR" && o.return_type.as_deref() == Some("trigger")));
+    let trg = s.routine_definition("ATLAS_TR").unwrap();
+    assert!(trg.contains("CREATE OR ALTER TRIGGER \"ATLAS_TR\" FOR \"ATLAS_R\" ACTIVE BEFORE INSERT POSITION 3") && trg.contains("NEW.N = 'x'"), "{trg}");
+    s.execute(&trg, 10).unwrap();
+    s.execute("DROP TRIGGER ATLAS_TR", 10).unwrap();
     let objs = s.list_objects().unwrap();
     assert!(objs.functions.iter().any(|o| o.name == "ATLAS_P" && o.procedure));
     assert!(objs.views.iter().any(|o| o.name == "ATLAS_V"));

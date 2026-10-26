@@ -72,6 +72,10 @@ pub fn list_objects_on(conn: &mut Conn) -> Result<SchemaObjects, DatabaseError> 
             out.functions.push(ObjectInfo { name: s(&r, 0), comment: opt(&r, 1), owner: opt(&r, 2), procedure: false, ..Default::default() });
         }
     }
+    // Os gatilhos de tabela entram na lista das rotinas (o designer de rotinas edita o texto do `CREATE OR ALTER TRIGGER`).
+    for r in query(conn, "SELECT TRIM(RDB$TRIGGER_NAME), RDB$DESCRIPTION, TRIM(RDB$RELATION_NAME) FROM RDB$TRIGGERS WHERE COALESCE(RDB$SYSTEM_FLAG, 0) = 0 AND RDB$RELATION_NAME IS NOT NULL ORDER BY 1", vec![])? {
+        out.functions.push(ObjectInfo { name: s(&r, 0), comment: opt(&r, 1), args: Some(format!("table {}", s(&r, 2))), return_type: Some("trigger".into()), procedure: false, ..Default::default() });
+    }
     for r in query(conn, "SELECT TRIM(RDB$GENERATOR_NAME), RDB$DESCRIPTION FROM RDB$GENERATORS WHERE COALESCE(RDB$SYSTEM_FLAG, 0) = 0 ORDER BY 1", vec![])? {
         out.sequences.push(ObjectInfo { name: s(&r, 0), comment: opt(&r, 1), ..Default::default() });
     }
@@ -128,6 +132,20 @@ fn trigger_events(kind: i32) -> (String, Vec<String>) {
     let names = ["", "INSERT", "UPDATE", "DELETE"];
     let events: Vec<String> = [(code >> 1) & 3, (code >> 3) & 3, (code >> 5) & 3].into_iter().filter(|e| *e > 0).map(|e| names[e as usize].to_string()).collect();
     (timing.to_string(), events)
+}
+
+/// O texto que recria um gatilho (`CREATE OR ALTER TRIGGER`). O texto guardado já começa com `AS` (o 2.5 e o 3 o guardam assim).
+pub fn trigger_definition(name: &str, table: &str, kind: i32, enabled: bool, position: i32, source: &str) -> String {
+    let (timing, events) = trigger_events(kind);
+    let body = if crate::split::first_word(source) == "AS" { source.trim().to_string() } else { format!("AS\n{}", source.trim()) };
+    format!(
+        "CREATE OR ALTER TRIGGER {} FOR {} {} {} {} POSITION {position}\n{body}",
+        quote_ident(name),
+        quote_ident(table),
+        if enabled { "ACTIVE" } else { "INACTIVE" },
+        timing,
+        events.join(" OR ")
+    )
 }
 
 fn index_fields(conn: &mut Conn, index: &str) -> Result<Vec<String>, DatabaseError> {
@@ -271,18 +289,7 @@ pub fn table_detail_on(conn: &mut Conn, table: &str) -> Result<TableDetail, Data
             }
         }
         let enabled = n(&r, 2) == 0;
-        // O texto guardado já começa com `AS` (o 2.5 e o 3 o guardam assim); sem ele, o cabeçalho o põe.
-        let source = s(&r, 3);
-        let body = if crate::split::first_word(&source) == "AS" { source.trim().to_string() } else { format!("AS\n{}", source.trim()) };
-        let definition = format!(
-            "CREATE OR ALTER TRIGGER {} FOR {} {} {} {} POSITION {}\n{body}",
-            quote_ident(&name),
-            quote_ident(table),
-            if enabled { "ACTIVE" } else { "INACTIVE" },
-            timing,
-            events.join(" OR "),
-            n(&r, 4)
-        );
+        let definition = trigger_definition(&name, table, n(&r, 1), enabled, n(&r, 4), &s(&r, 3));
         triggers.push(TriggerInfo { name, definition, enabled, timing, events, for_each_row: true, when: None, function: String::new(), args: Vec::new(), update_columns: Vec::new(), comment: opt(&r, 5), read_only: true });
     }
     for (col, trigger, generator) in auto {
@@ -367,6 +374,10 @@ pub fn routine_definition_on(conn: &mut Conn, name: &str) -> Result<String, Data
             out.push_str(&format!("\nRETURNS {returns}\nAS\n{}", body_of(&s(r, 0))));
             return Ok(out);
         }
+    }
+    let t = query(conn, "SELECT TRIM(RDB$TRIGGER_NAME), TRIM(RDB$RELATION_NAME), RDB$TRIGGER_TYPE, COALESCE(RDB$TRIGGER_INACTIVE, 0), RDB$TRIGGER_SOURCE, COALESCE(RDB$TRIGGER_SEQUENCE, 0) FROM RDB$TRIGGERS WHERE RDB$TRIGGER_NAME = ? AND RDB$RELATION_NAME IS NOT NULL", text(name))?;
+    if let Some(r) = t.first() {
+        return Ok(trigger_definition(&s(r, 0), &s(r, 1), n(r, 2), n(r, 3) == 0, n(r, 5), &s(r, 4)));
     }
     Err(DatabaseError::new(ErrorKind::InvalidInput, format!("routine \"{name}\" does not exist")))
 }
