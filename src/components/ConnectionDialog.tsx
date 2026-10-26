@@ -3,7 +3,7 @@ import type { MessageKey } from "../i18n";
 import { useT } from "../i18n";
 import { PROVIDER_STYLE, ProviderIcon, ProviderTile, SmallIcon } from "../icons";
 import type { ConnectionMock, ProviderId } from "../model";
-import { chooseOpenFile, errorText, isDesktop, pg, toAtlasError, type ConnectionParams, type SslMode } from "../backend";
+import { chooseExportPath, chooseOpenFile, createSqliteFile, errorText, isDesktop, pg, toAtlasError, type ConnectionParams, type SslMode } from "../backend";
 import { formatConnectionUri, parseConnectionUri } from "../connectionUri";
 
 /* ---------- Tipos de conexão ---------- */
@@ -414,7 +414,28 @@ export function ConnectionDialog({ editing, recentProviders, knownPassword = "",
       </div>
       <div className="form-gap" />
       {form.provider === "sqlite" ? (
-        row("conn.dbFile", browse("host", false))
+        row("conn.dbFile", (
+          <div className="field-with-button">
+            {text("host")}
+            <button type="button" className="btn btn-ellipsis" title={t("conn.pickFile")} onClick={() => { void chooseOpenFile(["db", "sqlite", "sqlite3", "db3", "s3db"]).then((f) => { if (f) set("host", f); }); }}>…</button>
+            <button
+              type="button"
+              className="btn"
+              title={t("conn.newFileHint")}
+              onClick={() => {
+                void chooseExportPath("novo.db", ["db"])
+                  .then(async (f) => {
+                    if (!f) return;
+                    await createSqliteFile(f);
+                    set("host", f);
+                  })
+                  .catch((e) => setTest({ kind: "fail", message: errorText(toAtlasError(e)) }));
+              }}
+            >
+              {t("conn.newFile")}
+            </button>
+          </div>
+        ))
       ) : (
         <>
           {row("conn.host", text("host"))}

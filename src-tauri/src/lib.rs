@@ -293,6 +293,7 @@ pub fn run() {
             sqlite::sqlite_console_complete,
             sqlite::sqlite_console_is_complete,
             sqlite::sqlite_view_detail,
+            sqlite::sqlite_create_file,
             sqlite::sqlite_backup,
             sqlite::sqlite_backup_list,
             sqlite::sqlite_restore,

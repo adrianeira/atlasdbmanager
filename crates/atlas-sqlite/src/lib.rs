@@ -605,6 +605,21 @@ pub struct SqliteSession {
     pub version_num: i32,
 }
 
+/// Cria um banco SQLite novo e vazio em `path` (que não pode existir; a pasta precisa existir).
+pub fn create_file(path: &str) -> Result<(), DatabaseError> {
+    let path = PathBuf::from(path.trim());
+    if path.as_os_str().is_empty() {
+        return Err(DatabaseError::new(ErrorKind::InvalidInput, "choose the database file"));
+    }
+    if path.exists() {
+        return Err(DatabaseError::new(ErrorKind::InvalidInput, format!("the file already exists: {}", path.display())));
+    }
+    let conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE | OpenFlags::SQLITE_OPEN_NO_MUTEX).map_err(map_err)?;
+    // Uma gravação mínima faz o arquivo nascer com o cabeçalho do SQLite (sem ela ele fica com 0 byte).
+    conn.execute_batch("PRAGMA user_version = 0; VACUUM").map_err(map_err)?;
+    Ok(())
+}
+
 fn open_connection(path: &Path) -> Result<Connection, DatabaseError> {
     let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX).map_err(map_err)?;
     conn.busy_timeout(Duration::from_secs(5)).map_err(map_err)?;

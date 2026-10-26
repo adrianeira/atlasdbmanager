@@ -47,6 +47,12 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, DatabaseError
     tokio::task::spawn_blocking(f).await.map_err(|e| DatabaseError::new(ErrorKind::Internal, e.to_string()))?
 }
 
+/// Cria um arquivo SQLite novo e vazio (o arquivo não pode existir).
+#[tauri::command]
+pub async fn sqlite_create_file(path: String) -> Result<(), DatabaseError> {
+    atlas_sqlite::create_file(&path)
+}
+
 #[tauri::command]
 pub async fn sqlite_test_connection(params: ConnectionParams, _profile_id: Option<String>) -> Result<ServerInfo, DatabaseError> {
     blocking(move || Ok(SqliteSession::open(&params.host)?.server_info())).await
