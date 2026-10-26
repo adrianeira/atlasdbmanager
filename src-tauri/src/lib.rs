@@ -207,6 +207,7 @@ pub fn run() {
             mysql::mysql_export,
             mysql::mysql_export_cancel,
             mysql::mysql_import,
+            mysql::mysql_dump_sql,
             mysql::mysql_unsupported,
             mysql::mysql_tx_begin,
             mysql::mysql_tx_apply,
