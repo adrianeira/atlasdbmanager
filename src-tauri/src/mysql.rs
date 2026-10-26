@@ -3,6 +3,8 @@
 //! Os comandos do PostgreSQL não são tocados.
 
 use crate::commands::{TABLE_ROWS_CAP, TableRows};
+use crate::import::{ImportRequest, ImportSummary, JobResult, LogEvent, ProgressEvent, failed_job};
+use atlas_import::convert::{TargetKind, convert, kind_of};
 use crate::export::{ExportRequest, ExportResult, PartFile, Progress, io_error, part_path, validate_path};
 use crate::local::Local;
 use atlas_export::ExportColumn;
@@ -10,7 +12,7 @@ use std::fs::{self, File};
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use atlas_core::{ConnectionParams, DatabaseError, DatabaseList, ErrorKind, OrderBy, QueryOutcome, RoleInfo, SchemaInfo, SchemaObjects, ServerInfo, TableDetail, TableFilter};
-use atlas_mysql::{MysqlSession, MysqlTx, PlannedStatement};
+use atlas_mysql::{ImportFeed, ImportHooks, ImportMode, ImportSpec, MysqlSession, MysqlTx, PlannedStatement, TargetColumn};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -289,6 +291,165 @@ pub async fn mysql_export_cancel(sessions: State<'_, MysqlSessions>, export_id: 
         stop.store(true, Ordering::Relaxed);
     }
     Ok(())
+}
+
+/// A categoria de conversão do assistente para um tipo do MySQL.
+fn kind_for(ty: &str) -> TargetKind {
+    let t = ty.trim().to_ascii_lowercase();
+    let base = t.split(['(', ' ']).next().unwrap_or(&t);
+    if t.starts_with("tinyint(1)") {
+        return kind_of("boolean");
+    }
+    match base {
+        "bit" => kind_of("boolean"),
+        "tinyint" | "smallint" | "mediumint" | "int" | "year" => kind_of("bigint"),
+        "double" => kind_of("numeric"),
+        "datetime" | "timestamp" => kind_of("timestamp"),
+        other => kind_of(other),
+    }
+}
+
+/// Importa arquivos (TXT/CSV, JSON, XML, Excel, dBase) para tabelas do MySQL, nos seis modos do assistente.
+#[tauri::command]
+pub async fn mysql_import(app: tauri::AppHandle, sessions: State<'_, MysqlSessions>, req: ImportRequest) -> Result<ImportSummary, DatabaseError> {
+    let started = Instant::now();
+    let s = sessions.session(&req.session_id)?;
+    let cancel = Arc::new(AtomicBool::new(false));
+    if let Ok(mut m) = sessions.finds.lock() {
+        m.insert(req.import_id.clone(), cancel.clone());
+    }
+    let out = async {
+        let mut results = Vec::new();
+        for (job_no, job) in req.jobs.iter().enumerate() {
+            if cancel.load(Ordering::Relaxed) {
+                return Err(DatabaseError::new(ErrorKind::Canceled, "import canceled"));
+            }
+            let _ = app.emit("import-log", LogEvent { import_id: &req.import_id, line: format!("[IMP] {}", job.target) });
+            // Colunas do destino: as da tabela (lidas do servidor) ou as que serão criadas. Colunas calculadas não recebem dados (AUTO_INCREMENT aceita valor).
+            // No MySQL o schema é o próprio banco.
+            let database = if req.schema.is_empty() { req.database.clone() } else { req.schema.clone() };
+            let target_columns: Vec<(String, String, bool)> = match &job.create {
+                Some(cols) => cols.iter().map(|c| (c.name.clone(), atlas_mysql::declared_type(&c.type_name), false)).collect(),
+                None => match s.table_detail(&database, &job.target).await {
+                    Ok(d) => d.columns.iter().map(|c| (c.name.clone(), c.formatted_type.clone(), c.generated.is_some())).collect(),
+                    Err(e) => {
+                        results.push(failed_job(&job.target, e.message, &app, &req.import_id));
+                        continue;
+                    }
+                },
+            };
+            let mut source = match atlas_import::open(&job.source) {
+                Ok(src) => src,
+                Err(e) => {
+                    results.push(failed_job(&job.target, format!("{}: {e}", job.source.path.display()), &app, &req.import_id));
+                    continue;
+                }
+            };
+            let source_cols = source.columns().to_vec();
+            let mut columns = Vec::new();
+            let mut source_index = Vec::new();
+            let mut kinds: Vec<TargetKind> = Vec::new();
+            let mut problem: Option<String> = None;
+            for m in job.mappings.iter().filter(|m| !m.target.is_empty()) {
+                let Some(si) = source_cols.iter().position(|c| *c == m.source) else {
+                    problem = Some(format!("source field \"{}\" not found in the file", m.source));
+                    break;
+                };
+                let Some((name, ty, generated)) = target_columns.iter().find(|(n, ..)| *n == m.target) else {
+                    problem = Some(format!("destination field \"{}\" does not exist in {}", m.target, job.target));
+                    break;
+                };
+                if *generated {
+                    problem = Some(format!("destination field \"{name}\" is a computed column and cannot receive data"));
+                    break;
+                }
+                columns.push(TargetColumn { name: name.clone(), declared_type: ty.clone() });
+                kinds.push(kind_for(ty));
+                source_index.push(si);
+            }
+            let mut key_columns = Vec::new();
+            if problem.is_none() {
+                for k in &job.keys {
+                    match columns.iter().position(|c| c.name == *k) {
+                        Some(i) => key_columns.push(i),
+                        None => {
+                            problem = Some(format!("key field \"{k}\" is not mapped"));
+                            break;
+                        }
+                    }
+                }
+            }
+            if let Some(p) = problem {
+                results.push(failed_job(&job.target, p, &app, &req.import_id));
+                continue;
+            }
+            let mode = match job.mode {
+                atlas_pg::ImportMode::Append => ImportMode::Append,
+                atlas_pg::ImportMode::Update => ImportMode::Update,
+                atlas_pg::ImportMode::AppendUpdate => ImportMode::AppendUpdate,
+                atlas_pg::ImportMode::AppendNoUpdate => ImportMode::AppendNoUpdate,
+                atlas_pg::ImportMode::Delete => ImportMode::Delete,
+                atlas_pg::ImportMode::Copy => ImportMode::Copy,
+            };
+            let spec = ImportSpec {
+                database: database.clone(),
+                table: job.target.clone(),
+                create: job.create.as_ref().map(|c| c.iter().map(|x| (x.name.clone(), x.type_name.clone())).collect()),
+                columns,
+                key_columns,
+                mode,
+                extended_insert: req.advanced.extended_insert,
+                max_statement_bytes: req.advanced.max_statement_kb.max(1) as usize * 1024,
+                continue_on_error: req.advanced.continue_on_error,
+            };
+            let mut convert_opts = req.convert.clone();
+            convert_opts.empty_as_null = req.advanced.empty_as_null;
+            let mut feed = || -> ImportFeed {
+                match source.next_row() {
+                    Err(e) => ImportFeed::Bad(e.to_string()),
+                    Ok(None) => ImportFeed::End,
+                    Ok(Some(row)) => {
+                        let mut out = Vec::with_capacity(spec.columns.len());
+                        for (n, &si) in source_index.iter().enumerate() {
+                            let converted = match row[si].as_deref() {
+                                None => Ok(None),
+                                Some(v) => convert(v, kinds[n], &convert_opts),
+                            };
+                            match converted {
+                                Ok(v) => out.push(v),
+                                Err(e) => return ImportFeed::Bad(format!("{} ({})", e, spec.columns[n].name)),
+                            }
+                        }
+                        ImportFeed::Row(out)
+                    }
+                }
+            };
+            let target = job.target.clone();
+            let log_app = app.clone();
+            let log_id = req.import_id.clone();
+            let mut on_log = move |line: String| {
+                let _ = log_app.emit("import-log", LogEvent { import_id: &log_id, line });
+            };
+            let progress_app = app.clone();
+            let progress_id = req.import_id.clone();
+            let progress_target = target.clone();
+            let mut on_progress = move |st: &atlas_mysql::ImportStats| {
+                let counts = JobResult { table: progress_target.clone(), processed: st.processed, added: st.added, updated: st.updated, deleted: st.deleted, errors: st.errors, rolled_back: false };
+                let _ = progress_app.emit("import-progress", ProgressEvent { import_id: &progress_id, job: job_no, counts });
+            };
+            let cancelled = || cancel.load(Ordering::Relaxed);
+            let stats = s.import(&spec, &mut feed, ImportHooks { log: &mut on_log, progress: &mut on_progress, cancelled: &cancelled }).await?;
+            let result = JobResult { table: target, processed: stats.processed, added: stats.added, updated: stats.updated, deleted: stats.deleted, errors: stats.errors, rolled_back: stats.rolled_back };
+            let _ = app.emit("import-progress", ProgressEvent { import_id: &req.import_id, job: job_no, counts: result.clone() });
+            results.push(result);
+        }
+        Ok(ImportSummary { jobs: results, elapsed_ms: started.elapsed().as_millis() as u64 })
+    }
+    .await;
+    if let Ok(mut m) = sessions.finds.lock() {
+        m.remove(&req.import_id);
+    }
+    out
 }
 
 /// Definição de uma view para o designer.

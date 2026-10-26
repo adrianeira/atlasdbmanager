@@ -5,6 +5,7 @@
 //! conexão por banco (aberta quando alguém pede). Os valores voltam em texto, como a grade os espera.
 
 mod extra;
+mod import;
 mod meta;
 mod rows;
 mod values;
@@ -18,6 +19,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
 pub use extra::FkLabels;
+pub use import::{Feed as ImportFeed, Hooks as ImportHooks, ImportMode, ImportSpec, ImportStats, TargetColumn, declared_type};
 pub use rows::*;
 
 /// Entre crases, como o MySQL quer os nomes (crase dobrada).
