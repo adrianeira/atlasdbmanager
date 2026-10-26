@@ -1027,7 +1027,7 @@ export default function App() {
     setDialog({ ...d, busy: true, error: undefined });
     try {
       // CREATE DATABASE não roda dentro de transação: executa isolado.
-      await pg.execute(conn.id, conn.initialDatabase || "postgres", `CREATE DATABASE ${quoteIdent(name)}`, 1);
+      await pg.execute(conn.id, conn.initialDatabase || (conn.provider === "mysql" ? "" : "postgres"), `CREATE DATABASE ${conn.provider === "mysql" ? quoteMysql(name) : quoteIdent(name)}`, 1);
       setDialog(null);
       const node = nodes.find((n) => n.id === `conn:${seg(conn.id)}`);
       if (node) refreshNode(node);
@@ -1963,8 +1963,8 @@ export default function App() {
         item("cmd.editDatabase", live ? () => void openEditDatabase(conn.id, dbName, node.id) : undefined),
         // O banco inicial da conexão não pode ser excluído por ela mesma (a sessão está nele).
         item("cmd.deleteDatabase", live && !isInitial ? () => askDdl({
-          title: t("cmd.deleteDatabase"), message: confirmDelete("database", dbName), statements: [`DROP DATABASE ${quoteIdent(dbName)};`],
-          connId: conn.id, database: conn.initialDatabase || "postgres", refresh: "connection",
+          title: t("cmd.deleteDatabase"), message: confirmDelete("database", dbName), statements: [`DROP DATABASE ${conn.provider === "mysql" ? quoteMysql(dbName) : quoteIdent(dbName)};`],
+          connId: conn.id, database: conn.initialDatabase || (conn.provider === "mysql" ? "" : "postgres"), refresh: "connection",
           danger: true, transactional: false, confirmText: dbName, closeDbFirst: dbName,
           after: () => setOpenDatabases((s) => remove(s, node.id)),
         }) : undefined),

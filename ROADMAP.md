@@ -542,7 +542,10 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 - [ ] SQL Server: excluir um backup da lista (o arquivo esta no servidor), extrair o SQL de um backup, designer proprio de procedimentos
 - [x] **MySQL (fatia vertical)** — driver `crates/atlas-mysql` (`mysql_async`; banco = schema, `KILL QUERY` para parar) e comandos `mysql_*`: conexão (senha do cofre e túnel SSH), árvore (tabelas, views, funções, consultas), leitura e edição na grade (com ou sem chave primária), transação manual e editor SQL com dialeto MySQL
 - [x] **MySQL — designer de tabela** (nova tabela e alterar: campos, índices, FKs, uniques, checks e SQL Preview; tipos do MySQL com UNSIGNED); **auto incremento** = `AUTO_INCREMENT` em coluna inteira que seja chave, uma por tabela; validado ao vivo (criar, inserir sem informar o id, desligar e ligar numa coluna existente)
-- [ ] MySQL: rótulos de FK, Data/Table Profile, Find, diagrama ER, exportação, importação, designer de view, console, renomear/duplicar/truncar, dump SQL, procedimentos
+- [x] **MySQL — rótulos de FK, diagrama ER, Find in Database** (estrutura e dados; dados com `LIKE`, igualdade ou `REGEXP`, cancelável), **Data Profiling e Table Profile** (tamanhos pelo catálogo)
+- [x] **MySQL — exportação e importação** (todos os formatos; seis modos, tabela nova com os tipos inferidos, continuar em erro por linha com `SAVEPOINT`, cancelável)
+- [x] **MySQL — designer de view** (`CREATE OR REPLACE VIEW`), **renomear, duplicar e truncar** tabela, renomear view, **Dump SQL File** (`SHOW CREATE` + `INSERT`, reexecutado pelo cliente `mysql`), **console** (estilo `mysql`) e **funções/procedimentos** (abrir o texto em aba de consulta, criar modelo, apagar), **novo e excluir banco**
+- [ ] MySQL: backup e restauração (o servidor não grava arquivo no cliente; depende do `mysqldump`), editar banco (charset/collation), designer próprio de procedimentos, extrair SQL e reverso para modelo
 - [ ] Firebird, MariaDB, Oracle, MongoDB, Redis (nesta ordem)
 
 ## 2. Árvore / Navegação
