@@ -207,6 +207,8 @@ pub fn run() {
             mysql::mysql_export,
             mysql::mysql_export_cancel,
             mysql::mysql_import,
+            mysql::mysql_find,
+            mysql::mysql_find_data,
             mysql::mysql_dump_sql,
             mysql::mysql_console_run,
             mysql::mysql_routine_definition,

@@ -191,6 +191,34 @@ pub async fn mysql_schema_diagram(sessions: State<'_, MysqlSessions>, session_id
     sessions.session(&session_id)?.schema_diagram(&database).await
 }
 
+/// "Find in Database", Look In = Structure.
+#[tauri::command]
+pub async fn mysql_find(sessions: State<'_, MysqlSessions>, session_id: String, database: String, options: atlas_mysql::FindOptions) -> Result<atlas_mysql::FindResult, DatabaseError> {
+    sessions.session(&session_id)?.find(&database, &options).await
+}
+
+/// "Find in Database", Look In = Data. O botão Parar (`mysql_export_cancel` com o mesmo `find_id`) interrompe entre uma tabela e outra.
+#[tauri::command]
+pub async fn mysql_find_data(
+    sessions: State<'_, MysqlSessions>,
+    session_id: String,
+    database: String,
+    find_id: String,
+    options: atlas_mysql::FindOptions,
+) -> Result<atlas_mysql::FindDataResult, DatabaseError> {
+    let s = sessions.session(&session_id)?;
+    let stop = Arc::new(AtomicBool::new(false));
+    if let Ok(mut m) = sessions.finds.lock() {
+        m.insert(find_id.clone(), stop.clone());
+    }
+    let flag = stop.clone();
+    let out = s.find_data(&database, &options, &move || flag.load(Ordering::Relaxed)).await;
+    if let Ok(mut m) = sessions.finds.lock() {
+        m.remove(&find_id);
+    }
+    out
+}
+
 /// O tipo do MySQL com o nome que os gravadores de exportação conhecem (os do PostgreSQL).
 fn export_type(t: &str) -> String {
     match t.to_ascii_lowercase().as_str() {
