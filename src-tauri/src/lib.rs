@@ -8,6 +8,7 @@ mod dsync;
 mod ssync;
 mod genext;
 mod neutral;
+mod sqlx;
 mod xfer;
 mod xprod;
 mod dictsrc;

@@ -301,10 +301,8 @@ async fn transfer(sp: Product, dp: Product, src: &Exec, dst: &Exec, req: &Transf
     let dd = dp.dialect();
     run.stats.objects = spec.tables.len() as u64;
     (run.progress)(&run.stats);
-    for kind in [("views", spec.views.len()), ("functions", spec.functions.len())] {
-        if kind.1 > 0 {
-            (run.log)(format!("[DTF] {} {} were not transferred: their text belongs to the source product", kind.1, kind.0));
-        }
+    if !spec.functions.is_empty() {
+        (run.log)(format!("[DTF] {} function(s)/procedure(s) were not transferred: their text is code in the source product's language", spec.functions.len()));
     }
     // O destino: banco (MySQL) ou schema (PostgreSQL, SQL Server) precisa existir.
     match dp {
@@ -385,6 +383,42 @@ async fn transfer(sp: Product, dp: Product, src: &Exec, dst: &Exec, req: &Transf
             run.check()?;
             if !run.ddl(dst, sql).await {
                 return Ok(());
+            }
+        }
+        // Views: o SELECT é traduzido quando só usa o que os dois produtos têm em comum.
+        if spec.structure {
+            for v in &spec.views {
+                run.check()?;
+                let def = match src.view_definition(&spec.source_schema, v).await {
+                    Ok(d) => d,
+                    Err(e) => {
+                        run.error(v, &e.message);
+                        if !spec.continue_on_error {
+                            return Ok(());
+                        }
+                        continue;
+                    }
+                };
+                let cx = crate::sqlx::Ctx { dst: dp, src_schema: &spec.source_schema, dst_schema: &spec.target_schema, select: true };
+                let Some(select) = crate::sqlx::translate(&def, &cx) else {
+                    (run.log)(format!("[DTF] view {v} was not transferred: its SELECT uses something only the source product has"));
+                    continue;
+                };
+                let name = spec.overrides.iter().find(|o| o.table == *v).and_then(|o| o.target_name.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| v.clone());
+                let target = dd.target(&spec.target_schema, &name);
+                if spec.drop_before_create {
+                    let drop = match dp {
+                        Product::Mssql => format!("IF OBJECT_ID({}) IS NOT NULL DROP VIEW {target}", dd.text(&target)),
+                        _ => format!("DROP VIEW IF EXISTS {target}"),
+                    };
+                    if !run.ddl(dst, &drop).await {
+                        return Ok(());
+                    }
+                }
+                if !run.ddl(dst, &format!("CREATE VIEW {target} AS {select}")).await {
+                    return Ok(());
+                }
+                run.stats.objects += 1;
             }
         }
         Ok::<(), DatabaseError>(())

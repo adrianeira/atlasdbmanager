@@ -375,6 +375,17 @@ pub fn default_sql(target: Product, t: &NType, d: &str) -> Option<String> {
     None
 }
 
+/// A expressão de um `CHECK` sem o `CHECK (...)` em volta.
+pub fn check_text(def: &str) -> String {
+    let d = def.trim();
+    d.strip_prefix("CHECK ((").and_then(|x| x.strip_suffix("))")).or_else(|| d.strip_prefix("CHECK (").and_then(|x| x.strip_suffix(')'))).unwrap_or(d).to_string()
+}
+
+/// O nome de uma restrição no destino: no PostgreSQL e no SQL Server o nome vale para o schema todo, então leva a tabela na frente.
+pub fn scoped_name(dst: Product, table: &str, name: &str) -> String {
+    if matches!(dst, Product::Pg | Product::Mssql) && !name.starts_with(table) { format!("{table}_{name}") } else { name.to_string() }
+}
+
 fn key_columns(t: &TableDetail) -> Vec<String> {
     let mut keys: Vec<(i32, &str)> = t.columns.iter().filter_map(|c| c.key.map(|k| (k, c.name.as_str()))).collect();
     keys.sort();
@@ -389,7 +400,7 @@ fn simple_fields(f: &str) -> bool {
     !f.contains('(') && !f.contains(' ')
 }
 
-fn is_auto(c: &ColumnInfo) -> bool {
+pub fn is_auto(c: &ColumnInfo) -> bool {
     c.identity.is_some() || c.default.as_deref().is_some_and(|d| d.to_lowercase().starts_with("nextval("))
 }
 
@@ -461,7 +472,12 @@ pub fn create_table(src: Product, dst: Product, schema: &str, table: &str, detai
         lines.push(format!("UNIQUE ({})", cols.iter().map(|k| d.q(k)).collect::<Vec<_>>().join(", ")));
     }
     for c in detail.constraints.iter().filter(|c| c.kind == "c") {
-        warnings.push(format!("{table}: check constraint {} was not carried over (the expression belongs to the source product)", c.name));
+        let expr = check_text(&c.definition);
+        let cx = crate::sqlx::Ctx { dst, src_schema: "", dst_schema: "", select: false };
+        match if src == dst { Some(expr.clone()) } else { crate::sqlx::translate(&expr, &cx) } {
+            Some(t) => lines.push(format!("CONSTRAINT {} CHECK ({t})", d.q(&scoped_name(dst, table, &c.name)))),
+            None => warnings.push(format!("{table}: check constraint {} was not carried over (the expression uses something only the source product has)", c.name)),
+        }
     }
     for c in detail.constraints.iter().filter(|c| c.kind == "f") {
         let rt = c.ref_table.clone().unwrap_or_default();
@@ -480,7 +496,7 @@ pub fn create_table(src: Product, dst: Product, schema: &str, table: &str, detai
         if dst == Product::Sqlite {
             lines.push(fk);
         } else {
-            post.push(format!("ALTER TABLE {target} ADD CONSTRAINT {} {fk}", d.q(&c.name)));
+            post.push(format!("ALTER TABLE {target} ADD CONSTRAINT {} {fk}", d.q(&scoped_name(dst, table, &c.name))));
         }
     }
     let create = format!("CREATE TABLE {target} (\n  {}\n)", lines.join(",\n  "));

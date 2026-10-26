@@ -8,7 +8,7 @@
 use crate::datasync::{DeployCounts, DeployProgress, LogEvent, ProgressEvent};
 use crate::dsync::{deploy, register_cancel, unregister_cancel};
 use crate::genext::{Dialect, Exec, mssql_schema_rewrite};
-use crate::neutral::{NType, Product, column_sql, create_table, parse, render};
+use crate::neutral::{NType, Product, column_sql, create_table, is_auto, parse, render};
 use crate::sessions::Sessions;
 use crate::xprod::open_exec;
 use crate::mssql::MssqlSessions;
@@ -72,12 +72,12 @@ fn column_def(d: Dialect, c: &ColumnInfo, with_name: bool) -> String {
     s
 }
 
-fn same_column(d: Dialect, a: &ColumnInfo, b: &ColumnInfo) -> bool {
+fn same_column(a: &ColumnInfo, b: &ColumnInfo) -> bool {
     norm(&a.formatted_type) == norm(&b.formatted_type)
         && a.not_null == b.not_null
         && a.default.as_deref().map(norm) == b.default.as_deref().map(norm)
         // O SQL Server não troca a numeração automática de uma coluna que já existe.
-        && (d == Dialect::Mssql || a.identity.is_some() == b.identity.is_some())
+        && a.identity.is_some() == b.identity.is_some()
 }
 
 fn check_expr(def: &str) -> String {
@@ -190,7 +190,7 @@ fn diff_table(d: Dialect, src: &TableDetail, dst: &TableDetail, target: &str, na
     // SQLite não altera nem apaga coluna, nem mexe em chaves: qualquer dessas mudanças recria a tabela.
     let sqlite_rebuild_needed = d == Dialect::Sqlite
         && (dst.columns.iter().any(|x| !src.columns.iter().any(|c| c.name == x.name))
-            || src.columns.iter().any(|c| dst.columns.iter().any(|x| x.name == c.name && !same_column(d, c, x)))
+            || src.columns.iter().any(|c| dst.columns.iter().any(|x| x.name == c.name && !same_column(c, x)))
             || pk_columns(src) != pk_columns(dst)
             || src.constraints.iter().any(|c| !dst.constraints.iter().any(|x| same_constraint(c, x, src_schema, dst_schema)))
             || dst.constraints.iter().any(|c| !src.constraints.iter().any(|x| same_constraint(x, c, src_schema, dst_schema))));
@@ -217,7 +217,7 @@ fn diff_table(d: Dialect, src: &TableDetail, dst: &TableDetail, target: &str, na
                     let kw = if d == Dialect::Mssql { "ADD" } else { "ADD COLUMN" };
                     out.add("column", &c.name, StructOp::Add, 4, n, vec![format!("ALTER TABLE {target} {kw} {}", column_def(d, c, true))]);
                 }
-                Some(x) if !same_column(d, c, x) && d != Dialect::Sqlite => {
+                Some(x) if !same_column(c, x) && d != Dialect::Sqlite => {
                     let n = next();
                     let sql = match d {
                         Dialect::Mysql => vec![format!("ALTER TABLE {target} MODIFY COLUMN {}", column_def(d, c, true))],
@@ -493,7 +493,12 @@ async fn compare(app: &AppHandle, d: Dialect, src: &Side, dst: &Side, id: &str, 
                         let td = dst.exec.table_detail(&dst.schema, name).await?;
                         // Recriação do SQLite: tabela nova com a estrutura da origem, dados copiados, troca de nomes e índices de volta.
                         let rebuild = if d == Dialect::Sqlite { sqlite_rebuild(&sd, &td, name, &s_pre, &s_post) } else { Vec::new() };
-                        let t = diff_table(d, &sd, &td, &target, name, &src.schema, &dst.schema, &rebuild);
+                        let mut t = diff_table(d, &sd, &td, &target, name, &src.schema, &dst.schema, &rebuild);
+                        if d == Dialect::Mssql && identity_changes(Product::Mssql, &sd, &td) {
+                            let sql = mssql_identity_rebuild(Product::Mssql, &dst.exec, &sd, &dst.schema, name).await?;
+                            t = TableDiff { parts: Vec::new(), stmts: Vec::new() };
+                            t.add("options", name, StructOp::Modify, 4, 0, sql);
+                        }
                         if !t.parts.is_empty() {
                             diff.op = StructOp::Modify;
                             diff.parts = t.parts;
@@ -580,7 +585,9 @@ fn same_column_cross(sp: Product, dp: Product, s: &ColumnInfo, t: &ColumnInfo) -
     // O SQLite chama de INTEGER qualquer inteiro: a largura que o destino escolheu não é diferença.
     let same_type = want == have || (sp == Product::Sqlite && matches!((&want, &have), (NType::Int(_), NType::Int(_))));
     // Uma coluna da chave primária nunca aceita nulo (o SQLite não marca isso na coluna).
-    same_type && (s.not_null || s.key.is_some()) == (t.not_null || t.key.is_some())
+    // A numeração automática conta, menos quando um dos lados é SQLite (que não a declara na maioria dos casos).
+    let same_auto = sp == Product::Sqlite || dp == Product::Sqlite || crate::neutral::is_auto(s) == crate::neutral::is_auto(t);
+    same_type && same_auto && (s.not_null || s.key.is_some()) == (t.not_null || t.key.is_some())
 }
 
 fn fields_of(f: &str) -> Vec<String> {
@@ -648,6 +655,13 @@ fn diff_table_cross(sp: Product, dp: Product, src: &TableDetail, dst: &TableDeta
                         if c.not_null != x.not_null {
                             v.push(format!("ALTER TABLE {target} ALTER COLUMN {col} {} NOT NULL", if c.not_null { "SET" } else { "DROP" }));
                         }
+                        if crate::neutral::is_auto(c) != crate::neutral::is_auto(x) && sp != Product::Sqlite {
+                            v.push(if crate::neutral::is_auto(c) {
+                                format!("ALTER TABLE {target} ALTER COLUMN {col} ADD GENERATED BY DEFAULT AS IDENTITY")
+                            } else {
+                                format!("ALTER TABLE {target} ALTER COLUMN {col} DROP IDENTITY IF EXISTS")
+                            });
+                        }
                         v
                     }
                     Product::Mysql => vec![format!("ALTER TABLE {target} MODIFY COLUMN {}", column_sql(sp, dp, c, false))],
@@ -684,7 +698,7 @@ fn diff_table_cross(sp: Product, dp: Product, src: &TableDetail, dst: &TableDeta
     for c in src.constraints.iter().filter(|c| c.kind == "u") {
         if !d_uni.iter().any(|(g, _)| *g == fields_of(&c.fields)) {
             let n = next();
-            out.add("unique", &c.name, StructOp::Add, 5, n, vec![format!("ALTER TABLE {target} ADD CONSTRAINT {} UNIQUE ({})", d.q(&c.name), list(&c.fields, d))]);
+            out.add("unique", &c.name, StructOp::Add, 5, n, vec![format!("ALTER TABLE {target} ADD CONSTRAINT {} UNIQUE ({})", d.q(&crate::neutral::scoped_name(dp, name, &c.name)), list(&c.fields, d))]);
         }
     }
     for c in &d_fks {
@@ -696,10 +710,31 @@ fn diff_table_cross(sp: Product, dp: Product, src: &TableDetail, dst: &TableDeta
     for c in &s_fks {
         if !d_fks.iter().any(|x| fk_key(x) == fk_key(c)) {
             let n = next();
-            out.add("foreign", &c.name, StructOp::Add, 6, n, vec![fk_sql(d, &target, c, src_schema, dst_schema)]);
+            let mut scoped = (*c).clone();
+            scoped.name = crate::neutral::scoped_name(dp, name, &c.name);
+            out.add("foreign", &c.name, StructOp::Add, 6, n, vec![fk_sql(d, &target, &scoped, src_schema, dst_schema)]);
         }
     }
     // O MySQL cria sozinho um índice para cada chave estrangeira: ele não é diferença.
+    // Restrições CHECK: o texto da origem é traduzido e comparado com o que o destino já tem.
+    let cx = crate::sqlx::Ctx { dst: dp, src_schema, dst_schema, select: false };
+    let s_checks: Vec<(&ConstraintInfo, Option<String>)> = src.constraints.iter().filter(|c| c.kind == "c").map(|c| (c, crate::sqlx::translate(&crate::neutral::check_text(&c.definition), &cx))).collect();
+    let untranslatable = s_checks.iter().any(|(_, t)| t.is_none());
+    for c in dst.constraints.iter().filter(|c| c.kind == "c") {
+        let have = crate::sqlx::compare_form(&crate::neutral::check_text(&c.definition));
+        if !untranslatable && !s_checks.iter().any(|(_, t)| t.as_deref().is_some_and(|t| crate::sqlx::compare_form(t) == have)) {
+            let n = next();
+            out.add("check", &c.name, StructOp::Delete, 1, n, vec![drop_constraint(d, &target, c)]);
+        }
+    }
+    for (c, t) in &s_checks {
+        let Some(t) = t else { continue };
+        let want = crate::sqlx::compare_form(t);
+        if !dst.constraints.iter().any(|x| x.kind == "c" && crate::sqlx::compare_form(&crate::neutral::check_text(&x.definition)) == want) {
+            let n = next();
+            out.add("check", &c.name, StructOp::Add, 5, n, vec![format!("ALTER TABLE {target} ADD CONSTRAINT {} CHECK ({t})", d.q(&crate::neutral::scoped_name(dp, name, &c.name)))]);
+        }
+    }
     let plain = |t: &TableDetail, i: &IndexInfo| !i.primary && !i.fields.contains('(') && !t.constraints.iter().any(|c| c.kind == "f" && fields_of(&c.fields) == fields_of(&i.fields)) && !t.constraints.iter().any(|c| c.kind == "u" && (c.name == i.name || fields_of(&c.fields) == fields_of(&i.fields))) && !i.name.starts_with("sqlite_autoindex_");
     let drop_ix = |name: &str| match dp {
         Product::Pg => format!("DROP INDEX {}", d.target(dst_schema, name)),
@@ -747,6 +782,8 @@ async fn compare_cross(app: &AppHandle, sp: Product, dp: Product, src: &Exec, ds
     }
     let ref_type = |t: &str, c: &str| existing.get(&(t.to_string(), c.to_string())).cloned();
     let mut out = Vec::new();
+    let view_names = |o: atlas_core::SchemaObjects| o.views.into_iter().map(|v| v.name).collect::<Vec<_>>();
+    let (s_views, t_views) = (view_names(src.objects(src_schema).await?), view_names(dst.objects(dst_schema).await?));
     for (n, name) in all.iter().enumerate() {
         if cancel.load(Ordering::Relaxed) {
             return Err(canceled());
@@ -781,7 +818,12 @@ async fn compare_cross(app: &AppHandle, sp: Product, dp: Product, src: &Exec, ds
             }
             (Some(sd), Some(td)) => {
                 let rebuild = if dp == Product::Sqlite { sqlite_rebuild(&sd, &td, name, &s_pre, &s_post) } else { Vec::new() };
-                let t = diff_table_cross(sp, dp, &sd, &td, name, src_schema, dst_schema, &rebuild);
+                let mut t = diff_table_cross(sp, dp, &sd, &td, name, src_schema, dst_schema, &rebuild);
+                if dp == Product::Mssql && identity_changes(sp, &sd, &td) {
+                    let sql = mssql_identity_rebuild(sp, dst, &sd, dst_schema, name).await?;
+                    t = TableDiff { parts: Vec::new(), stmts: Vec::new() };
+                    t.add("options", name, StructOp::Modify, 4, 0, sql);
+                }
                 if !t.parts.is_empty() {
                     diff.op = StructOp::Modify;
                     diff.parts = t.parts;
@@ -792,7 +834,91 @@ async fn compare_cross(app: &AppHandle, sp: Product, dp: Product, src: &Exec, ds
         }
         out.push(diff);
     }
+    // Views: só aparecem (ou somem) as que o SELECT traduz; uma view que existe nos dois lados não é comparada entre produtos,
+    // porque cada servidor reescreve o SELECT do seu jeito.
+    let d = dp.dialect();
+    let mut all_views: Vec<String> = s_views.iter().chain(t_views.iter()).cloned().collect();
+    all_views.sort();
+    all_views.dedup();
+    for name in all_views {
+        let target = d.target(dst_schema, &name);
+        let (in_s, in_t) = (s_views.contains(&name), t_views.contains(&name));
+        let mut diff = Diff { kind: "view", name: name.clone(), op: StructOp::Same, parts: Vec::new(), source_ddl: String::new(), target_ddl: String::new(), stmts: Vec::new() };
+        if in_t {
+            diff.target_ddl = dst.view_definition(dst_schema, &name).await.unwrap_or_default();
+        }
+        match (in_s, in_t) {
+            (true, false) => {
+                let def = src.view_definition(src_schema, &name).await?;
+                diff.source_ddl = def.clone();
+                let cx = crate::sqlx::Ctx { dst: dp, src_schema, dst_schema, select: true };
+                let Some(select) = crate::sqlx::translate(&def, &cx) else { continue };
+                diff.op = StructOp::Add;
+                diff.stmts.push(Stmt { phase: 7, order: 0, part: None, sql: format!("CREATE VIEW {target} AS {select}") });
+            }
+            (false, true) => {
+                diff.op = StructOp::Delete;
+                diff.stmts.push(Stmt { phase: 1, order: 0, part: None, sql: format!("DROP VIEW {target}") });
+            }
+            (true, true) => {
+                diff.source_ddl = src.view_definition(src_schema, &name).await.unwrap_or_default();
+            }
+            _ => continue,
+        }
+        out.push(diff);
+    }
     progress("", 1.0);
+    Ok(out)
+}
+
+/// SQL Server: a numeração automática (`IDENTITY`) não muda com `ALTER`. A tabela é recriada com a forma desejada, os dados
+/// copiados (com `IDENTITY_INSERT`), as chaves estrangeiras que apontam para ela apagadas antes e recriadas depois.
+fn identity_changes(sp: Product, src: &TableDetail, dst: &TableDetail) -> bool {
+    sp != Product::Sqlite && src.columns.iter().any(|c| dst.columns.iter().any(|x| x.name == c.name && is_auto(c) != is_auto(x)))
+}
+
+async fn mssql_identity_rebuild(sp: Product, dst: &Exec, sd: &TableDetail, dst_schema: &str, name: &str) -> Result<Vec<String>, DatabaseError> {
+    let d = Dialect::Mssql;
+    let old = d.target(dst_schema, name);
+    let temp_name = format!("{name}__atlas_new");
+    let temp = d.target(dst_schema, &temp_name);
+    let rows = dst
+        .rows(
+            &format!(
+                "SELECT fk.name, OBJECT_SCHEMA_NAME(fk.parent_object_id), OBJECT_NAME(fk.parent_object_id),                         STUFF((SELECT ', ' + QUOTENAME(pc.name) FROM sys.foreign_key_columns fkc JOIN sys.columns pc ON pc.object_id = fkc.parent_object_id AND pc.column_id = fkc.parent_column_id WHERE fkc.constraint_object_id = fk.object_id ORDER BY fkc.constraint_column_id FOR XML PATH('')), 1, 2, ''),                         STUFF((SELECT ', ' + QUOTENAME(rc.name) FROM sys.foreign_key_columns fkc JOIN sys.columns rc ON rc.object_id = fkc.referenced_object_id AND rc.column_id = fkc.referenced_column_id WHERE fkc.constraint_object_id = fk.object_id ORDER BY fkc.constraint_column_id FOR XML PATH('')), 1, 2, ''),                         fk.delete_referential_action_desc, fk.update_referential_action_desc                    FROM sys.foreign_keys fk WHERE fk.referenced_object_id = OBJECT_ID({}) AND fk.parent_object_id <> fk.referenced_object_id",
+                d.text(&old)
+            ),
+            1000,
+        )
+        .await?;
+    let cell = |r: &[Option<String>], i: usize| r.get(i).cloned().flatten().unwrap_or_default();
+    let mut drops = Vec::new();
+    let mut adds = Vec::new();
+    for r in &rows {
+        let parent = d.target(&cell(r, 1), &cell(r, 2));
+        drops.push(format!("ALTER TABLE {parent} DROP CONSTRAINT {}", d.q(&cell(r, 0))));
+        adds.push(format!(
+            "ALTER TABLE {parent} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {old} ({}) ON DELETE {} ON UPDATE {}",
+            d.q(&cell(r, 0)),
+            cell(r, 3),
+            cell(r, 4),
+            cell(r, 5).replace('_', " "),
+            cell(r, 6).replace('_', " ")
+        ));
+    }
+    let (pre, _, _) = create_table(sp, Product::Mssql, dst_schema, &temp_name, sd, &|_, _| None);
+    let (_, post, _) = create_table(sp, Product::Mssql, dst_schema, name, sd, &|_, _| None);
+    let cols: Vec<String> = sd.columns.iter().filter(|c| c.generated.is_none()).map(|c| d.q(&c.name)).collect();
+    let has_identity = sd.columns.iter().any(is_auto);
+    let list = cols.join(", ");
+    let copy = format!("INSERT INTO {temp} ({list}) SELECT {list} FROM {old}");
+    let mut out = drops;
+    out.extend(pre);
+    out.push(if has_identity { format!("SET IDENTITY_INSERT {temp} ON; {copy}; SET IDENTITY_INSERT {temp} OFF") } else { copy });
+    out.push(format!("DROP TABLE {old}"));
+    out.push(format!("EXEC sp_rename {}, {}, 'OBJECT'", d.text(&format!("{}.{}", d.q(dst_schema), d.q(&temp_name))), d.text(name)));
+    out.extend(post);
+    out.extend(adds);
     Ok(out)
 }
 

@@ -83,6 +83,17 @@ impl Exec {
         }
     }
 
+    /// A definição (`SELECT`) de uma view.
+    pub(crate) async fn view_definition(&self, schema: &str, name: &str) -> Result<String, DatabaseError> {
+        match self {
+            Exec::Mysql(s, _) => s.view_detail(schema, name).await.map(|d| d.definition),
+            Exec::Mssql(s, db) => s.view_detail(db, schema, name).await.map(|d| d.definition),
+            Exec::Sqlite(s) => s.view_detail(name).map(|d| d.definition),
+            Exec::Pg(s) | Exec::PgTx(s) => atlas_pg::view_detail(s, schema, name).await.map(|d| d.definition),
+            _ => Err(DatabaseError::new(ErrorKind::Internal, "view_definition needs a session")),
+        }
+    }
+
     /// Tabelas, views e rotinas de um schema.
     pub(crate) async fn objects(&self, schema: &str) -> Result<atlas_core::SchemaObjects, DatabaseError> {
         match self {
