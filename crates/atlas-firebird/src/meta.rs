@@ -112,7 +112,10 @@ pub fn describe_type(field_type: i32, sub_type: i32, length: i32, char_length: i
             let base = if field_type == 14 { "char" } else { "varchar" };
             (base.to_string(), format!("{base}({size})"), size, 0)
         }
-        261 => ("blob".into(), if sub_type == 1 { "blob sub_type text".into() } else { format!("blob sub_type {sub_type}") }, 0, 0),
+        261 => {
+            let name = if sub_type == 1 { "blob sub_type text".to_string() } else if sub_type == 0 { "blob".to_string() } else { format!("blob sub_type {sub_type}") };
+            (name.clone(), name, 0, 0)
+        }
         _ => plain("unknown"),
     }
 }
@@ -176,9 +179,13 @@ pub fn table_detail_on(conn: &mut Conn, table: &str) -> Result<TableDetail, Data
                 _ => None,
             }),
             generated: computed.map(|_| "s".to_string()),
+            auto_source: None,
         });
     }
 
+    // Os índices que sustentam chaves e restrições aparecem como restrições, não como índices.
+    let constraint_rows = query(conn, "SELECT TRIM(RDB$CONSTRAINT_NAME), TRIM(RDB$CONSTRAINT_TYPE), TRIM(RDB$INDEX_NAME) FROM RDB$RELATION_CONSTRAINTS WHERE RDB$RELATION_NAME = ? ORDER BY RDB$CONSTRAINT_NAME", text(table))?;
+    let backing: Vec<String> = constraint_rows.iter().map(|r| s(r, 2)).filter(|n| !n.is_empty()).collect();
     let mut indexes = Vec::new();
     let mut index_rows = query(
         conn,
@@ -188,6 +195,9 @@ pub fn table_detail_on(conn: &mut Conn, table: &str) -> Result<TableDetail, Data
     let pk_name = pk_index.first().map(|r| s(r, 0));
     for r in index_rows.drain(..) {
         let name = s(&r, 0);
+        if backing.contains(&name) {
+            continue;
+        }
         let fields = index_fields(conn, &name)?;
         let expression = opt(&r, 4);
         let joined = match &expression {
@@ -201,10 +211,14 @@ pub fn table_detail_on(conn: &mut Conn, table: &str) -> Result<TableDetail, Data
     }
 
     let mut constraints = Vec::new();
-    for r in query(conn, "SELECT TRIM(RDB$CONSTRAINT_NAME), TRIM(RDB$CONSTRAINT_TYPE), TRIM(RDB$INDEX_NAME) FROM RDB$RELATION_CONSTRAINTS WHERE RDB$RELATION_NAME = ? ORDER BY RDB$CONSTRAINT_NAME", text(table))? {
+    for r in constraint_rows {
         let (name, kind) = (s(&r, 0), s(&r, 1));
         let index = s(&r, 2);
         match kind.as_str() {
+            "PRIMARY KEY" => {
+                let fields = index_fields(conn, &index)?.join(", ");
+                constraints.push(ConstraintInfo { name, kind: "p".into(), definition: format!("PRIMARY KEY ({fields})"), fields, ref_schema: None, ref_table: None, ref_fields: None, on_delete: None, on_update: None, comment: None });
+            }
             "UNIQUE" => {
                 let fields = index_fields(conn, &index)?.join(", ");
                 constraints.push(ConstraintInfo { name, kind: "u".into(), definition: format!("UNIQUE ({fields})"), fields, ref_schema: None, ref_table: None, ref_fields: None, on_delete: None, on_update: None, comment: None });
@@ -241,6 +255,8 @@ pub fn table_detail_on(conn: &mut Conn, table: &str) -> Result<TableDetail, Data
     }
 
     let mut triggers = Vec::new();
+    // Auto incremento feito por gerador + gatilho `BEFORE INSERT` (o único jeito no 2.5 e em colunas que já existiam): (coluna, gatilho, gerador).
+    let mut auto: Vec<(String, String, String)> = Vec::new();
     for r in query(
         conn,
         "SELECT TRIM(RDB$TRIGGER_NAME), RDB$TRIGGER_TYPE, COALESCE(RDB$TRIGGER_INACTIVE, 0), RDB$TRIGGER_SOURCE, COALESCE(RDB$TRIGGER_SEQUENCE, 0), RDB$DESCRIPTION FROM RDB$TRIGGERS WHERE RDB$RELATION_NAME = ? AND COALESCE(RDB$SYSTEM_FLAG, 0) = 0 ORDER BY RDB$TRIGGER_SEQUENCE, RDB$TRIGGER_NAME",
@@ -248,6 +264,11 @@ pub fn table_detail_on(conn: &mut Conn, table: &str) -> Result<TableDetail, Data
     )? {
         let (timing, events) = trigger_events(n(&r, 1));
         let name = s(&r, 0);
+        if timing == "BEFORE" && events.iter().any(|e| e == "INSERT") {
+            if let Some((col, generator)) = auto_numbering(&s(&r, 3)) {
+                auto.push((col, name.clone(), generator));
+            }
+        }
         let enabled = n(&r, 2) == 0;
         let definition = format!(
             "CREATE OR ALTER TRIGGER {} FOR {} {} {} {} POSITION {}\nAS\n{}",
@@ -259,9 +280,26 @@ pub fn table_detail_on(conn: &mut Conn, table: &str) -> Result<TableDetail, Data
             n(&r, 4),
             s(&r, 3)
         );
-        triggers.push(TriggerInfo { name, definition, enabled, timing, events, for_each_row: true, when: None, function: String::new(), args: Vec::new(), update_columns: Vec::new(), comment: opt(&r, 5), read_only: false });
+        triggers.push(TriggerInfo { name, definition, enabled, timing, events, for_each_row: true, when: None, function: String::new(), args: Vec::new(), update_columns: Vec::new(), comment: opt(&r, 5), read_only: true });
+    }
+    for (col, trigger, generator) in auto {
+        if let Some(c) = columns.iter_mut().find(|c| c.name.eq_ignore_ascii_case(&col)) {
+            c.identity.get_or_insert_with(|| "d".to_string());
+            c.auto_source = Some(format!("{trigger}|{generator}"));
+        }
     }
     Ok(TableDetail { columns, indexes, constraints, triggers, owner, comment })
+}
+
+/// O corpo de um gatilho que numera uma coluna: `NEW.col = GEN_ID(gerador, 1)` ou `NEW.col = NEXT VALUE FOR gerador` → (coluna, gerador).
+fn auto_numbering(source: &str) -> Option<(String, String)> {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = RE.get_or_init(|| {
+        regex::Regex::new(r#"(?is)\bNEW\s*\.\s*"?([A-Za-z0-9_$]+)"?\s*=\s*(?:GEN_ID\s*\(\s*"?([A-Za-z0-9_$]+)"?\s*,\s*1\s*\)|NEXT\s+VALUE\s+FOR\s+"?([A-Za-z0-9_$]+)"?)"#).expect("valid regex")
+    });
+    let c = re.captures(source)?;
+    let generator = c.get(2).or_else(|| c.get(3))?.as_str().to_string();
+    Some((c[1].to_string(), generator))
 }
 
 /* ---------- View ---------- */
@@ -272,4 +310,19 @@ pub fn view_detail_on(conn: &mut Conn, view: &str) -> Result<ViewDetail, Databas
         return Err(DatabaseError::new(ErrorKind::InvalidInput, format!("view \"{view}\" does not exist")));
     };
     Ok(ViewDetail { definition: s(r, 0).trim().trim_end_matches(';').to_string(), owner: opt(r, 1), comment: opt(r, 2), check_option: None, security_barrier: false, rules: Vec::new(), populated: true })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn numbering_trigger_is_recognized() {
+        let src = "AS\nBEGIN\n  IF (NEW.ID IS NULL) THEN\n    NEW.ID = GEN_ID(G_X, 1);\nEND";
+        assert_eq!(auto_numbering(src), Some(("ID".to_string(), "G_X".to_string())));
+        let quoted = "BEGIN NEW.\"Id\" = GEN_ID(\"gen_t\", 1); END";
+        assert_eq!(auto_numbering(quoted), Some(("Id".to_string(), "gen_t".to_string())));
+        assert_eq!(auto_numbering("BEGIN NEW.A = NEXT VALUE FOR SEQ_A; END"), Some(("A".to_string(), "SEQ_A".to_string())));
+        assert_eq!(auto_numbering("BEGIN NEW.A = 1; END"), None);
+    }
 }

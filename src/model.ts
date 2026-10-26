@@ -33,6 +33,8 @@ export interface ColumnDef {
   generated?: "s";
   /** Designer: a coluna numera sozinha (auto incremento): identidade ou `serial`. */
   autoInc?: boolean;
+  /** Firebird: `gatilho|gerador` que numeram a coluna (quando não é a identidade do servidor). */
+  autoSource?: string;
 }
 
 export interface IndexDef { name: string; fields: string; method: string; unique: boolean; concurrently: boolean; comment?: string; /** Sustenta a chave primária (SQL Server). */ primary?: boolean }
@@ -85,6 +87,8 @@ export interface DbObject {
   columns?: ColumnDef[];
   indexes?: IndexDef[];
   foreignKeys?: ForeignKeyDef[];
+  /** Firebird: o nome da restrição da chave primária (para trocá-la). */
+  pkName?: string;
   uniques?: UniqueDef[];
   checks?: CheckDef[];
   triggers?: TriggerDef[];

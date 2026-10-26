@@ -302,6 +302,7 @@ impl MssqlSession {
                     // Uma coluna `IDENTITY` não recebe valor sem `SET IDENTITY_INSERT`: a interface a trata como "sempre gerada".
                     identity: if b(r, 6) { Some("a".into()) } else { None },
                     generated: if b(r, 7) { Some("s".into()) } else { None },
+                    auto_source: None,
                 }
             })
             .collect();

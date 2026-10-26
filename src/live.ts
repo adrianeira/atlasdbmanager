@@ -71,6 +71,7 @@ export function tableFromServer(base: DbObject, d: TableDetail): DbObject {
     ...base,
     owner: d.owner ?? undefined,
     comment: d.comment ?? undefined,
+    pkName: cons("p")[0]?.name,
     columns: d.columns.map<ColumnDef>((c) => ({
       name: c.name,
       type: c.dataType,
@@ -84,6 +85,7 @@ export function tableFromServer(base: DbObject, d: TableDetail): DbObject {
       collation: c.collation ?? undefined,
       identity: c.identity === "a" || c.identity === "d" ? c.identity : undefined,
       generated: c.generated === "s" ? "s" : undefined,
+      autoSource: c.autoSource ?? undefined,
     })),
     indexes: d.indexes.map((i) => ({ name: i.name, fields: i.fields, method: i.method, unique: i.unique, concurrently: false, comment: i.comment ?? "", primary: i.primary })),
     foreignKeys: cons("f").map((c) => ({

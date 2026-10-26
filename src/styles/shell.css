@@ -762,7 +762,7 @@ input {
   overflow: hidden;
   background: var(--c-surface);
   border: 1px solid var(--er-head);
-  border-radius: 6px;
+  border-radius: 0px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
   cursor: default;
   user-select: none;

@@ -540,6 +540,7 @@ pub async fn table_detail(s: &PgSession, schema: &str, table: &str) -> Result<Ta
                 },
                 identity: r.get(10),
                 generated: r.get(11),
+                auto_source: None,
             }
         })
         .collect();

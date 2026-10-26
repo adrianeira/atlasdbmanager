@@ -370,6 +370,8 @@ pub struct ColumnInfo {
     pub identity: Option<String>,
     /// `pg_attribute.attgenerated`: `s` = GENERATED ... AS (expr) STORED (sempre read-only).
     pub generated: Option<String>,
+    /// Firebird: o gatilho e o gerador que numeram a coluna (`gatilho|gerador`) quando o auto incremento não é a identidade do servidor.
+    pub auto_source: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

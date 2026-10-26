@@ -352,6 +352,7 @@ fn table_detail_on(conn: &Connection, table: &str) -> Result<TableDetail, Databa
                 collation: None,
                 identity: if rowid_alias { Some("d".into()) } else { None },
                 generated: if *hidden == 2 || *hidden == 3 { Some("s".into()) } else { None },
+                auto_source: None,
             }
         })
         .collect();

@@ -208,6 +208,7 @@ impl MysqlSession {
                     // `AUTO_INCREMENT` aceita valor explícito: é a identidade "por padrão".
                     identity: if extra.contains("auto_increment") { Some("d".into()) } else { None },
                     generated: if extra.contains("generated") && !extra.contains("default_generated") { Some("s".into()) } else { None },
+                    auto_source: None,
                 }
             })
             .collect();

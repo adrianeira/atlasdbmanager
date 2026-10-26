@@ -219,11 +219,13 @@ export interface ColumnInfo {
   identity?: string | null;
   /** "s" = GENERATED ... AS (expr) STORED, null = nenhum. */
   generated?: string | null;
+  /** Firebird: `gatilho|gerador` que numeram a coluna quando não é a identidade do servidor. */
+  autoSource?: string | null;
 }
 
 export interface IndexInfo { name: string; fields: string; method: string; unique: boolean; primary: boolean; definition: string; comment: string | null }
 export interface ConstraintInfo {
-  name: string; kind: "f" | "u" | "c" | "x"; fields: string; refSchema: string | null; refTable: string | null;
+  name: string; kind: "f" | "u" | "c" | "x" | "p"; fields: string; refSchema: string | null; refTable: string | null;
   refFields: string | null; onDelete: string | null; onUpdate: string | null; definition: string; comment: string | null;
 }
 
