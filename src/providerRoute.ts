@@ -66,6 +66,10 @@ const idOf = (args?: Record<string, unknown>): unknown =>
 
 export function routeCommand(cmd: string, args?: Record<string, unknown>): Routed {
   const id = idOf(args);
+  if (cmd.startsWith("monitor_") && typeof id === "string") {
+    const p = PROVIDERS.find((x) => id.startsWith(x.prefix));
+    if (p) return { cmd: `${p.prefix}${cmd}`, args };
+  }
   if (cmd.startsWith("console_") && cmd !== "console_is_complete" && typeof id === "string") {
     const p = PROVIDERS.find((x) => x.console && id.startsWith(x.prefix));
     if (p) return { cmd: `${p.prefix}${cmd}`, args };

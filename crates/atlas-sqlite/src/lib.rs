@@ -16,6 +16,7 @@ pub mod diagram;
 pub mod view;
 pub mod dump;
 pub mod find;
+mod monitor;
 pub mod import;
 pub mod profile;
 pub use console::{Completion as ConsoleCompletion, ConsoleOptions, ConsoleOutput, is_complete as console_is_complete};

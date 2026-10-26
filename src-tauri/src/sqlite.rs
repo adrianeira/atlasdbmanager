@@ -47,6 +47,18 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, DatabaseError
     tokio::task::spawn_blocking(f).await.map_err(|e| DatabaseError::new(ErrorKind::Internal, e.to_string()))?
 }
 
+/// Server Monitor: configurações e números do arquivo (não há processos).
+#[tauri::command]
+pub async fn sqlite_monitor_snapshot(sessions: State<'_, SqliteSessions>, session_id: String) -> Result<atlas_core::MonitorSnapshot, DatabaseError> {
+    sessions.session(&session_id)?.monitor_snapshot()
+}
+
+/// Server Monitor: o SQLite não tem processos para encerrar.
+#[tauri::command]
+pub async fn sqlite_monitor_end_process(_session_id: String, _pid: i64) -> Result<bool, DatabaseError> {
+    Err(atlas_sqlite::unsupported_feature("ending a process"))
+}
+
 /// Cria um arquivo SQLite novo e vazio (o arquivo não pode existir).
 #[tauri::command]
 pub async fn sqlite_create_file(path: String) -> Result<(), DatabaseError> {

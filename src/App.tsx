@@ -2454,6 +2454,18 @@ export default function App() {
   const selConn = ctx.connection;
   const qa = () => queryActions.current;
 
+  /** Server Monitor de um produto: abre a aba para a conexão atual (se for do produto) ou para a primeira aberta dele. */
+  const monitorCommand = (id: string, label: MessageKey, provider: string, product: string): CommandMap[string] => ({
+    id, label,
+    run: connections.some((c) => c.live && c.provider === provider)
+      ? () => {
+        const live = connections.filter((c) => c.live && c.provider === provider);
+        const pick = ctx.connection && ctx.connection.provider === provider ? ctx.connection : live.find((c) => openConnections.has(c.id)) ?? live[0];
+        openTab({ kind: "monitor", title: `${t("mon.title")} - ${product}`, windowTitle: `${t("mon.title")} - ${product}`, icon: "settings", object: "monitor", connectionId: pick.id });
+      }
+      : undefined,
+  });
+
   const commands: CommandMap = {
     newProject: { id: "newProject", label: "cmd.newProject" },
     newConnection: { id: "newConnection", label: "cmd.newConnection", run: () => setDialog({ kind: "connection" }) },
@@ -2620,14 +2632,10 @@ export default function App() {
         ? () => openFind(ctx.connection?.live ? ctx.connection.id : undefined, ctx.connection?.live ? ctx.database?.name : undefined, ctx.connection?.live ? ctx.schema?.name : undefined)
         : undefined,
     },
-    monitorPostgres: {
-      id: "monitorPostgres", label: "mon.postgres",
-      run: () => {
-        // O monitor lê as tabelas de sistema do PostgreSQL.
-        if (!connections.some((c) => c.live && c.provider === "postgresql") || (ctx.connection && ctx.connection.provider !== "postgresql")) return;
-        openTab({ kind: "monitor", title: `${t("mon.title")} - PostgreSQL`, windowTitle: `${t("mon.title")} - PostgreSQL`, icon: "settings", object: "monitor", connectionId: ctx.connection?.id });
-      },
-    },
+    monitorPostgres: monitorCommand("monitorPostgres", "mon.postgres", "postgresql", "PostgreSQL"),
+    monitorSqlserver: monitorCommand("monitorSqlserver", "mon.sqlserver", "sqlserver", "SQL Server"),
+    monitorMysql: monitorCommand("monitorMysql", "mon.mysql", "mysql", "MySQL"),
+    monitorSqlite: monitorCommand("monitorSqlite", "mon.sqlite", "sqlite", "SQLite"),
     options: { id: "options", label: "cmd.options", run: () => setDialog({ kind: "options" }) },
     nextTab: { id: "nextTab", label: "cmd.nextTab", shortcut: "Ctrl+Tab", run: () => cycleTab(1) },
     previousTab: { id: "previousTab", label: "cmd.previousTab", shortcut: "Ctrl+Shift+Tab", run: () => cycleTab(-1) },
@@ -2699,7 +2707,7 @@ export default function App() {
   const tableMenu: MenuDef = { label: "menu.table", items: entries("addRecord", "deleteRecord", "-", "applyChanges", "discardChanges", "-", "refreshData") };
   const tailMenus: MenuDef[] = [
     { label: "menu.favorites", items: entries("addFavorite", "manageFavorites") },
-    { label: "menu.tools", items: entries("dataTransfer", "dataGen", "dataDictionary", "dataSync", "structureSync", "-", "console", sub("mon.title", "monitorPostgres"), "-", "findInDatabase", "-", "scheduledTasks", "historyLog", "-", "options") },
+    { label: "menu.tools", items: entries("dataTransfer", "dataGen", "dataDictionary", "dataSync", "structureSync", "-", "console", sub("mon.title", "monitorPostgres", "monitorSqlserver", "monitorMysql", "monitorSqlite"), "-", "findInDatabase", "-", "scheduledTasks", "historyLog", "-", "options") },
     { label: "menu.window", items: entries("nextTab", "previousTab", "-", "closeTab", "closeAllTabs") },
     { label: "menu.help", items: entries("documentation", "-", "about") },
   ];

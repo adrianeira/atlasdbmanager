@@ -190,6 +190,30 @@ pub struct ExtensionInfo {
     pub comment: Option<String>,
 }
 
+/// Um processo (sessão) do servidor, como a lista do Server Monitor o mostra.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MonitorProcess {
+    pub id: i64,
+    pub user: Option<String>,
+    pub host: Option<String>,
+    pub port: Option<i32>,
+    pub db: Option<String>,
+    pub command: Option<String>,
+    pub state: Option<String>,
+    pub time: Option<String>,
+    pub info: Option<String>,
+}
+
+/// Um instante do servidor: processos, variáveis e contadores.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MonitorSnapshot {
+    pub processes: Vec<MonitorProcess>,
+    pub variables: Vec<(String, String)>,
+    pub status: Vec<(String, String)>,
+}
+
 /// Perfil de uma tabela: o que o catálogo e as estatísticas dizem dela, num lugar só.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

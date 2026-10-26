@@ -707,6 +707,18 @@ pub async fn mssql_backup_list(sessions: State<'_, MssqlSessions>, session_id: S
         .collect())
 }
 
+/// Server Monitor: sessões, configurações e contadores.
+#[tauri::command]
+pub async fn mssql_monitor_snapshot(sessions: State<'_, MssqlSessions>, session_id: String) -> Result<atlas_core::MonitorSnapshot, DatabaseError> {
+    sessions.session(&session_id)?.monitor_snapshot().await
+}
+
+/// Server Monitor: End Process.
+#[tauri::command]
+pub async fn mssql_monitor_end_process(sessions: State<'_, MssqlSessions>, session_id: String, pid: i64) -> Result<bool, DatabaseError> {
+    sessions.session(&session_id)?.monitor_end_process(pid).await
+}
+
 /// Exclui um backup: o arquivo no disco do servidor e o registro no histórico.
 #[tauri::command]
 pub async fn mssql_backup_delete(sessions: State<'_, MssqlSessions>, session_id: String, path: String) -> Result<(), DatabaseError> {

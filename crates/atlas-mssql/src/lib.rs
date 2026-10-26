@@ -11,6 +11,7 @@ mod extra;
 mod find;
 mod import;
 mod meta;
+mod monitor;
 mod profile;
 mod rows;
 mod values;

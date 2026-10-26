@@ -784,6 +784,18 @@ pub async fn mysql_collations(sessions: State<'_, MysqlSessions>, session_id: St
     sessions.session(&session_id)?.collations().await
 }
 
+/// Server Monitor: processos, variáveis e contadores.
+#[tauri::command]
+pub async fn mysql_monitor_snapshot(sessions: State<'_, MysqlSessions>, session_id: String) -> Result<atlas_core::MonitorSnapshot, DatabaseError> {
+    sessions.session(&session_id)?.monitor_snapshot().await
+}
+
+/// Server Monitor: End Process.
+#[tauri::command]
+pub async fn mysql_monitor_end_process(sessions: State<'_, MysqlSessions>, session_id: String, pid: i64) -> Result<bool, DatabaseError> {
+    sessions.session(&session_id)?.monitor_end_process(pid).await
+}
+
 /// O texto de uma função ou procedimento, para abrir numa aba de consulta.
 #[tauri::command]
 pub async fn mysql_routine_definition(sessions: State<'_, MysqlSessions>, session_id: String, database: String, _schema: String, name: String) -> Result<String, DatabaseError> {
