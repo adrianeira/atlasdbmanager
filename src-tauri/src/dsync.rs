@@ -7,7 +7,10 @@
 //! `compare_id`, para a tela e para o script.
 
 use crate::datasync::{CompareRequest, CompareSummary, DeployCounts, DeployProgress, DeployRequest, LogEvent, ProgressEvent, RowOut, RowsPage, ScriptOut, TableSummary};
-use crate::genext::{Dialect, Exec, exec_for};
+use crate::genext::{Dialect, Exec};
+use crate::neutral::{NType, Product, canonical, literal as nliteral, parse};
+use crate::sessions::Sessions;
+use crate::xprod::{open_exec, register_flag, unregister_flag};
 use crate::mssql::MssqlSessions;
 use crate::mysql::MysqlSessions;
 use crate::sqlite::SqliteSessions;
@@ -57,8 +60,9 @@ struct TableDiff {
     source_fields: Vec<String>,
     target_fields: Vec<String>,
     key_positions: Vec<usize>,
-    /// Tipo de cada campo no destino (para o literal).
-    types: Vec<String>,
+    /// Tipo neutro de cada campo, na origem e no destino.
+    src_types: Vec<NType>,
+    dst_types: Vec<NType>,
     /// O destino numera sozinho um dos campos (`IDENTITY`): o `INSERT` precisa de `IDENTITY_INSERT`.
     identity: bool,
     insert: u64,
@@ -91,40 +95,17 @@ fn canceled() -> DatabaseError {
     DatabaseError::new(ErrorKind::Canceled, "synchronization canceled")
 }
 
-fn is_plain_number(s: &str) -> bool {
-    let body = s.strip_prefix('-').unwrap_or(s);
-    let mut parts = body.splitn(2, '.');
-    let int = parts.next().unwrap_or("");
-    !int.is_empty() && int.bytes().all(|b| b.is_ascii_digit()) && parts.next().is_none_or(|f| !f.is_empty() && f.bytes().all(|b| b.is_ascii_digit()))
+/// A chave e os valores da linha em forma canônica (para juntar e comparar linhas de produtos diferentes).
+fn canon_row(row: &[Option<String>], types: &[NType]) -> Vec<Option<String>> {
+    row.iter().zip(types).map(|(v, t)| v.as_ref().map(|x| canonical(t, x))).collect()
 }
 
-/// O valor como literal do banco: número sem aspas nos tipos numéricos, 1/0 nos booleanos, hexa nos binários, o resto como texto.
-fn literal(d: Dialect, v: &Option<String>, ty: &str) -> String {
-    let Some(s) = v else { return "NULL".into() };
-    let t = ty.to_ascii_lowercase();
-    let numeric = ["int", "bigint", "smallint", "tinyint", "mediumint", "decimal", "numeric", "float", "double", "real", "money", "number"].iter().any(|k| t.starts_with(k));
-    let boolean = t == "bit" || t.starts_with("bit(") || t == "bool" || t == "boolean" || t.starts_with("tinyint(1)");
-    if boolean && matches!(s.as_str(), "t" | "true" | "f" | "false") {
-        return if s.starts_with('t') { "1" } else { "0" }.into();
-    }
-    if numeric && is_plain_number(s) {
-        return s.clone();
-    }
-    if let Some(hex) = s.strip_prefix("\\x") {
-        return match d {
-            Dialect::Sqlite => format!("X'{hex}'"),
-            _ => format!("0x{hex}"),
-        };
-    }
-    d.text(s)
-}
-
-fn where_keys(d: Dialect, fields: &[String], positions: &[usize], types: &[String], row: &[Option<String>]) -> String {
+fn where_keys(d: Dialect, fields: &[String], positions: &[usize], from: &[NType], to: &[NType], row: &[Option<String>]) -> String {
     positions
         .iter()
         .map(|&p| match &row[p] {
             None => format!("{} IS NULL", d.q(&fields[p])),
-            v => format!("{} = {}", d.q(&fields[p]), literal(d, v, &types[p])),
+            v => format!("{} = {}", d.q(&fields[p]), nliteral(d, &to[p], v, &from[p])),
         })
         .collect::<Vec<_>>()
         .join(" AND ")
@@ -136,7 +117,7 @@ fn select_sql(d: Dialect, schema: &str, table: &str, fields: &[String]) -> Strin
 
 /// Compara uma tabela. Mensagens em `message` explicam por que ela não foi comparada.
 #[allow(clippy::too_many_arguments)]
-async fn compare_table(d: Dialect, src: &Exec, dst: &Exec, spec: &atlas_pg::SyncSpec, t: &atlas_pg::SyncTable, budget: &mut usize) -> Result<TableDiff, DatabaseError> {
+async fn compare_table(sp: Product, dp: Product, src: &Exec, dst: &Exec, spec: &atlas_pg::SyncSpec, t: &atlas_pg::SyncTable, budget: &mut usize) -> Result<TableDiff, DatabaseError> {
     let mut out = TableDiff { source: t.source.clone(), target: t.target.clone(), ..Default::default() };
     let stable = match src.table_detail(&spec.source_schema, &t.source).await {
         Ok(x) if !x.columns.is_empty() => x,
@@ -188,23 +169,26 @@ async fn compare_table(d: Dialect, src: &Exec, dst: &Exec, spec: &atlas_pg::Sync
     out.source_fields = pairs.iter().map(|(s, _)| s.clone()).collect();
     out.target_fields = pairs.iter().map(|(_, g)| g.clone()).collect();
     out.key_positions = positions.clone();
-    out.types = out.target_fields.iter().map(|f| ttable.columns.iter().find(|c| c.name == *f).map(|c| c.formatted_type.clone()).unwrap_or_default()).collect();
+    out.src_types = out.source_fields.iter().map(|f| parse(sp, &stable.columns.iter().find(|c| c.name == *f).map(|c| c.formatted_type.clone()).unwrap_or_default())).collect();
+    out.dst_types = out.target_fields.iter().map(|f| parse(dp, &ttable.columns.iter().find(|c| c.name == *f).map(|c| c.formatted_type.clone()).unwrap_or_default())).collect();
     out.identity = ttable.columns.iter().any(|c| c.identity.is_some() && out.target_fields.contains(&c.name));
 
-    let src_rows = src.rows(&select_sql(d, &spec.source_schema, &t.source, &out.source_fields), MAX_READ_ROWS).await?;
-    let dst_rows = dst.rows(&select_sql(d, &spec.target_schema, &t.target, &out.target_fields), MAX_READ_ROWS).await?;
+    let src_rows = src.rows(&select_sql(sp.dialect(), &spec.source_schema, &t.source, &out.source_fields), MAX_READ_ROWS).await?;
+    let dst_rows = dst.rows(&select_sql(dp.dialect(), &spec.target_schema, &t.target, &out.target_fields), MAX_READ_ROWS).await?;
     if src_rows.len() >= MAX_READ_ROWS || dst_rows.len() >= MAX_READ_ROWS {
         out.message = Some("the table is too large to compare".into());
         return Ok(out);
     }
-    let key_of = |row: &[Option<String>]| -> Vec<Option<String>> { positions.iter().map(|&p| row[p].clone()).collect() };
+    let (src_types, dst_types) = (out.src_types.clone(), out.dst_types.clone());
+    let key_src = |row: &[Option<String>]| -> Vec<Option<String>> { positions.iter().map(|&p| row[p].as_ref().map(|x| canonical(&src_types[p], x))).collect() };
+    let key_dst = |row: &[Option<String>]| -> Vec<Option<String>> { positions.iter().map(|&p| row[p].as_ref().map(|x| canonical(&dst_types[p], x))).collect() };
     let mut target_by_key: HashMap<Vec<Option<String>>, usize> = HashMap::with_capacity(dst_rows.len());
     for (i, r) in dst_rows.iter().enumerate() {
-        target_by_key.insert(key_of(r), i);
+        target_by_key.insert(key_dst(r), i);
     }
     let mut matched = vec![false; dst_rows.len()];
     for r in &src_rows {
-        match target_by_key.get(&key_of(r)) {
+        match target_by_key.get(&key_src(r)) {
             None => {
                 out.insert += 1;
                 if *budget > 0 {
@@ -214,7 +198,8 @@ async fn compare_table(d: Dialect, src: &Exec, dst: &Exec, spec: &atlas_pg::Sync
             }
             Some(&i) => {
                 matched[i] = true;
-                let changed: Vec<bool> = (0..r.len()).map(|k| !positions.contains(&k) && r[k] != dst_rows[i][k]).collect();
+                let (cs, cd) = (canon_row(r, &src_types), canon_row(&dst_rows[i], &dst_types));
+                let changed: Vec<bool> = (0..r.len()).map(|k| !positions.contains(&k) && cs[k] != cd[k]).collect();
                 if changed.iter().any(|c| *c) {
                     out.update += 1;
                     if *budget > 0 {
@@ -242,6 +227,7 @@ async fn compare_table(d: Dialect, src: &Exec, dst: &Exec, spec: &atlas_pg::Sync
 #[tauri::command]
 pub async fn ext_datasync_compare(
     app: AppHandle,
+    pg: State<'_, Sessions>,
     mysql: State<'_, MysqlSessions>,
     mssql: State<'_, MssqlSessions>,
     sqlite: State<'_, SqliteSessions>,
@@ -249,11 +235,9 @@ pub async fn ext_datasync_compare(
     req: CompareRequest,
 ) -> Result<CompareSummary, DatabaseError> {
     comparisons.inner.lock().unwrap().remove(&req.compare_id);
-    let (d, src) = exec_for(&req.source_conn, &req.source_database, &req.spec.source_schema, &mysql, &mssql, &sqlite)?;
-    let (d2, dst) = exec_for(&req.target_conn, &req.target_database, &req.spec.target_schema, &mysql, &mssql, &sqlite)?;
-    if d != d2 {
-        return Err(DatabaseError::new(ErrorKind::InvalidInput, "the source and the target must be connections of the same database product"));
-    }
+    let (sp, src) = open_exec(&req.source_conn, &req.source_database, &req.spec.source_schema, &pg, &mysql, &mssql, &sqlite).await?;
+    let (dp, dst) = open_exec(&req.target_conn, &req.target_database, &req.spec.target_schema, &pg, &mysql, &mssql, &sqlite).await?;
+    let d = dp.dialect();
     let cancel = Arc::new(AtomicBool::new(false));
     register_cancel(&req.compare_id, &req.source_conn, &cancel, &mysql, &mssql, &sqlite);
     let total = req.spec.tables.len().max(1);
@@ -266,7 +250,7 @@ pub async fn ext_datasync_compare(
             break;
         }
         let _ = app.emit("datasync-progress", ProgressEvent { id: &req.compare_id, text: t.source.clone(), fraction: n as f64 / total as f64 });
-        match compare_table(d, &src, &dst, &req.spec, t, &mut budget).await {
+        match compare_table(sp, dp, &src, &dst, &req.spec, t, &mut budget).await {
             Ok(diff) => tables.push(diff),
             Err(e) => {
                 outcome = Err(e);
@@ -299,9 +283,11 @@ pub async fn ext_datasync_compare(
     Ok(summary)
 }
 
-/// Registra o pedido de parada da operação no gerenciador do produto da conexão.
+/// Registra o pedido de parada da operação: no registro comum (ids `xp_`, entre produtos) ou no gerenciador do produto da conexão.
 pub(crate) fn register_cancel(id: &str, conn: &str, flag: &Arc<AtomicBool>, mysql: &MysqlSessions, mssql: &MssqlSessions, sqlite: &SqliteSessions) {
-    if conn.starts_with("mysql_") {
+    if id.starts_with("xp_") || !matches!(Product::of_conn(conn), Product::Mysql | Product::Mssql | Product::Sqlite) {
+        register_flag(id, flag.clone());
+    } else if conn.starts_with("mysql_") {
         mysql.register_cancel(id, flag.clone());
     } else if conn.starts_with("mssql_") {
         mssql.register_cancel(id, flag.clone());
@@ -311,11 +297,12 @@ pub(crate) fn register_cancel(id: &str, conn: &str, flag: &Arc<AtomicBool>, mysq
 }
 
 pub(crate) fn unregister_cancel(id: &str, conn: &str, mysql: &MysqlSessions, mssql: &MssqlSessions, sqlite: &SqliteSessions) {
+    unregister_flag(id);
     if conn.starts_with("mysql_") {
         mysql.unregister_cancel(id);
     } else if conn.starts_with("mssql_") {
         mssql.unregister_cancel(id);
-    } else {
+    } else if conn.starts_with("sqlite_") {
         sqlite.unregister_cancel(id);
     }
 }
@@ -351,7 +338,7 @@ fn script(c: &Comparison, selection: &[TableSelection]) -> Vec<String> {
             match row.kind {
                 Kind::Insert if sel.insert => {
                     let src = row.source.as_ref().expect("insert has a source row");
-                    let values = src.iter().enumerate().map(|(k, v)| literal(d, v, &t.types[k])).collect::<Vec<_>>().join(", ");
+                    let values = src.iter().enumerate().map(|(k, v)| nliteral(d, &t.dst_types[k], v, &t.src_types[k])).collect::<Vec<_>>().join(", ");
                     let insert = format!("INSERT INTO {target} ({columns}) VALUES ({values})");
                     if t.identity && d == Dialect::Mssql {
                         out.push(format!("SET IDENTITY_INSERT {target} ON; {insert}; SET IDENTITY_INSERT {target} OFF;"));
@@ -361,14 +348,14 @@ fn script(c: &Comparison, selection: &[TableSelection]) -> Vec<String> {
                 }
                 Kind::Update if sel.update => {
                     let src = row.source.as_ref().expect("update has a source row");
-                    let sets: Vec<String> = (0..src.len()).filter(|k| !t.key_positions.contains(k)).map(|k| format!("{} = {}", d.q(&t.target_fields[k]), literal(d, &src[k], &t.types[k]))).collect();
+                    let sets: Vec<String> = (0..src.len()).filter(|k| !t.key_positions.contains(k)).map(|k| format!("{} = {}", d.q(&t.target_fields[k]), nliteral(d, &t.dst_types[k], &src[k], &t.src_types[k]))).collect();
                     if !sets.is_empty() {
-                        out.push(format!("UPDATE {target} SET {} WHERE {};", sets.join(", "), where_keys(d, &t.target_fields, &t.key_positions, &t.types, src)));
+                        out.push(format!("UPDATE {target} SET {} WHERE {};", sets.join(", "), where_keys(d, &t.target_fields, &t.key_positions, &t.src_types, &t.dst_types, src)));
                     }
                 }
                 Kind::Delete if sel.delete => {
                     let tgt = row.target.as_ref().expect("delete has a target row");
-                    del.push(format!("DELETE FROM {target} WHERE {};", where_keys(d, &t.target_fields, &t.key_positions, &t.types, tgt)));
+                    del.push(format!("DELETE FROM {target} WHERE {};", where_keys(d, &t.target_fields, &t.key_positions, &t.dst_types, &t.dst_types, tgt)));
                 }
                 _ => {}
             }
@@ -477,6 +464,7 @@ pub(crate) async fn deploy(
 #[tauri::command]
 pub async fn ext_datasync_deploy(
     app: AppHandle,
+    pg: State<'_, Sessions>,
     mysql: State<'_, MysqlSessions>,
     mssql: State<'_, MssqlSessions>,
     sqlite: State<'_, SqliteSessions>,
@@ -485,7 +473,8 @@ pub async fn ext_datasync_deploy(
 ) -> Result<DeployCounts, DatabaseError> {
     let c = comparisons.get(&req.compare_id)?;
     let statements = script(&c, &req.selection);
-    let (d, dst) = exec_for(&req.target_conn, &req.target_database, &c.target_schema, &mysql, &mssql, &sqlite)?;
+    let (dp, dst) = open_exec(&req.target_conn, &req.target_database, &c.target_schema, &pg, &mysql, &mssql, &sqlite).await?;
+    let d = dp.dialect();
     let cancel = Arc::new(AtomicBool::new(false));
     register_cancel(&req.deploy_id, &req.target_conn, &cancel, &mysql, &mssql, &sqlite);
     let (log_app, log_id) = (app.clone(), req.deploy_id.clone());

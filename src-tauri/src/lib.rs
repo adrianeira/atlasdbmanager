@@ -7,7 +7,9 @@ mod dictionary;
 mod dsync;
 mod ssync;
 mod genext;
+mod neutral;
 mod xfer;
+mod xprod;
 mod dictsrc;
 mod download;
 mod datasync;
@@ -233,6 +235,8 @@ pub fn run() {
             ssync::ext_structsync_script,
             ssync::ext_structsync_deploy,
             ssync::ext_structsync_forget,
+            xprod::ext_cancel,
+            xprod::x_transfer,
             xfer::mysql_transfer,
             xfer::mssql_transfer,
             xfer::sqlite_transfer,

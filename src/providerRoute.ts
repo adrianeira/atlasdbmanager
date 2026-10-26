@@ -66,9 +66,16 @@ const idOf = (args?: Record<string, unknown>): unknown =>
 
 export function routeCommand(cmd: string, args?: Record<string, unknown>): Routed {
   const id = idOf(args);
-  if ((cmd.startsWith("datasync_") || cmd.startsWith("structsync_")) && typeof id === "string") {
-    // Os outros bancos têm as próprias comparações (`ext_*`), escolhidas pelo prefixo do id.
-    if (PROVIDERS.some((x) => id.startsWith(x.prefix))) return { cmd: `ext_${cmd}`, args };
+  if (cmd === "pg_transfer") {
+    const r = args?.req as { sourceConn?: string; targetConn?: string } | undefined;
+    if (productOf(r?.sourceConn) !== productOf(r?.targetConn)) return { cmd: "x_transfer", args };
+  }
+  if (cmd === "pg_export_cancel" && typeof args?.exportId === "string" && args.exportId.startsWith("xp_")) return { cmd: "ext_cancel", args };
+  if (cmd.startsWith("datasync_") || cmd.startsWith("structsync_")) {
+    // Fora do PostgreSQL e entre produtos as comparações são as `ext_*`; qualquer id de um lado ou da operação diz isso.
+    const r = args?.req as { compareId?: string; sourceConn?: string; targetConn?: string } | undefined;
+    const ids = [args?.compareId, r?.compareId, r?.sourceConn, r?.targetConn];
+    if (ids.some((x) => typeof x === "string" && (x.startsWith("xp_") || PROVIDERS.some((p) => x.startsWith(p.prefix))))) return { cmd: `ext_${cmd}`, args };
   }
   if ((cmd.startsWith("monitor_") || cmd.startsWith("datagen_")) && typeof id === "string") {
     const p = PROVIDERS.find((x) => id.startsWith(x.prefix));
@@ -93,6 +100,15 @@ export function newConnectionId(provider: string, time: string): string {
 }
 
 /** O começo do id de uma operação longa (busca, exportação) que o roteador usa para achar o banco; vazio no PostgreSQL. */
+/** O produto de um id de conexão ("pg" para o PostgreSQL, que não tem prefixo). */
+const productOf = (id: unknown): string => (typeof id === "string" ? PROVIDERS.find((p) => id.startsWith(p.prefix))?.param ?? "pg" : "pg");
+
+/**
+ * O começo do id de uma operação entre duas conexões: o do produto, quando os dois lados são o mesmo, e `xp_` quando são
+ * produtos diferentes (as ferramentas entre produtos têm comandos próprios).
+ */
+export const opPrefix = (a: string | undefined | null, b: string | undefined | null): string => (productOf(a) !== productOf(b) ? "xp_" : idPrefix(a));
+
 export const idPrefix = (connId: string | undefined | null): string => PROVIDERS.find((p) => typeof connId === "string" && connId.startsWith(p.prefix))?.prefix ?? "";
 
 /** O banco de um id de conexão, no formato que as telas de SQL usam (PostgreSQL = sem valor). */

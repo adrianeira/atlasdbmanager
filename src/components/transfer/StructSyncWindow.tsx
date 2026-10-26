@@ -6,7 +6,7 @@ import {
   errorText, local, onSyncDeployProgress, onSyncLog, onSyncProgress, pg, toAtlasError,
   type DataTransferParams, type OpenScriptRequest, type StructKind, type StructObject, type StructOp, type StructPart, type StructSelection,
 } from "../../backend";
-import { idPrefix } from "../../providerRoute";
+import { opPrefix } from "../../providerRoute";
 import { useT } from "../../i18n";
 import { SmallIcon, type SmallIconName } from "../../icons";
 import { diffLines } from "../../sql/linediff";
@@ -144,7 +144,7 @@ function Wizard({ params }: { params: Params }) {
   const compare = async () => {
     setMessage(null);
     if (compareId.current) void pg.structForget(compareId.current).catch(() => undefined);
-    const id = `${idPrefix(source.connId)}${crypto.randomUUID()}`;
+    const id = `${opPrefix(source.connId, target.connId)}${crypto.randomUUID()}`;
     compareId.current = id;
     setComparing({ text: "", fraction: 0 });
     const unlisten = await onSyncProgress(id, (text, fraction) => setComparing({ text, fraction }));
@@ -201,7 +201,7 @@ function Wizard({ params }: { params: Params }) {
   const deploy = async () => {
     if (running) return;
     const statements = stmts.filter((s) => s.on).map((s) => s.sql);
-    const id = `${idPrefix(source.connId)}${crypto.randomUUID()}`;
+    const id = `${opPrefix(source.connId, target.connId)}${crypto.randomUUID()}`;
     deployId.current = id;
     setTab("log");
     setLog([]);

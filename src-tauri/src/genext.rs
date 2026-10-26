@@ -21,6 +21,7 @@ use tauri::{AppHandle, Emitter, State};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Dialect {
+    Pg,
     Mysql,
     Mssql,
     Sqlite,
@@ -34,6 +35,9 @@ pub(crate) enum Exec {
     MssqlTx(Arc<MssqlTx>),
     Sqlite(Arc<SqliteSession>),
     SqliteTx(Arc<SqliteTx>),
+    /// PostgreSQL: uma conexão exclusiva (a transação é o `BEGIN` dela).
+    Pg(Arc<atlas_pg::PgSession>),
+    PgTx(Arc<atlas_pg::PgSession>),
 }
 
 impl Exec {
@@ -45,6 +49,7 @@ impl Exec {
             Exec::MssqlTx(t) => t.execute(sql, max).await,
             Exec::Sqlite(s) => s.execute(sql, max),
             Exec::SqliteTx(t) => t.execute(sql, max),
+            Exec::Pg(s) | Exec::PgTx(s) => atlas_pg::execute(s, sql, max).await,
         }
     }
 
@@ -59,6 +64,10 @@ impl Exec {
             Exec::Mysql(s, db) => Some(Exec::MysqlTx(Arc::new(s.begin(db).await?))),
             Exec::Mssql(s, db) => Some(Exec::MssqlTx(Arc::new(s.begin(db).await?))),
             Exec::Sqlite(s) => Some(Exec::SqliteTx(Arc::new(s.begin()?))),
+            Exec::Pg(s) => {
+                atlas_pg::execute(s, "BEGIN", 1).await?;
+                Some(Exec::PgTx(s.clone()))
+            }
             _ => None,
         })
     }
@@ -69,6 +78,7 @@ impl Exec {
             Exec::Mysql(s, _) => s.table_detail(schema, table).await,
             Exec::Mssql(s, db) => s.table_detail(db, schema, table).await,
             Exec::Sqlite(s) => s.table_detail(table),
+            Exec::Pg(s) | Exec::PgTx(s) => atlas_pg::table_detail(s, schema, table).await,
             Exec::MysqlTx(_) | Exec::MssqlTx(_) | Exec::SqliteTx(_) => Err(DatabaseError::new(ErrorKind::Internal, "table_detail needs a session")),
         }
     }
@@ -79,6 +89,7 @@ impl Exec {
             Exec::Mysql(s, _) => s.list_objects(schema).await,
             Exec::Mssql(s, db) => s.list_objects(db, schema).await,
             Exec::Sqlite(s) => s.list_objects(),
+            Exec::Pg(s) | Exec::PgTx(s) => atlas_pg::list_objects(s, schema).await,
             _ => Err(DatabaseError::new(ErrorKind::Internal, "objects needs a session")),
         }
     }
@@ -88,6 +99,7 @@ impl Exec {
             Exec::MysqlTx(t) => t.finish(commit).await,
             Exec::MssqlTx(t) => t.finish(commit).await,
             Exec::SqliteTx(t) => t.finish(commit),
+            Exec::PgTx(s) => atlas_pg::execute(s, if commit { "COMMIT" } else { "ROLLBACK" }, 1).await.map(|_| ()),
             _ => Ok(()),
         }
     }
@@ -98,7 +110,7 @@ impl Dialect {
         match self {
             Dialect::Mysql => format!("`{}`", name.replace('`', "``")),
             Dialect::Mssql => format!("[{}]", name.replace(']', "]]")),
-            Dialect::Sqlite => format!("\"{}\"", name.replace('"', "\"\"")),
+            Dialect::Sqlite | Dialect::Pg => format!("\"{}\"", name.replace('"', "\"\"")),
         }
     }
 
@@ -115,14 +127,14 @@ impl Dialect {
         match self {
             Dialect::Mysql => format!("'{}'", v.replace('\\', "\\\\").replace('\'', "''")),
             Dialect::Mssql => format!("N'{}'", v.replace('\'', "''")),
-            Dialect::Sqlite => format!("'{}'", v.replace('\'', "''")),
+            Dialect::Sqlite | Dialect::Pg => format!("'{}'", v.replace('\'', "''")),
         }
     }
 
     pub(crate) fn literal(self, v: &Option<String>, g: &Generator) -> String {
         match (v, g) {
             (None, _) => "NULL".into(),
-            // Nenhum dos três tem `true`/`false` de verdade para todos os tipos: 1 e 0 valem em todos.
+            (Some(t), Generator::Boolean { .. }) if self == Dialect::Pg => if t == "true" { "true" } else { "false" }.into(),
             (Some(t), Generator::Boolean { .. }) => if t == "true" { "1" } else { "0" }.into(),
             (Some(t), _) => self.text(t),
         }
@@ -431,6 +443,7 @@ async fn describe(dialect: Dialect, exec: &Exec, schema: &str) -> Result<Vec<Gen
         Dialect::Mysql => raw_mysql(exec, schema).await?,
         Dialect::Mssql => raw_mssql(exec, schema).await?,
         Dialect::Sqlite => raw_sqlite(exec).await?,
+        Dialect::Pg => return Err(DatabaseError::new(ErrorKind::UnsupportedFeature, "PostgreSQL uses its own data generation")),
     };
     let mut refs: HashMap<(String, String), (String, String)> = HashMap::new();
     let mut deps: HashMap<String, std::collections::HashSet<String>> = HashMap::new();
@@ -466,7 +479,7 @@ async fn prepare(dialect: Dialect, exec: &Exec, schema: &str, table: &GenTableSp
                 let big = match dialect {
                     Dialect::Mysql => format!("CAST(MAX({}) AS SIGNED)", dialect.q(&c.name)),
                     Dialect::Mssql => format!("CAST(MAX({}) AS bigint)", dialect.q(&c.name)),
-                    Dialect::Sqlite => format!("MAX({})", dialect.q(&c.name)),
+                    Dialect::Sqlite | Dialect::Pg => format!("MAX({})", dialect.q(&c.name)),
                 };
                 let rows = exec.rows(&format!("SELECT COALESCE({big}, 0) + 1 FROM {}", dialect.target(schema, &table.name)), 1).await?;
                 st.next = rows.first().map(|r| cell(r, 0)).and_then(|v| v.parse::<i64>().ok()).unwrap_or(1);
@@ -476,6 +489,7 @@ async fn prepare(dialect: Dialect, exec: &Exec, schema: &str, table: &GenTableSp
                 let sql = match dialect {
                     Dialect::Mysql => format!("SELECT DISTINCT CAST({col} AS CHAR) FROM {} WHERE {col} IS NOT NULL LIMIT 10000", dialect.target(schema, t)),
                     Dialect::Mssql => format!("SELECT DISTINCT TOP 10000 CAST({col} AS nvarchar(4000)) FROM {} WHERE {col} IS NOT NULL", dialect.target(schema, t)),
+                    Dialect::Pg => format!("SELECT DISTINCT CAST({col} AS text) FROM {} WHERE {col} IS NOT NULL LIMIT 10000", dialect.target(schema, t)),
                     Dialect::Sqlite => format!("SELECT DISTINCT CAST({col} AS TEXT) FROM {} WHERE {col} IS NOT NULL LIMIT 10000", dialect.target(schema, t)),
                 };
                 st.pool = exec.rows(&sql, 10_000).await?.iter().map(|r| cell(r, 0)).collect();
@@ -580,7 +594,7 @@ async fn run(dialect: Dialect, exec: &Exec, spec: &GenSpec, hooks: GenHooks<'_>)
                 match dialect {
                     Dialect::Mssql => format!("INSERT INTO {target} DEFAULT VALUES"),
                     Dialect::Mysql => format!("INSERT INTO {target} () VALUES ()"),
-                    Dialect::Sqlite => format!("INSERT INTO {target} DEFAULT VALUES"),
+                    Dialect::Sqlite | Dialect::Pg => format!("INSERT INTO {target} DEFAULT VALUES"),
                 }
             } else {
                 format!("INSERT INTO {target} ({columns}) VALUES {}", rows.join(", "))

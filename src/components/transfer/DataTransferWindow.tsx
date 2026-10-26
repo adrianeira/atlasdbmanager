@@ -5,7 +5,7 @@ import {
   errorText, local, onExportProgress, onTransferLog, onTransferProgress, pg, toAtlasError,
   type DataTransferParams, type TransferCounts,
 } from "../../backend";
-import { idPrefix } from "../../providerRoute";
+import { opPrefix } from "../../providerRoute";
 import { useT } from "../../i18n";
 import { SmallIcon } from "../../icons";
 import { MessageDialog } from "../MessageDialog";
@@ -194,7 +194,7 @@ function Wizard({ params }: { params: Params }) {
     startedAt.current = performance.now();
     setRunning(true);
     // O prefixo da conexão leva o botão Parar (exportCancel) ao banco certo.
-    const id = `${idPrefix(source.connId)}${crypto.randomUUID()}`;
+    const id = `${opPrefix(source.connId, target.connId)}${crypto.randomUUID()}`;
     transferId.current = id;
     const spec = buildSpec({ sourceSchema: source.schema, targetSchema: target.schema, items, selected, adv, dropBefore, continueOnError, options });
     const add = (text: string, error = false) => setLog((l) => [...l, { text, error }]);

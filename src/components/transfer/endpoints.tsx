@@ -155,8 +155,8 @@ export function useEndpoints(params: DataTransferParams, opts: { allowFile: bool
   };
 
   const connItems = conns.map((c) => ({ value: c.id, label: c.name }));
-  // A origem e o destino de uma transferência ou comparação são do mesmo produto (PostgreSQL com PostgreSQL, e assim por diante).
-  const targetItems = conns.filter((c) => c.provider === sourceConn?.provider).map((c) => ({ value: c.id, label: c.name }));
+  // O destino pode ser de outro produto: a estrutura e os valores são traduzidos.
+  const targetItems = connItems;
   const connIcon = (c?: DataTransferConn) => (c ? <ProviderIcon provider={c.provider as never} open={c.open} /> : <SmallIcon name="myConnections" />);
 
   const info = (c?: DataTransferConn) => (
