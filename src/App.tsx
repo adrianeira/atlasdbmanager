@@ -49,6 +49,7 @@ import { hasMenuFilter, hiddenKeys, menuForProvider } from "./sqliteMenu";
 import { createTableStatementsSqlite } from "./sql/sqliteDdl";
 import { createTableStatementsMssql, q as quoteMssql, renameStatementMssql } from "./sql/mssqlDdl";
 import { q as quoteMysql, renameStatementMysql } from "./sql/mysqlDdl";
+import { q as quoteFb, createTableStatementsFirebird, norm as normFb } from "./sql/firebirdDdl";
 import type { SavedTable } from "./tabWindow";
 import type { SnapshotRef } from "./tabState";
 import { viewKeyOf } from "./tableView";
@@ -1085,7 +1086,7 @@ export default function App() {
 
   const newFunction = () => {
     if (!ctx.connection || !ctx.database || !ctx.schema) return;
-    if (ctx.connection.provider === "mysql" || ctx.connection.provider === "sqlserver") {
+    if (ctx.connection.provider === "mysql" || ctx.connection.provider === "sqlserver" || ctx.connection.provider === "firebird") {
       const title = objectTitle(t("des.untitled"), "tb.function");
       openTab({ kind: "routineDesigner", title, windowTitle: title, icon: "function", connectionId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name });
       return;
@@ -1116,7 +1117,7 @@ export default function App() {
     if (hit.kind === "function") {
       const title = objectTitle(hit.name, "tb.function", c);
       const identity = hit.identity ?? "";
-      if (conn.provider === "sqlserver" || conn.provider === "mysql") {
+      if (conn.provider === "sqlserver" || conn.provider === "mysql" || conn.provider === "firebird") {
         openTab({ kind: "routineDesigner", connectionId: connId, database, schema: schemaName, object: hit.name, title, windowTitle: title, icon: "function" });
         return;
       }
@@ -1324,7 +1325,7 @@ export default function App() {
       } else if (cat === "view" && kind === "design") {
         const title = objectTitle(name, "tb.view", c);
         openTab({ ...base, kind: "viewDesigner", title, windowTitle: title, icon: "view" }, `${t("act.designView")} - ${name}`);
-      } else if (cat === "function" && c.connection?.live && (c.connection.provider === "sqlserver" || c.connection.provider === "mysql")) {
+      } else if (cat === "function" && c.connection?.live && (c.connection.provider === "sqlserver" || c.connection.provider === "mysql" || c.connection.provider === "firebird")) {
         // SQL Server e MySQL: o designer de rotinas (texto do procedimento ou função).
         const routine = c.schema?.objects.function?.find((o) => o.name === name)?.fnName ?? name;
         const title = objectTitle(routine, "tb.function", c);
@@ -2073,7 +2074,7 @@ export default function App() {
       const dbName = c.database.name;
       const scName = c.schema.name;
       const name = c.objectName;
-      const target = conn.provider === "mysql" ? `${quoteMysql(scName)}.${quoteMysql(name)}` : `${quoteIdent(scName)}.${quoteIdent(name)}`;
+      const target = conn.provider === "firebird" ? quoteFb(name) : conn.provider === "mysql" ? `${quoteMysql(scName)}.${quoteMysql(name)}` : `${quoteIdent(scName)}.${quoteIdent(name)}`;
       const foreign = c.schema?.objects.table?.find((o) => o.name === name)?.dataType === "foreign";
       const scope = { connId: conn.id, database: dbName, schema: scName, refresh: "schema" as const };
       // SQLite: o CREATE da cópia sai da estrutura lida do arquivo (colunas, chaves, UNIQUE, CHECK e índices com nome novo).
@@ -2118,7 +2119,30 @@ export default function App() {
           }
         })();
       });
-      const duplicate = (withData: boolean) => conn.provider === "mysql" ? askName(t("sub.duplicateTable"), t("msg.copyTableName"), `${name}_copy`, (copy) => askDdl({
+      // Firebird: o CREATE da cópia sai da estrutura lida do servidor; os nomes de restrições e índices são do banco todo, então ganham o da cópia.
+      const duplicateFirebird = (withData: boolean) => askName(t("sub.duplicateTable"), t("msg.copyTableName"), `${name}_copy`, (copy0) => {
+        void (async () => {
+          try {
+            const copy = normFb(copy0);
+            const obj = tableFromServer({ name }, await pg.tableDetail(conn.id, dbName, scName, name));
+            const cols = obj.columns ?? [];
+            obj.columns = cols.map((col) => ({ ...col, autoInc: !!col.identity, identity: undefined }));
+            obj.foreignKeys = (obj.foreignKeys ?? []).map((f) => ({ ...f, name: `${copy}_${f.name}` }));
+            obj.uniques = (obj.uniques ?? []).map((u) => ({ ...u, name: `${copy}_${u.name}` }));
+            obj.checks = (obj.checks ?? []).map((k) => ({ ...k, name: `${copy}_${k.name}` }));
+            obj.indexes = (obj.indexes ?? []).map((i) => ({ ...i, name: `${copy}_${i.name}` }));
+            const statements = createTableStatementsFirebird(obj, conn.serverVersionNum ?? 0, copy);
+            if (withData) {
+              const list = cols.filter((col) => !col.generated).map((col) => quoteFb(col.name)).join(", ");
+              statements.push(`INSERT INTO ${quoteFb(copy)} (${list}) SELECT ${list} FROM ${quoteFb(name)}`);
+            }
+            askDdl({ ...scope, title: t("sub.duplicateTable"), statements: statements.map((x) => `${x};`) });
+          } catch (e) {
+            showError(t("sub.duplicateTable"), e);
+          }
+        })();
+      });
+      const duplicate = (withData: boolean) => conn.provider === "firebird" ? duplicateFirebird(withData) : conn.provider === "mysql" ? askName(t("sub.duplicateTable"), t("msg.copyTableName"), `${name}_copy`, (copy) => askDdl({
         ...scope, title: t("sub.duplicateTable"),
         statements: [
           `CREATE TABLE ${quoteMysql(scName)}.${quoteMysql(copy)} LIKE ${target};`,
@@ -2162,7 +2186,7 @@ export default function App() {
           ...scope, title: t("cmd.renameTable"), statements: conn.provider === "mysql" ? [`${renameStatementMysql(scName, name, newName)};`] : conn.provider === "sqlserver" ? [`${renameStatementMssql(scName, name, newName)};`] : [`ALTER TABLE ${target} RENAME TO ${quoteIdent(newName)};`],
         })) : undefined),
         sep,
-        item("cmd.newQuery", () => newQuery(c.connection?.provider === "sqlserver" ? `SELECT TOP 100 * FROM ${target};` : `SELECT * FROM ${target} LIMIT 100;`)),
+        item("cmd.newQuery", () => newQuery(c.connection?.provider === "sqlserver" ? `SELECT TOP 100 * FROM ${target};` : c.connection?.provider === "firebird" ? `SELECT FIRST 100 * FROM ${target};` : `SELECT * FROM ${target} LIMIT 100;`)),
         sep,
         item("cmd.refresh", live ? () => refreshNode(node) : undefined),
         item("cmd.objectInfo", () => patchLayout({ infoVisible: true })),
@@ -2347,7 +2371,7 @@ export default function App() {
         item("act.designFunction", () => openObjects("design", [fn.name], "function", c)),
         item("act.newFunction", newFunction),
         item("act.deleteFunction", live ? () => askDdl({
-          ...scope, title: t("act.deleteFunction"), message: confirmDelete(fn.procedure ? "procedure" : "function", fn.name), statements: c.connection?.provider === "mysql" ? [`DROP ${fn.procedure ? "PROCEDURE" : "FUNCTION"} ${quoteMysql(scName)}.${quoteMysql(fn.fnName ?? fn.name)};`] : c.connection?.provider === "sqlserver" ? [`DROP ${fn.procedure ? "PROCEDURE" : "FUNCTION"} ${quoteMssql(scName)}.${quoteMssql(fn.fnName ?? fn.name)};`] : [dropFuncSql(scName, fn.fnName ?? fn.name, fn.args ?? "", !!fn.procedure)], danger: true, confirmText: prod ? fn.fnName : undefined,
+          ...scope, title: t("act.deleteFunction"), message: confirmDelete(fn.procedure ? "procedure" : "function", fn.name), statements: c.connection?.provider === "firebird" ? [`DROP ${fn.procedure ? "PROCEDURE" : "FUNCTION"} ${quoteFb(fn.fnName ?? fn.name)};`] : c.connection?.provider === "mysql" ? [`DROP ${fn.procedure ? "PROCEDURE" : "FUNCTION"} ${quoteMysql(scName)}.${quoteMysql(fn.fnName ?? fn.name)};`] : c.connection?.provider === "sqlserver" ? [`DROP ${fn.procedure ? "PROCEDURE" : "FUNCTION"} ${quoteMssql(scName)}.${quoteMssql(fn.fnName ?? fn.name)};`] : [dropFuncSql(scName, fn.fnName ?? fn.name, fn.args ?? "", !!fn.procedure)], danger: true, confirmText: prod ? fn.fnName : undefined,
         }) : undefined),
         sep,
         item("cmd.copyName", () => { void navigator.clipboard?.writeText(fn.fnName ?? fn.name).catch(() => undefined); }),
@@ -2399,7 +2423,7 @@ export default function App() {
     if (node.kind === "object" && node.category === "view" && c.connection && c.database && c.schema && c.objectName) {
       const scName = c.schema.name;
       const name = c.objectName;
-      const target = c.connection?.provider === "mysql" ? `${quoteMysql(scName)}.${quoteMysql(name)}` : `${quoteIdent(scName)}.${quoteIdent(name)}`;
+      const target = c.connection?.provider === "firebird" ? quoteFb(name) : c.connection?.provider === "mysql" ? `${quoteMysql(scName)}.${quoteMysql(name)}` : `${quoteIdent(scName)}.${quoteIdent(name)}`;
       const scope = { connId: c.connection.id, database: c.database.name, schema: scName, refresh: "schema" as const };
       items.push(
         item("act.openView", () => openObjects("open", [name], "view", c)),
@@ -2416,7 +2440,7 @@ export default function App() {
           ...scope, title: t("cmd.renameView"), statements: c.connection?.provider === "mysql" ? [`${renameStatementMysql(scName, name, newName)};`] : c.connection?.provider === "sqlserver" ? [`${renameStatementMssql(scName, name, newName)};`] : [`ALTER VIEW ${target} RENAME TO ${quoteIdent(newName)};`],
         })) : undefined),
         sep,
-        item("cmd.newQuery", () => newQuery(c.connection?.provider === "sqlserver" ? `SELECT TOP 100 * FROM ${target};` : `SELECT * FROM ${target} LIMIT 100;`)),
+        item("cmd.newQuery", () => newQuery(c.connection?.provider === "sqlserver" ? `SELECT TOP 100 * FROM ${target};` : c.connection?.provider === "firebird" ? `SELECT FIRST 100 * FROM ${target};` : `SELECT * FROM ${target} LIMIT 100;`)),
         sep,
         item("cmd.refresh", live ? () => refreshNode(node) : undefined),
         item("cmd.objectInfo", () => patchLayout({ infoVisible: true })),
@@ -2629,6 +2653,7 @@ export default function App() {
     monitorSqlserver: monitorCommand("monitorSqlserver", "mon.sqlserver", "sqlserver", "SQL Server"),
     monitorMysql: monitorCommand("monitorMysql", "mon.mysql", "mysql", "MySQL"),
     monitorSqlite: monitorCommand("monitorSqlite", "mon.sqlite", "sqlite", "SQLite"),
+    monitorFirebird: monitorCommand("monitorFirebird", "mon.firebird", "firebird", "Firebird"),
     options: { id: "options", label: "cmd.options", run: () => setDialog({ kind: "options" }) },
     nextTab: { id: "nextTab", label: "cmd.nextTab", shortcut: "Ctrl+Tab", run: () => cycleTab(1) },
     previousTab: { id: "previousTab", label: "cmd.previousTab", shortcut: "Ctrl+Shift+Tab", run: () => cycleTab(-1) },
@@ -2700,7 +2725,7 @@ export default function App() {
   const tableMenu: MenuDef = { label: "menu.table", items: entries("addRecord", "deleteRecord", "-", "applyChanges", "discardChanges", "-", "refreshData") };
   const tailMenus: MenuDef[] = [
     { label: "menu.favorites", items: entries("addFavorite", "manageFavorites") },
-    { label: "menu.tools", items: entries("dataTransfer", "dataGen", "dataDictionary", "dataSync", "structureSync", "-", "console", sub("mon.title", "monitorPostgres", "monitorSqlserver", "monitorMysql", "monitorSqlite"), "-", "findInDatabase", "-", "scheduledTasks", "historyLog", "-", "options") },
+    { label: "menu.tools", items: entries("dataTransfer", "dataGen", "dataDictionary", "dataSync", "structureSync", "-", "console", sub("mon.title", "monitorPostgres", "monitorSqlserver", "monitorMysql", "monitorSqlite", "monitorFirebird"), "-", "findInDatabase", "-", "scheduledTasks", "historyLog", "-", "options") },
     { label: "menu.window", items: entries("nextTab", "previousTab", "-", "closeTab", "closeAllTabs") },
     { label: "menu.help", items: entries("documentation", "-", "about") },
   ];
@@ -2895,7 +2920,7 @@ export default function App() {
   const routineBackends = useRef<Record<string, RoutineBackend>>({});
   const routineBackendFor = (tab: DocTab, conn: ConnectionMock): RoutineBackend => {
     const db = tab.database ?? "";
-    const mysql = conn.provider === "mysql";
+    const mysql = conn.provider === "mysql" || conn.provider === "firebird";
     return (routineBackends.current[tab.id] ??= {
       loadDefinition: async (name) => {
         const def = await pg.routineDefinition(conn.id, db, tab.schema ?? "", name);
@@ -3281,10 +3306,11 @@ export default function App() {
       const completion: Record<string, string[]> = {};
       for (const tb of lookupTable(tab).tables) completion[tb.name] = (tb.columns ?? []).map((c) => c.name);
       const mysqlRoutine = conn?.provider === "mysql";
+      const fbRoutine = conn?.provider === "firebird";
       return (
         <RoutineDesignerDoc
-          dialect={mysqlRoutine ? "mysql" : "mssql"}
-          schema={tab.schema ?? (mysqlRoutine ? tab.database ?? "" : "dbo")}
+          dialect={fbRoutine ? "firebird" : mysqlRoutine ? "mysql" : "mssql"}
+          schema={tab.schema ?? (mysqlRoutine ? tab.database ?? "" : fbRoutine ? "main" : "dbo")}
           routineName={tab.object}
           active={isActive}
           completionSchema={completion}

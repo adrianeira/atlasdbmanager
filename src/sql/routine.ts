@@ -1,9 +1,16 @@
-export type RoutineDialect = "mssql" | "mysql";
+export type RoutineDialect = "mssql" | "mysql" | "firebird";
 
-const q = (d: RoutineDialect, name: string) => (d === "mssql" ? `[${name.replace(/]/g, "]]")}]` : `\`${name.replace(/`/g, "``")}\``);
+const q = (d: RoutineDialect, name: string) => (d === "mssql" ? `[${name.replace(/]/g, "]]")}]` : d === "firebird" ? `"${name.replace(/"/g, '""')}"` : `\`${name.replace(/`/g, "``")}\``);
 
 /** O modelo de uma rotina nova. */
 export function routineTemplate(dialect: RoutineDialect, schema: string): string {
+  if (dialect === "firebird") return `CREATE OR ALTER PROCEDURE "NEW_PROCEDURE"
+RETURNS (X INTEGER)
+AS
+BEGIN
+  X = 1;
+  SUSPEND;
+END`;
   return dialect === "mssql"
     ? `CREATE OR ALTER PROCEDURE ${q(dialect, schema)}.[new_procedure]\nAS\nBEGIN\n  SET NOCOUNT ON;\n  SELECT 1 AS x;\nEND`
     : `CREATE PROCEDURE ${q(dialect, schema)}.\`new_procedure\`()\nBEGIN\n  SELECT 1 AS x;\nEND`;
@@ -25,6 +32,7 @@ const kindOf = (text: string): "PROCEDURE" | "FUNCTION" => (/^\s*(?:--[^\n]*\n|\
  */
 export function routineSaveScript(dialect: RoutineDialect, text: string): string {
   const body = text.trim().replace(/;+\s*$/, "");
+  if (dialect === "firebird") return body.replace(/^(\s*CREATE)\s+(?:OR\s+ALTER\s+)?(PROCEDURE|FUNCTION)\b/i, "$1 OR ALTER $2");
   if (dialect === "mssql") return body.replace(/^(\s*CREATE)\s+(PROC|PROCEDURE|FUNCTION)\b/i, "$1 OR ALTER $2");
   const name = routineName(text) ?? "";
   return `DROP ${kindOf(text)} IF EXISTS ${q(dialect, name)};\n${body};`;

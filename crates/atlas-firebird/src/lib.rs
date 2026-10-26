@@ -8,10 +8,21 @@ use serde::Deserialize;
 use std::sync::Mutex;
 use std::time::Instant;
 
+pub mod console;
+mod dump;
+mod extra;
+pub mod find;
+pub mod import;
 pub mod meta;
+mod monitor;
 pub mod split;
 mod values;
 
+pub use console::{Completion as ConsoleCompletion, ConsoleOptions, ConsoleOutput, is_complete as console_is_complete};
+pub use dump::{DumpPlan, DumpTable, literal};
+pub use extra::{DataProfile, FkLabels};
+pub use find::{FindDataResult, FindOptions, FindResult};
+pub use import::{Feed as ImportFeed, Hooks as ImportHooks, ImportMode, ImportSpec, ImportStats, TargetColumn, declared_type};
 pub use split::{Piece, split_statements};
 pub use values::type_name;
 
@@ -395,6 +406,97 @@ impl FirebirdSession {
 
     pub fn table_detail(&self, table: &str) -> Result<atlas_core::TableDetail, DatabaseError> {
         self.with(|c| meta::table_detail_on(c, table))
+    }
+
+    pub fn data_profile(&self, table: &str, columns: &[String], order_by: &[OrderBy], filter: Option<&TableFilter>, limit: Option<u64>) -> Result<DataProfile, DatabaseError> {
+        self.with(|c| extra::data_profile_on(c, table, columns, order_by, filter, limit))
+    }
+
+    pub fn table_profile(&self, table: &str) -> Result<atlas_core::TableProfile, DatabaseError> {
+        self.with(|c| extra::table_profile_on(c, table))
+    }
+
+    pub fn schema_diagram(&self) -> Result<atlas_core::SchemaDiagram, DatabaseError> {
+        self.with(extra::schema_diagram_on)
+    }
+
+    pub fn fk_labels(&self, table: &str, key_column: &str, keys: &[String]) -> Result<FkLabels, DatabaseError> {
+        self.with(|c| extra::fk_labels_on(c, table, key_column, keys))
+    }
+
+    pub fn find(&self, options: &FindOptions) -> Result<FindResult, DatabaseError> {
+        self.with(|c| find::find_on(c, options))
+    }
+
+    /// Procura nos dados numa conexão própria; `cancelled` é consultado a cada tabela.
+    pub fn find_data(&self, options: &FindOptions, cancelled: &(dyn Fn() -> bool + Sync)) -> Result<FindDataResult, DatabaseError> {
+        find::find_data_at(&self.target, options, cancelled)
+    }
+
+    /// Os comandos que recriam as tabelas, views e rotinas pedidos (`None` = todos) e os dados a copiar; `clean` põe os `DROP` antes.
+    pub fn dump_plan(&self, tables: Option<&[String]>, views: Option<&[String]>, functions: Option<&[String]>, clean: bool) -> Result<DumpPlan, DatabaseError> {
+        self.with(|c| dump::plan_on(c, tables, views, functions, clean))
+    }
+
+    /// Executa um script (o dump ou um backup) comando por comando, numa conexão própria: cada DDL grava na hora e os `INSERT` seguidos
+    /// vão numa transação só. Um `DROP` que falha (o objeto não existe) só é registrado. Devolve quantos comandos rodaram.
+    pub fn run_script(&self, text: &str, log: &mut dyn FnMut(String)) -> Result<usize, DatabaseError> {
+        let mut conn = self.dedicated()?;
+        let mut in_tx = false;
+        let mut done = 0usize;
+        for piece in split_statements(text) {
+            let first = split::first_word(&piece.sql);
+            if first.is_empty() {
+                continue;
+            }
+            let dml = matches!(first.as_str(), "INSERT" | "UPDATE" | "DELETE");
+            if dml && !in_tx {
+                conn.begin_transaction().map_err(map_err)?;
+                in_tx = true;
+            } else if !dml && in_tx {
+                conn.commit().map_err(map_err)?;
+                in_tx = false;
+            }
+            let drop_like = first == "DROP" || split::words(&piece.sql, 4).join(" ").ends_with("DROP CONSTRAINT");
+            match conn.execute(&piece.sql, ()) {
+                Ok(_) => done += 1,
+                Err(e) if drop_like => log(format!("skipped: {}", map_err(e).message)),
+                Err(e) => {
+                    if in_tx {
+                        let _ = conn.rollback();
+                    }
+                    let mut err = map_err(e);
+                    err.detail = Some(piece.sql.chars().take(200).collect());
+                    return Err(err);
+                }
+            }
+        }
+        if in_tx {
+            conn.commit().map_err(map_err)?;
+        }
+        Ok(done)
+    }
+
+    /// Grava as linhas de uma importação, numa conexão própria ao banco e numa transação só.
+    pub fn import(&self, spec: &ImportSpec, feed: &mut dyn FnMut() -> ImportFeed, hooks: ImportHooks<'_>) -> Result<ImportStats, DatabaseError> {
+        let mut conn = self.dedicated()?;
+        import::run(&mut conn, self.version_num >= 3_000_000, spec, feed, hooks)
+    }
+
+    pub fn console_run(&self, input: &str, options: ConsoleOptions) -> Result<ConsoleOutput, DatabaseError> {
+        self.with(|c| Ok(console::run_on(c, input, options)))
+    }
+
+    pub fn console_complete(&self, text: &str) -> Result<ConsoleCompletion, DatabaseError> {
+        self.with(|c| Ok(console::complete_on(c, text)))
+    }
+
+    pub fn console_prompt(&self) -> Result<String, DatabaseError> {
+        self.with(console::prompt)
+    }
+
+    pub fn routine_definition(&self, name: &str) -> Result<String, DatabaseError> {
+        self.with(|c| meta::routine_definition_on(c, name))
     }
 
     pub fn view_detail(&self, view: &str) -> Result<atlas_core::ViewDetail, DatabaseError> {

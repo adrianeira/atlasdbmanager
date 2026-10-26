@@ -73,6 +73,60 @@ fn has_body(w: &[String]) -> bool {
     matches!(w.get(i).map(String::as_str), Some("TRIGGER" | "PROCEDURE" | "FUNCTION" | "PACKAGE"))
 }
 
+/// O texto termina dentro do corpo (`BEGIN ... END`) de um procedimento, gatilho ou `EXECUTE BLOCK`: o `;` ainda não fecha o comando.
+pub fn is_open_body(sql: &str) -> bool {
+    let chars: Vec<char> = sql.chars().collect();
+    let mut i = 0;
+    let mut depth: i32 = 0;
+    let mut body: Option<bool> = None;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '\'' || c == '"' {
+            i += 1;
+            while i < chars.len() {
+                if chars[i] == c {
+                    if chars.get(i + 1) == Some(&c) {
+                        i += 2;
+                        continue;
+                    }
+                    break;
+                }
+                i += 1;
+            }
+            i += 1;
+        } else if c == '-' && chars.get(i + 1) == Some(&'-') {
+            while i < chars.len() && chars[i] != '\n' {
+                i += 1;
+            }
+        } else if c == '/' && chars.get(i + 1) == Some(&'*') {
+            i += 2;
+            while i < chars.len() && !(chars[i] == '*' && chars.get(i + 1) == Some(&'/')) {
+                i += 1;
+            }
+            i += 2;
+        } else if is_word(c) && (i == 0 || !is_word(chars[i - 1])) {
+            let ws = i;
+            while i < chars.len() && is_word(chars[i]) {
+                i += 1;
+            }
+            let word: String = chars[ws..i].iter().collect::<String>().to_uppercase();
+            if body.is_none() {
+                body = Some(has_body(&words(sql, 6)));
+            }
+            if body == Some(true) {
+                match word.as_str() {
+                    "BEGIN" | "CASE" => depth += 1,
+                    "END" => depth -= 1,
+                    _ => {}
+                }
+            }
+        } else {
+            i += 1;
+        }
+    }
+    body == Some(true) && depth > 0
+}
+
 /// Divide `sql` em comandos. Sem `;` final o último comando também entra; comandos vazios são descartados.
 pub fn split_statements(sql: &str) -> Vec<Piece> {
     let chars: Vec<char> = sql.chars().collect();

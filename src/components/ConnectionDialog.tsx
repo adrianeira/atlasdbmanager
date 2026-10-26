@@ -3,7 +3,7 @@ import type { MessageKey } from "../i18n";
 import { useT } from "../i18n";
 import { PROVIDER_STYLE, ProviderIcon, ProviderTile, SmallIcon } from "../icons";
 import type { ConnectionMock, ProviderId } from "../model";
-import { chooseExportPath, chooseOpenFile, createSqliteFile, errorText, isDesktop, pg, toAtlasError, type ConnectionParams, type SslMode } from "../backend";
+import { chooseExportPath, chooseOpenFile, createFirebirdDatabase, createSqliteFile, errorText, isDesktop, pg, toAtlasError, type ConnectionParams, type SslMode } from "../backend";
 import { formatConnectionUri, parseConnectionUri } from "../connectionUri";
 
 /* ---------- Tipos de conexão ---------- */
@@ -441,7 +441,31 @@ export function ConnectionDialog({ editing, recentProviders, knownPassword = "",
         <>
           {row("conn.host", text("host"))}
           {row("conn.port", text("port", { width: 48 }))}
-          {row("conn.initialDb", form.provider === "firebird" ? browse("initialDatabase", false, () => { void chooseOpenFile(["fdb", "gdb"]).then((f) => { if (f) set("initialDatabase", f); }); }, "conn.pickFile") : text("initialDatabase"))}
+          {row("conn.initialDb", form.provider === "firebird" ? (
+            <div className="field-with-button">
+              {text("initialDatabase")}
+              <button type="button" className="btn btn-ellipsis" title={t("conn.pickFile")} onClick={() => { void chooseOpenFile(["fdb", "gdb"]).then((f) => { if (f) set("initialDatabase", f); }); }}>…</button>
+              <button
+                type="button"
+                className="btn"
+                title={t("conn.newFbHint")}
+                onClick={() => {
+                  // Servidor na própria máquina: escolhe onde gravar; em outro servidor vale o caminho digitado (do lado dele).
+                  const local = /^(localhost|127\.0\.0\.1|::1)$/i.test(form.host.trim());
+                  void (local ? chooseExportPath("novo.fdb", ["fdb"]) : Promise.resolve(form.initialDatabase.trim() || null))
+                    .then(async (f) => {
+                      if (!f) return;
+                      await createFirebirdDatabase({ ...formToParams(form, knownPassword), database: f }, editing?.id);
+                      set("initialDatabase", f);
+                      setTest({ kind: "idle" });
+                    })
+                    .catch((e) => setTest({ kind: "fail", message: errorText(toAtlasError(e)).replace(/\n/g, " — ") }));
+                }}
+              >
+                {t("conn.newFile")}
+              </button>
+            </div>
+          ) : text("initialDatabase"))}
           {row("conn.user", text("user", { width: 200 }))}
           {row("conn.password", (
             <input

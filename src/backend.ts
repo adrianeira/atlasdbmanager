@@ -1230,6 +1230,9 @@ export async function onExportProgress(exportId: string, cb: (rows: number) => v
 /** Cria um arquivo SQLite novo e vazio. */
 export const createSqliteFile = (path: string) => call<void>("sqlite_create_file", { path });
 
+/** Cria um banco Firebird novo no servidor da conexão (o caminho vale no servidor). */
+export const createFirebirdDatabase = (params: ConnectionParams, profileId?: string) => call<void>("firebird_create_database", { params, profileId: profileId ?? null });
+
 /** Janela nativa "Salvar como". `null` se o usuário cancelar. */
 export async function chooseExportPath(defaultName: string, extensions: string[]): Promise<string | null> {
   // Só em desenvolvimento: testes automatizados informam o arquivo sem abrir a janela nativa.

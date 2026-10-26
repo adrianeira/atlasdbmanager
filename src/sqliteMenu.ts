@@ -20,7 +20,7 @@ const NOT_IN_MYSQL = new Set<MessageKey>([
 ]);
 
 /** O Firebird (até a versão 4) não tem schemas; começa com o que o SQLite esconde e ganha os itens conforme eles passam a existir. */
-const NOT_IN_FIREBIRD = new Set<MessageKey>([...NOT_IN_SQLITE]);
+const NOT_IN_FIREBIRD = new Set<MessageKey>([...NOT_IN_SQLITE, "cmd.renameTable", "cmd.renameView"]);
 
 const SETS: Record<string, Set<MessageKey>> = { sqlite: NOT_IN_SQLITE, sqlserver: NOT_IN_MSSQL, mysql: NOT_IN_MYSQL, firebird: NOT_IN_FIREBIRD };
 
