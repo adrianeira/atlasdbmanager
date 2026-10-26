@@ -1,13 +1,14 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MenuEntry } from "../../commands";
 import { errorText, local, pg, toAtlasError, type ObjectInfo } from "../../backend";
+import { dialectOfId } from "../../providerRoute";
 import { useT } from "../../i18n";
 import { parseSelect, type PRef } from "../../sql/querybuilderParse";
 import { SmallIcon } from "../../icons";
 import { MessageDialog } from "../MessageDialog";
 import { PopupMenu } from "../PopupMenu";
 import {
-  AGGREGATES, JOIN_TYPES, NO_VALUE, OPERATORS, buildSql, emptyState, foreignKeyJoins, layoutId, layoutKey, tableSetKey, uid,
+  AGGREGATES, NO_VALUE, buildSql, joinTypesFor, operatorsFor, emptyState, foreignKeyJoins, layoutId, layoutKey, tableSetKey, uid,
   type Aggregate, type JoinType, type Operator, type QbCond, type QbLayout, type QbRef, type QbState, type QbTable,
 } from "../../sql/querybuilder";
 
@@ -54,7 +55,7 @@ const parseKey = (k: string): QbRef | null => {
 const LAYOUTS_KEY = "querybuilder.layouts";
 const MAX_LAYOUTS = 100;
 
-const KEYWORDS = /\b(SELECT|DISTINCT|FROM|INNER|LEFT|RIGHT|FULL|CROSS|JOIN|ON|WHERE|GROUP BY|HAVING|ORDER BY|LIMIT|OFFSET|AND|OR|AS|DESC|NOT|IN|LIKE|ILIKE|BETWEEN|IS|NULL|COUNT|SUM|AVG|MIN|MAX)\b/g;
+const KEYWORDS = /\b(SELECT|DISTINCT|FROM|INNER|LEFT|RIGHT|FULL|CROSS|JOIN|ON|WHERE|GROUP BY|HAVING|ORDER BY|LIMIT|OFFSET|TOP|ROWS|ROW|FETCH|NEXT|ONLY|AND|OR|AS|DESC|NOT|IN|LIKE|ILIKE|BETWEEN|IS|NULL|COUNT|SUM|AVG|MIN|MAX)\b/g;
 
 /** O SQL com as palavras-chave coloridas (aspas e textos ficam como estão). */
 function Highlighted({ sql }: { sql: string }) {
@@ -110,7 +111,8 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
   const [aliasEdit, setAliasEdit] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuEntry[] } | null>(null);
 
-  const sql = useMemo(() => buildSql(st, defaultSchema), [st, defaultSchema]);
+  const dialect = dialectOfId(connId);
+  const sql = useMemo(() => buildSql(st, defaultSchema, dialect), [st, defaultSchema, dialect]);
 
   /* ---------- Árvore ---------- */
   const loadObjects = useCallback(async (schema: string) => {
@@ -150,7 +152,7 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
   useEffect(() => {
     const text = initialSql?.trim();
     if (!text) return;
-    const parsed = parseSelect(text);
+    const parsed = parseSelect(text, dialect);
     if (!parsed) {
       setError(t("qb.parseFailed"));
       return;
@@ -421,7 +423,7 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
           )}
           <RefSelect tables={tbls} value={c.ref} star={key === "having"} placeholder={t("qb.pickField")} onChange={(r) => patchCond(key, c.id, { ref: r })} />
           <select className="field qb-op" value={c.op} onChange={(e) => patchCond(key, c.id, { op: e.target.value as Operator })}>
-            {OPERATORS.map((o) => <option key={o}>{o}</option>)}
+            {operatorsFor(dialect).map((o) => <option key={o}>{o}</option>)}
           </select>
           {!NO_VALUE.includes(c.op) && <input className="field qb-val" value={c.value} placeholder={t("qb.value")} spellCheck={false} onChange={(e) => patchCond(key, c.id, { value: e.target.value })} />}
           {c.op === "BETWEEN" && <input className="field qb-val" value={c.value2} placeholder={t("qb.value")} spellCheck={false} onChange={(e) => patchCond(key, c.id, { value2: e.target.value })} />}
@@ -473,7 +475,7 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
         <div key={j.id} className={`qb-row${selJoin === j.id ? " is-selected" : ""}`} onClick={() => setSelJoin(j.id)}>
           <RefSelect tables={tbls} value={j.left} star={false} placeholder={t("qb.pickField")} onChange={(r) => r && setSt((s) => ({ ...s, joins: s.joins.map((x) => (x.id === j.id ? { ...x, left: r } : x)) }))} />
           <select className="field qb-agg" value={j.type} onChange={(e) => setSt((s) => ({ ...s, joins: s.joins.map((x) => (x.id === j.id ? { ...x, type: e.target.value as JoinType } : x)) }))}>
-            {JOIN_TYPES.map((x) => <option key={x}>{x}</option>)}
+            {joinTypesFor(dialect).map((x) => <option key={x}>{x}</option>)}
           </select>
           <RefSelect tables={tbls} value={j.right} star={false} placeholder={t("qb.pickField")} onChange={(r) => r && setSt((s) => ({ ...s, joins: s.joins.map((x) => (x.id === j.id ? { ...x, right: r } : x)) }))} />
           {rm(() => setSt((s) => ({ ...s, joins: s.joins.filter((x) => x.id !== j.id) })))}
@@ -573,7 +575,7 @@ export function QueryBuilderDialog({ connId, database, defaultSchema, initialSql
     { kind: "item", text: t("qb.removeTable"), run: () => removeTable(tb.id) },
   ];
   const lineMenu = (id: string, type: JoinType): MenuEntry[] => [
-    ...JOIN_TYPES.map((jt): MenuEntry => ({ kind: "item", text: `${jt} JOIN`, checked: jt === type, run: () => setSt((s) => ({ ...s, joins: s.joins.map((x) => (x.id === id ? { ...x, type: jt } : x)) })) })),
+    ...joinTypesFor(dialect).map((jt): MenuEntry => ({ kind: "item", text: `${jt} JOIN`, checked: jt === type, run: () => setSt((s) => ({ ...s, joins: s.joins.map((x) => (x.id === id ? { ...x, type: jt } : x)) })) })),
     { kind: "sep" },
     { kind: "item", text: t("qb.removeRelation"), run: () => setSt((s) => ({ ...s, joins: s.joins.filter((x) => x.id !== id) })) },
   ];

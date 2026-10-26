@@ -87,6 +87,9 @@ export function newConnectionId(provider: string, time: string): string {
 /** O começo do id de uma operação longa (busca, exportação) que o roteador usa para achar o banco; vazio no PostgreSQL. */
 export const idPrefix = (connId: string | undefined | null): string => PROVIDERS.find((p) => typeof connId === "string" && connId.startsWith(p.prefix))?.prefix ?? "";
 
+/** O banco de um id de conexão, no formato que as telas de SQL usam (PostgreSQL = sem valor). */
+export const dialectOfId = (id: string | undefined | null): "sqlite" | "mssql" | "mysql" | undefined => (isSqliteId(id) ? "sqlite" : isMssqlId(id) ? "mssql" : isMysqlId(id) ? "mysql" : undefined);
+
 /** A conexão (ou transação) é de SQLite? */
 export const isSqliteId = (id: string | undefined | null): boolean => typeof id === "string" && id.startsWith(SQLITE_PREFIX);
 

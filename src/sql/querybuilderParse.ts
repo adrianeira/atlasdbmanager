@@ -3,7 +3,7 @@
  * a partir do texto do editor. Qualquer coisa fora desse formato (expressões, subconsultas, UNION, `::`...)
  * devolve `null`: o builder então começa do zero.
  */
-import type { Aggregate, JoinType, Operator } from "./querybuilder";
+import type { Aggregate, JoinType, Operator, QbDialect } from "./querybuilder";
 
 export interface PRef {
   /** Tabela ou apelido que qualifica o campo (null = sem qualificador). */
@@ -39,7 +39,7 @@ class Unsupported extends Error {}
 
 function tokenize(sql: string): Tok[] {
   const out: Tok[] = [];
-  const re = /\s+|--[^\n]*|"((?:[^"]|"")*)"|'((?:[^']|'')*)'|(-?\d+(?:\.\d+)?)|([A-Za-z_][A-Za-z0-9_$]*)|(<>|<=|>=|!=|[(),.*=<>;])/gy;
+  const re = /\s+|--[^\n]*|"((?:[^"]|"")*)"|`((?:[^`]|``)*)`|\[([^\]]+)\]|'((?:[^']|'')*)'|(-?\d+(?:\.\d+)?)|([A-Za-z_][A-Za-z0-9_$]*)|(<>|<=|>=|!=|[(),.*=<>;])/gy;
   let m: RegExpExecArray | null;
   let at = 0;
   while (at < sql.length) {
@@ -48,10 +48,12 @@ function tokenize(sql: string): Tok[] {
     if (!m) throw new Unsupported();
     at = re.lastIndex;
     if (m[1] !== undefined) out.push({ k: "id", v: m[1].replace(/""/g, '"') });
-    else if (m[2] !== undefined) out.push({ k: "str", v: m[2].replace(/''/g, "'") });
-    else if (m[3] !== undefined) out.push({ k: "num", v: m[3] });
-    else if (m[4] !== undefined) out.push({ k: "word", v: m[4] });
-    else if (m[5] !== undefined) out.push({ k: "p", v: m[5] });
+    else if (m[2] !== undefined) out.push({ k: "id", v: m[2].replace(/``/g, "`") });
+    else if (m[3] !== undefined) out.push({ k: "id", v: m[3] });
+    else if (m[4] !== undefined) out.push({ k: "str", v: m[4].replace(/''/g, "'") });
+    else if (m[5] !== undefined) out.push({ k: "num", v: m[5] });
+    else if (m[6] !== undefined) out.push({ k: "word", v: m[6] });
+    else if (m[7] !== undefined) out.push({ k: "p", v: m[7] });
   }
   return out;
 }
@@ -60,9 +62,9 @@ const STOP = new Set(["JOIN", "INNER", "LEFT", "RIGHT", "FULL", "CROSS", "OUTER"
 const AGG = new Set(["COUNT", "SUM", "AVG", "MIN", "MAX"]);
 const OPS = new Set(["=", "<>", "!=", "<", ">", "<=", ">="]);
 
-export function parseSelect(sql: string): ParsedQuery | null {
+export function parseSelect(sql: string, dialect?: QbDialect): ParsedQuery | null {
   try {
-    return new Parser(tokenize(sql)).parse();
+    return new Parser(tokenize(sql), !dialect).parse();
   } catch (e) {
     if (e instanceof Unsupported) return null;
     throw e;
@@ -71,7 +73,8 @@ export function parseSelect(sql: string): ParsedQuery | null {
 
 class Parser {
   private i = 0;
-  constructor(private t: Tok[]) {}
+  /** `lower`: o nome sem aspas vai para minúsculas (regra do PostgreSQL; nos outros bancos o nome fica como foi escrito). */
+  constructor(private t: Tok[], private lower: boolean) {}
 
   private peek(n = 0): Tok | undefined {
     return this.t[this.i + n];
@@ -103,7 +106,7 @@ class Parser {
     const x = this.peek();
     if (!x || (x.k !== "id" && x.k !== "word")) throw new Unsupported();
     this.i++;
-    return x.k === "word" ? x.v.toLowerCase() : x.v;
+    return x.k === "word" && this.lower ? x.v.toLowerCase() : x.v;
   }
 
   private ref(): PRef {
@@ -140,6 +143,12 @@ class Parser {
     const q: ParsedQuery = { distinct: false, fields: [], tables: [], joins: [], where: [], groupBy: [], having: [], orderBy: [], limit: "", offset: "" };
     this.need(this.eatWord("SELECT"));
     q.distinct = this.eatWord("DISTINCT");
+    // SQL Server: `SELECT TOP n`.
+    if (this.eatWord("TOP")) {
+      const paren = this.eatPunct("(");
+      q.limit = this.integer();
+      if (paren) this.need(this.eatPunct(")"));
+    }
     if (this.punct("*") && (this.word("FROM", 1) || !this.peek(1))) this.i++;
     else {
       do {
@@ -215,7 +224,18 @@ class Parser {
       } while (this.eatPunct(","));
     }
     if (this.eatWord("LIMIT")) q.limit = this.integer();
-    if (this.eatWord("OFFSET")) q.offset = this.integer();
+    if (this.eatWord("OFFSET")) {
+      q.offset = this.integer();
+      // SQL Server: `OFFSET m ROWS [FETCH NEXT n ROWS ONLY]`.
+      if (this.eatWord("ROWS") || this.eatWord("ROW")) {
+        if (this.eatWord("FETCH")) {
+          this.need(this.eatWord("NEXT") || this.eatWord("FIRST"));
+          q.limit = this.integer();
+          this.need(this.eatWord("ROWS") || this.eatWord("ROW"));
+          this.need(this.eatWord("ONLY"));
+        }
+      }
+    }
     this.eatPunct(";");
     this.need(this.i === this.t.length);
     return q;
