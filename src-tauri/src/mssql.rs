@@ -36,6 +36,19 @@ pub struct MssqlSessions {
 }
 
 impl MssqlSessions {
+    /// Registra o pedido de parada de uma operação longa (geração, transferência) pelo id dela.
+    pub(crate) fn register_cancel(&self, id: &str, flag: Arc<AtomicBool>) {
+        if let Ok(mut m) = self.finds.lock() {
+            m.insert(id.to_string(), flag);
+        }
+    }
+
+    pub(crate) fn unregister_cancel(&self, id: &str) {
+        if let Ok(mut m) = self.finds.lock() {
+            m.remove(id);
+        }
+    }
+
     pub(crate) fn session(&self, id: &str) -> Result<Arc<MssqlSession>, DatabaseError> {
         self.sessions.lock().ok().and_then(|m| m.get(id).cloned()).ok_or_else(|| DatabaseError::new(ErrorKind::SessionNotFound, "connection is not open"))
     }

@@ -5,6 +5,7 @@ import {
   errorText, local, onGenLog, onGenProgress, pg, toAtlasError,
   type DataTransferParams, type GenColumnMeta, type GenOptions, type GenPreview, type GenStats, type GenTableMeta, type Generator, type GeneratorKind, type TextStyle,
 } from "../../backend";
+import { idPrefix } from "../../providerRoute";
 import { useT } from "../../i18n";
 import { SmallIcon } from "../../icons";
 import { Dropdown } from "../Dropdown";
@@ -235,7 +236,8 @@ function Wizard({ params }: { params: Params }) {
   /* ---------- Execução ---------- */
   const start = async () => {
     if (running) return;
-    const id = crypto.randomUUID();
+    // O prefixo da conexão leva o botão Parar (exportCancel) ao banco certo.
+    const id = `${idPrefix(target.connId)}${crypto.randomUUID()}`;
     runId.current = id;
     totalRows.current = selected.reduce((n, name) => n + config[name].rows, 0);
     setLog([]);

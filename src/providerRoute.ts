@@ -62,11 +62,11 @@ export interface Routed {
 }
 
 const idOf = (args?: Record<string, unknown>): unknown =>
-  args?.sessionId ?? args?.txId ?? args?.exportId ?? (args?.req as { sessionId?: string } | undefined)?.sessionId;
+  args?.sessionId ?? args?.txId ?? args?.exportId ?? args?.conn ?? (args?.req as { sessionId?: string; conn?: string } | undefined)?.sessionId ?? (args?.req as { conn?: string } | undefined)?.conn;
 
 export function routeCommand(cmd: string, args?: Record<string, unknown>): Routed {
   const id = idOf(args);
-  if (cmd.startsWith("monitor_") && typeof id === "string") {
+  if ((cmd.startsWith("monitor_") || cmd.startsWith("datagen_")) && typeof id === "string") {
     const p = PROVIDERS.find((x) => id.startsWith(x.prefix));
     if (p) return { cmd: `${p.prefix}${cmd}`, args };
   }

@@ -205,7 +205,7 @@ fn parse_stamp(text: &str) -> Option<i64> {
     Some(days_from_civil(y, m, day) * 86_400 + h * 3600 + mi * 60 + s)
 }
 
-fn format_stamp(secs: i64, with_time: bool) -> String {
+pub fn format_stamp(secs: i64, with_time: bool) -> String {
     let (y, m, d) = civil_from_days(secs.div_euclid(86_400));
     if !with_time {
         return format!("{y:04}-{m:02}-{d:02}");
@@ -214,7 +214,7 @@ fn format_stamp(secs: i64, with_time: bool) -> String {
     format!("{y:04}-{m:02}-{d:02} {:02}:{:02}:{:02}", rest / 3600, rest % 3600 / 60, rest % 60)
 }
 
-fn today() -> i64 {
+pub fn today() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0).div_euclid(86_400) * 86_400
 }
 
@@ -278,12 +278,12 @@ fn uuid_value(rng: &mut Rng) -> String {
 
 /// Estado de uma coluna durante a geração: o próximo número da sequência e os valores que a referência pode escolher.
 #[derive(Default)]
-struct ColumnState {
-    next: i64,
-    pool: Vec<String>,
+pub struct ColumnState {
+    pub next: i64,
+    pub pool: Vec<String>,
 }
 
-fn value_for(g: &Generator, rng: &mut Rng, st: &mut ColumnState) -> Option<String> {
+pub fn value_for(g: &Generator, rng: &mut Rng, st: &mut ColumnState) -> Option<String> {
     match g {
         Generator::Sequence { step, .. } => {
             let v = st.next;
@@ -311,7 +311,7 @@ fn value_for(g: &Generator, rng: &mut Rng, st: &mut ColumnState) -> Option<Strin
     }
 }
 
-fn check(table: &TableSpec) -> Result<(), DatabaseError> {
+pub fn check(table: &TableSpec) -> Result<(), DatabaseError> {
     for c in &table.columns {
         match &c.generator {
             Generator::Integer { min, max } if min > max => return Err(invalid(format!("{}.{}: the minimum is greater than the maximum", table.name, c.name))),
@@ -350,7 +350,7 @@ async fn prepare(s: &PgSession, schema: &str, table: &TableSpec) -> Result<Vec<C
     Ok(out)
 }
 
-fn make_row(table: &TableSpec, states: &mut [ColumnState], rng: &mut Rng) -> Vec<Option<String>> {
+pub fn make_row(table: &TableSpec, states: &mut [ColumnState], rng: &mut Rng) -> Vec<Option<String>> {
     table
         .columns
         .iter()
@@ -516,7 +516,7 @@ pub async fn describe(s: &PgSession, schema: &str) -> Result<Vec<TableMeta>, Dat
 }
 
 /// Tabelas referenciadas antes das que referenciam (ciclos ficam no fim, na ordem alfabética).
-fn order_by_dependency(tables: Vec<TableMeta>) -> Vec<TableMeta> {
+pub fn order_by_dependency(tables: Vec<TableMeta>) -> Vec<TableMeta> {
     let known: HashSet<String> = tables.iter().map(|t| t.name.clone()).collect();
     let mut placed: HashSet<String> = HashSet::new();
     let mut out: Vec<TableMeta> = Vec::new();

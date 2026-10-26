@@ -26,7 +26,7 @@ pub use exec::{
 };
 pub use dump::{DumpOptions, DumpPlan, DumpScope, DumpTable, begin_snapshot, copy_header, copy_table, data_select, end_snapshot, header as dump_header, plan as dump_plan};
 pub use console::{Completion as ConsoleCompletion, ConsoleOptions, ConsoleOutput, complete as console_complete, is_complete as console_is_complete, run as console_run};
-pub use datagen::{ColumnMeta as GenColumnMeta, ColumnSpec as GenColumnSpec, GenHooks, GenOptions, GenSpec, GenStats, Generator, Preview as GenPreview, TableMeta as GenTableMeta, TableSpec as GenTableSpec, TextStyle, describe as describe_generation, preview as preview_generation, run as run_generation};
+pub use datagen::{ColumnState as GenColumnState, Rng as GenRng, check as check_generation, format_stamp as gen_format_stamp, make_row as make_generation_row, order_by_dependency as order_generation_tables, today as gen_today, value_for as generation_value, ColumnMeta as GenColumnMeta, ColumnSpec as GenColumnSpec, GenHooks, GenOptions, GenSpec, GenStats, Generator, Preview as GenPreview, TableMeta as GenTableMeta, TableSpec as GenTableSpec, TextStyle, describe as describe_generation, preview as preview_generation, run as run_generation};
 pub use datasync::{CompareHooks, Comparison, DeployHooks, DeployStats, DiffKind, DiffRow, SyncSpec, SyncTable, TableDiff, TableSelection, compare as compare_data, deploy as deploy_data, script as data_script};
 pub use history::{Entry as HistoryEntry, clear as history_clear, is_paused as history_is_paused, read as history_read, set_paused as history_set_paused};
 pub use monitor::{ProcessRow as MonitorProcess, Snapshot as MonitorSnapshot, end_process as monitor_end_process, snapshot as monitor_snapshot};

@@ -4,6 +4,7 @@ mod commands;
 mod datagen;
 mod monitor;
 mod dictionary;
+mod genext;
 mod dictsrc;
 mod download;
 mod datasync;
@@ -208,6 +209,15 @@ pub fn run() {
             mysql::mysql_export,
             mysql::mysql_export_cancel,
             mysql::mysql_import,
+            genext::mysql_datagen_describe,
+            genext::mysql_datagen_preview,
+            genext::mysql_datagen_run,
+            genext::mssql_datagen_describe,
+            genext::mssql_datagen_preview,
+            genext::mssql_datagen_run,
+            genext::sqlite_datagen_describe,
+            genext::sqlite_datagen_preview,
+            genext::sqlite_datagen_run,
             mysql::mysql_find,
             mysql::mysql_monitor_snapshot,
             mysql::mysql_monitor_end_process,
