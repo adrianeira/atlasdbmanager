@@ -22,6 +22,7 @@ const PROVIDERS: ProviderOption[] = [
   { id: "postgresql", name: "PostgreSQL", defaultPort: 5432, defaultUser: "postgres", defaultDb: "postgres", available: true },
   { id: "sqlserver", name: "SQL Server", defaultPort: 1433, defaultUser: "sa", defaultDb: "master", available: true },
   { id: "sqlite", name: "SQLite", defaultPort: 0, defaultUser: "", defaultDb: "", available: true },
+  { id: "firebird", name: "Firebird", defaultPort: 3050, defaultUser: "SYSDBA", defaultDb: "", available: true },
   { id: "mariadb", name: "MariaDB", defaultPort: 3306, defaultUser: "root", defaultDb: "", available: true },
   // Fora da primeira release (spec §2.1): listados como "em breve", sem fluxo falso.
   { id: "oracle", name: "Oracle", defaultPort: 1521, defaultUser: "", defaultDb: "", available: false },
@@ -114,7 +115,7 @@ export function formToParams(f: ConnectionForm, fallbackPassword = ""): Connecti
   return {
     host: f.host.trim(),
     port: Number(f.port) || 5432,
-    database: f.initialDatabase.trim() || "postgres",
+    database: f.initialDatabase.trim() || (f.provider === "postgresql" ? "postgres" : ""),
     user: f.user,
     password: f.password || fallbackPassword,
     sslMode: f.useSsl ? (f.sslMode as SslMode) : "disable",
@@ -124,7 +125,7 @@ export function formToParams(f: ConnectionForm, fallbackPassword = ""): Connecti
 }
 
 async function liveTest(f: ConnectionForm, fallbackPassword: string, notSupported: string, profileId?: string): Promise<TestState> {
-  if (f.provider !== "postgresql" && f.provider !== "sqlite" && f.provider !== "sqlserver" && f.provider !== "mysql") return { kind: "fail", message: notSupported };
+  if (f.provider !== "postgresql" && f.provider !== "sqlite" && f.provider !== "sqlserver" && f.provider !== "mysql" && f.provider !== "firebird") return { kind: "fail", message: notSupported };
   try {
     // Campo de senha vazio na edição: o núcleo usa a senha salva no cofre (via profileId).
     const info = await pg.testConnection(formToParams(f, fallbackPassword), profileId);

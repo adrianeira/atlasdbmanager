@@ -27,7 +27,7 @@ export function buildShareUri(conn: Pick<ConnectionMock, "id" | "provider" | "na
     ["Conn.UseSSL", String(conn.sslMode === "require" || conn.sslMode === "verify-ca" || conn.sslMode === "verify-full")],
     ["Conn.Username", conn.user],
   );
-  const product = ({ postgresql: "pgsql", sqlserver: "mssql", mysql: "mysql", sqlite: "sqlite" } as Record<string, string>)[conn.provider] ?? "pgsql";
+  const product = ({ postgresql: "pgsql", sqlserver: "mssql", mysql: "mysql", sqlite: "sqlite", firebird: "firebird" } as Record<string, string>)[conn.provider] ?? "pgsql";
   const path = database === null ? `connection.${product}@local/${enc(conn.id)}` : `database.${product}@local/${enc(conn.id)}/${enc(database)}`;
   return `atlas://${path}?${params.map(([k, v]) => `${k}=${enc(v)}`).join("&")}`;
 }

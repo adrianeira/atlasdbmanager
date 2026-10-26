@@ -277,7 +277,7 @@ interface Props {
   /** Conexão real: executa os comandos em uma transação (falha = nada aplicado). */
   applyDdl?: (statements: string[]) => Promise<void>;
   /** Banco da conexão; ausente = PostgreSQL. */
-  dialect?: "sqlite" | "mssql" | "mysql";
+  dialect?: "sqlite" | "mssql" | "mysql" | "firebird";
 }
 
 export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFunctions, serverVersionNum, active, production, onStatus, onSaved, loadDetail, applyDdl, dialect }: Props) {

@@ -44,7 +44,7 @@ export type JoinType = "INNER" | "LEFT" | "RIGHT" | "FULL";
 export const JOIN_TYPES: JoinType[] = ["INNER", "LEFT", "RIGHT", "FULL"];
 
 /** O banco do desenho; sem valor = PostgreSQL. */
-export type QbDialect = "sqlite" | "mssql" | "mysql" | undefined;
+export type QbDialect = "sqlite" | "mssql" | "mysql" | "firebird" | undefined;
 
 /** O MySQL não tem `FULL JOIN`. */
 export const joinTypesFor = (d: QbDialect): JoinType[] => (d === "mysql" ? JOIN_TYPES.filter((j) => j !== "FULL") : JOIN_TYPES);

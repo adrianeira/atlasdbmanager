@@ -7,6 +7,7 @@
 export const SQLITE_PREFIX = "sqlite_";
 export const MSSQL_PREFIX = "mssql_";
 export const MYSQL_PREFIX = "mysql_";
+export const FIREBIRD_PREFIX = "firebird_";
 
 interface Provider {
   /** Começo do id da conexão e do nome dos comandos (`sqlite_...`, `mssql_...`). */
@@ -54,7 +55,18 @@ const MYSQL: Provider = {
   ]),
 };
 
-const PROVIDERS = [SQLITE, MSSQL, MYSQL];
+const FIREBIRD: Provider = {
+  prefix: FIREBIRD_PREFIX,
+  param: "firebird",
+  console: false,
+  commands: new Set([
+    "test_connection", "open", "close", "close_database", "list_databases", "list_schemas", "list_objects", "table_detail", "list_roles",
+    "execute", "cancel", "table_rows", "table_count", "apply", "view_detail",
+    ...TX,
+  ]),
+};
+
+const PROVIDERS = [SQLITE, MSSQL, MYSQL, FIREBIRD];
 
 export interface Routed {
   cmd: string;
@@ -112,13 +124,16 @@ export const opPrefix = (a: string | undefined | null, b: string | undefined | n
 export const idPrefix = (connId: string | undefined | null): string => PROVIDERS.find((p) => typeof connId === "string" && connId.startsWith(p.prefix))?.prefix ?? "";
 
 /** O banco de um id de conexão, no formato que as telas de SQL usam (PostgreSQL = sem valor). */
-export const dialectOfId = (id: string | undefined | null): "sqlite" | "mssql" | "mysql" | undefined => (isSqliteId(id) ? "sqlite" : isMssqlId(id) ? "mssql" : isMysqlId(id) ? "mysql" : undefined);
+export const dialectOfId = (id: string | undefined | null): "sqlite" | "mssql" | "mysql" | "firebird" | undefined => (isSqliteId(id) ? "sqlite" : isMssqlId(id) ? "mssql" : isMysqlId(id) ? "mysql" : isFirebirdId(id) ? "firebird" : undefined);
 
 /** A conexão (ou transação) é de SQLite? */
 export const isSqliteId = (id: string | undefined | null): boolean => typeof id === "string" && id.startsWith(SQLITE_PREFIX);
 
 /** A conexão (ou transação) é de MySQL? */
 export const isMysqlId = (id: string | undefined | null): boolean => typeof id === "string" && id.startsWith(MYSQL_PREFIX);
+
+/** A conexão (ou transação) é de Firebird? */
+export const isFirebirdId = (id: string | undefined | null): boolean => typeof id === "string" && id.startsWith(FIREBIRD_PREFIX);
 
 /** A conexão (ou transação) é de SQL Server? */
 export const isMssqlId = (id: string | undefined | null): boolean => typeof id === "string" && id.startsWith(MSSQL_PREFIX);

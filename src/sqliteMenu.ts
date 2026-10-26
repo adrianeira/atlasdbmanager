@@ -19,7 +19,10 @@ const NOT_IN_MYSQL = new Set<MessageKey>([
   "cmd.newSchema", "cmd.editSchema", "cmd.deleteSchema",
 ]);
 
-const SETS: Record<string, Set<MessageKey>> = { sqlite: NOT_IN_SQLITE, sqlserver: NOT_IN_MSSQL, mysql: NOT_IN_MYSQL };
+/** O Firebird (até a versão 4) não tem schemas; começa com o que o SQLite esconde e ganha os itens conforme eles passam a existir. */
+const NOT_IN_FIREBIRD = new Set<MessageKey>([...NOT_IN_SQLITE]);
+
+const SETS: Record<string, Set<MessageKey>> = { sqlite: NOT_IN_SQLITE, sqlserver: NOT_IN_MSSQL, mysql: NOT_IN_MYSQL, firebird: NOT_IN_FIREBIRD };
 
 /** Os bancos que têm lista de itens a esconder (o PostgreSQL não tem). */
 export const hasMenuFilter = (provider: string | undefined): boolean => !!provider && provider in SETS;
@@ -42,4 +45,4 @@ export function menuForProvider(provider: string, items: MenuEntry[], labels: Ma
 }
 
 /** Os textos dos itens que algum banco esconde (o menu guarda o texto, não a chave). */
-export const hiddenKeys = (): MessageKey[] => [...new Set([...NOT_IN_SQLITE, ...NOT_IN_MSSQL, ...NOT_IN_MYSQL])].filter((k) => k.startsWith("cmd.") || k.startsWith("act."));
+export const hiddenKeys = (): MessageKey[] => [...new Set([...NOT_IN_SQLITE, ...NOT_IN_MSSQL, ...NOT_IN_MYSQL, ...NOT_IN_FIREBIRD])].filter((k) => k.startsWith("cmd.") || k.startsWith("act."));

@@ -23,6 +23,7 @@ mod sessions;
 mod mssql;
 mod mysql;
 mod sqlite;
+mod firebird;
 mod transfer;
 mod tunnel;
 mod tx;
@@ -86,6 +87,7 @@ pub fn run() {
         .manage(sqlite::SqliteSessions::default())
         .manage(mssql::MssqlSessions::default())
         .manage(mysql::MysqlSessions::default())
+        .manage(firebird::FirebirdSessions::default())
         .manage(datasync::Comparisons::default())
         .manage(dsync::ExtComparisons::default())
         .manage(ssync::ExtStructComparisons::default())
@@ -307,6 +309,28 @@ pub fn run() {
             mssql::mssql_tx_table_rows,
             mssql::mssql_tx_table_count,
             mssql::mssql_tx_end,
+            firebird::firebird_test_connection,
+            firebird::firebird_open,
+            firebird::firebird_close,
+            firebird::firebird_close_database,
+            firebird::firebird_list_databases,
+            firebird::firebird_list_schemas,
+            firebird::firebird_list_objects,
+            firebird::firebird_table_detail,
+            firebird::firebird_view_detail,
+            firebird::firebird_list_roles,
+            firebird::firebird_execute,
+            firebird::firebird_cancel,
+            firebird::firebird_table_rows,
+            firebird::firebird_table_count,
+            firebird::firebird_apply,
+            firebird::firebird_unsupported,
+            firebird::firebird_tx_begin,
+            firebird::firebird_tx_apply,
+            firebird::firebird_tx_execute,
+            firebird::firebird_tx_table_rows,
+            firebird::firebird_tx_table_count,
+            firebird::firebird_tx_end,
             sqlite::sqlite_test_connection,
             sqlite::sqlite_open,
             sqlite::sqlite_close,

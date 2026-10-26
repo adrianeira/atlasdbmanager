@@ -42,7 +42,7 @@ interface Props {
   onSaved: (name: string, state: ViewState) => void;
   backend?: ViewBackend;
   /** Banco da conexão; ausente = PostgreSQL. */
-  dialect?: "sqlite" | "mssql" | "mysql";
+  dialect?: "sqlite" | "mssql" | "mysql" | "firebird";
 }
 
 type SubTab = "definition" | "rules" | "advanced" | "comment" | "sql";

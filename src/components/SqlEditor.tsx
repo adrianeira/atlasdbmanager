@@ -66,7 +66,7 @@ interface Props {
   /** Nomes para o autocomplete: tabelas (com colunas), views e funções; ver `completionNamespace`. */
   schema?: SQLNamespace;
   /** Dialeto da consulta; ausente = PostgreSQL. */
-  dialect?: "sqlite" | "mssql" | "mysql";
+  dialect?: "sqlite" | "mssql" | "mysql" | "firebird";
   defaultSchema?: string;
   placeholder?: string;
   /** Linhas (a partir de 1) com o fundo marcado: `add` em verde e `remove` em vermelho (comparação de DDL). */

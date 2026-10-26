@@ -10,7 +10,7 @@ export type Category =
 
 export const OTHERS_CATEGORIES: Category[] = ["sequence", "type", "extension", "foreignServer", "tablespace"];
 
-export type ProviderId = "postgresql" | "sqlserver" | "mysql" | "mariadb" | "sqlite";
+export type ProviderId = "postgresql" | "sqlserver" | "mysql" | "mariadb" | "sqlite" | "firebird";
 
 /* ---------- Estrutura de tabela ---------- */
 
@@ -348,14 +348,14 @@ export const SCHEMA_FOLDERS: Category[] = ["table", "view", "matview", "function
 
 /** As pastas de um schema que o banco tem (o SQLite não tem views materializadas, funções nem backup do PostgreSQL). */
 /** O dialeto das telas para cada banco (o PostgreSQL é o padrão e fica sem dialeto). */
-export const dialectOf = (provider: ProviderId | undefined): "sqlite" | "mssql" | "mysql" | undefined => (provider === "sqlite" ? "sqlite" : provider === "sqlserver" ? "mssql" : provider === "mysql" ? "mysql" : undefined);
+export const dialectOf = (provider: ProviderId | undefined): "sqlite" | "mssql" | "mysql" | "firebird" | undefined => (provider === "sqlite" ? "sqlite" : provider === "sqlserver" ? "mssql" : provider === "mysql" ? "mysql" : provider === "firebird" ? "firebird" : undefined);
 
 /** O dialeto dos designers de tabela. */
-export const designerDialectOf = (provider: ProviderId | undefined): "sqlite" | "mssql" | "mysql" | undefined => dialectOf(provider);
+export const designerDialectOf = (provider: ProviderId | undefined): "sqlite" | "mssql" | "mysql" | "firebird" | undefined => dialectOf(provider);
 
 export const foldersFor = (provider: ProviderId): Category[] =>
   provider === "sqlite" ? SCHEMA_FOLDERS.filter((c) => c === "table" || c === "view" || c === "query")
-  : provider === "sqlserver" || provider === "mysql" ? SCHEMA_FOLDERS.filter((c) => c === "table" || c === "view" || c === "function" || c === "query")
+  : provider === "sqlserver" || provider === "mysql" || provider === "firebird" ? SCHEMA_FOLDERS.filter((c) => c === "table" || c === "view" || c === "function" || c === "query")
   : SCHEMA_FOLDERS;
 
 export interface NodeContext {

@@ -651,6 +651,7 @@ export const PROVIDER_STYLE: Record<ProviderId, [string, string, string]> = {
   mysql: ["#00758f", "#d8eef3", "My"],
   mariadb: ["#8a5a3c", "#efe3da", "Ma"],
   sqlite: ["#0f80cc", "#dceefa", "Lite"],
+  firebird: ["#d6481f", "#f8e0d8", "FB"],
 };
 
 /*

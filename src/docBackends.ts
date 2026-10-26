@@ -1,6 +1,6 @@
 /** Ligação das abas de tabela e de consulta ao banco real; usada pela janela principal e pelas abas destacadas. */
 import { pg } from "./backend";
-import { isMssqlId, isMysqlId, isSqliteId } from "./providerRoute";
+import { dialectOfId } from "./providerRoute";
 import type { FkLookupSource } from "./components/FkLookup";
 import type { TableDataBackend } from "./documents/TableDataDoc";
 import { tableFromServer } from "./live";
@@ -10,9 +10,8 @@ import { quoteIdent, type DbObject } from "./model";
 export function makeTableBackend(connId: string, db: string, schema: string, object: string, objectKind: "table" | "view" | "matview" | undefined, base: DbObject): TableDataBackend {
   // Transação manual da aba: enquanto aberta, gravação, leitura e contagem usam a conexão dedicada dela.
   let txId: string | null = null;
-  const sqlite = isSqliteId(connId);
   return {
-    dialect: sqlite ? "sqlite" : isMssqlId(connId) ? "mssql" : isMysqlId(connId) ? "mysql" : undefined,
+    dialect: dialectOfId(connId),
     loadDetail: async () => tableFromServer(base, await pg.tableDetail(connId, db, schema, object)),
     profileData: (columns, orderBy, filter, limit) => pg.dataProfile(connId, db, schema, object, columns, orderBy, filter, limit),
     loadProfile: objectKind === "view" ? undefined : () => pg.tableProfile(connId, db, schema, object),
