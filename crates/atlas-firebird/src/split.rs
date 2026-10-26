@@ -78,6 +78,7 @@ pub fn is_open_body(sql: &str) -> bool {
     let chars: Vec<char> = sql.chars().collect();
     let mut i = 0;
     let mut depth: i32 = 0;
+    let mut seen_begin = false;
     let mut body: Option<bool> = None;
     while i < chars.len() {
         let c = chars[i];
@@ -115,7 +116,10 @@ pub fn is_open_body(sql: &str) -> bool {
             }
             if body == Some(true) {
                 match word.as_str() {
-                    "BEGIN" | "CASE" => depth += 1,
+                    "BEGIN" | "CASE" => {
+                        depth += 1;
+                        seen_begin = true;
+                    }
                     "END" => depth -= 1,
                     _ => {}
                 }
@@ -124,7 +128,8 @@ pub fn is_open_body(sql: &str) -> bool {
             i += 1;
         }
     }
-    body == Some(true) && depth > 0
+    // As declarações (`DECLARE VARIABLE x INT;`) vêm antes do primeiro `BEGIN`: o `;` delas não termina o comando.
+    body == Some(true) && (depth > 0 || !seen_begin)
 }
 
 /// Divide `sql` em comandos. Sem `;` final o último comando também entra; comandos vazios são descartados.
@@ -135,6 +140,7 @@ pub fn split_statements(sql: &str) -> Vec<Piece> {
     let mut i = 0;
     let mut start = 0usize;
     let mut depth: i32 = 0;
+    let mut seen_begin = false;
     let mut body: Option<bool> = None;
     let flush = |out: &mut Vec<Piece>, from: usize, to: usize| {
         let text: String = chars[from..to].iter().collect();
@@ -202,7 +208,10 @@ pub fn split_statements(sql: &str) -> Vec<Piece> {
             }
             if body == Some(true) {
                 match word.as_str() {
-                    "BEGIN" | "CASE" => depth += 1,
+                    "BEGIN" | "CASE" => {
+                        depth += 1;
+                        seen_begin = true;
+                    }
                     "END" => depth -= 1,
                     _ => {}
                 }
@@ -210,11 +219,12 @@ pub fn split_statements(sql: &str) -> Vec<Piece> {
             continue;
         }
         let term_chars: Vec<char> = term.chars().collect();
-        if !term_chars.is_empty() && chars[i..].starts_with(&term_chars) && !(term == ";" && body == Some(true) && depth > 0) {
+        if !term_chars.is_empty() && chars[i..].starts_with(&term_chars) && !(term == ";" && body == Some(true) && (depth > 0 || !seen_begin)) {
             flush(&mut out, start, i);
             i += term_chars.len();
             start = i;
             depth = 0;
+            seen_begin = false;
             body = None;
             continue;
         }
@@ -258,5 +268,12 @@ mod tests {
     #[test]
     fn words_skip_comments() {
         assert_eq!(first_word("/* x */ -- y\n  select 1"), "SELECT");
+    }
+    #[test]
+    fn declarations_before_begin() {
+        let sql = "execute block as declare v bigint; begin select 1 from rdb$database into :v; end; select 2 from rdb$database;";
+        assert_eq!(texts(sql).len(), 2);
+        assert!(is_open_body("execute block as declare v bigint;"));
+        assert!(!is_open_body("execute block as declare v bigint; begin v = 1; end"));
     }
 }

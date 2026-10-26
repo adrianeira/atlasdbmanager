@@ -5,6 +5,7 @@
 //! PostgreSQL (`transfer-log`, `transfer-progress`, cancelamento por `export_cancel`).
 
 use crate::genext::{Dialect, Exec, mssql_schema_rewrite};
+use crate::firebird::FirebirdSessions;
 use crate::mssql::MssqlSessions;
 use crate::mysql::MysqlSessions;
 use crate::sqlite::SqliteSessions;
@@ -53,6 +54,7 @@ enum Pair {
     Mysql(Arc<atlas_mysql::MysqlSession>, Arc<atlas_mysql::MysqlSession>),
     Mssql(Arc<atlas_mssql::MssqlSession>, Arc<atlas_mssql::MssqlSession>),
     Sqlite(Arc<atlas_sqlite::SqliteSession>, Arc<atlas_sqlite::SqliteSession>),
+    Firebird(Arc<atlas_firebird::FirebirdSession>, Arc<atlas_firebird::FirebirdSession>),
 }
 
 fn head(stmt: &str) -> String {
@@ -80,6 +82,7 @@ impl Pair {
             Pair::Mysql(..) => Dialect::Mysql,
             Pair::Mssql(..) => Dialect::Mssql,
             Pair::Sqlite(..) => Dialect::Sqlite,
+            Pair::Firebird(..) => Dialect::Firebird,
         }
     }
 
@@ -89,6 +92,7 @@ impl Pair {
             Pair::Mysql(_, d) => Exec::Mysql(d.clone(), if schema.is_empty() { database.to_string() } else { schema.to_string() }),
             Pair::Mssql(_, d) => Exec::Mssql(d.clone(), database.to_string()),
             Pair::Sqlite(_, d) => Exec::Sqlite(d.clone()),
+            Pair::Firebird(_, d) => Exec::Firebird(d.clone()),
         }
     }
 
@@ -119,6 +123,16 @@ impl Pair {
                 let p = s.dump_plan(tables, views, spec.drop_before_create)?;
                 Plan { pre: p.pre_data, post: p.post_data, tables: p.data_tables.into_iter().map(|name| DataTable { name, columns: Vec::new(), has_identity: false }).collect(), objects: p.objects }
             }
+            Pair::Firebird(s, _) => {
+                let (s, t, v, f, clean) = (s.clone(), spec.tables.clone(), spec.views.clone(), spec.functions.clone(), spec.drop_before_create);
+                let p = tokio::task::spawn_blocking(move || s.dump_plan(Some(&t), Some(&v), Some(&f), clean)).await.map_err(|e| DatabaseError::new(ErrorKind::Internal, e.to_string()))??;
+                Plan {
+                    pre: p.pre_data,
+                    post: p.post_data,
+                    tables: p.data_tables.into_iter().map(|t| DataTable { name: t.name, columns: t.columns, has_identity: false }).collect(),
+                    objects: p.objects,
+                }
+            }
         })
     }
 
@@ -139,7 +153,7 @@ impl Pair {
                     out = out.replacen(&format!("`{from}`"), &format!("`{to}`"), 1);
                 }
             }
-            Pair::Sqlite(..) => {
+            Pair::Sqlite(..) | Pair::Firebird(..) => {
                 for (from, to) in renames {
                     out = out.replacen(&format!("\"{from}\""), &format!("\"{to}\""), 1);
                 }
@@ -248,6 +262,84 @@ async fn copy_table(pair: &Pair, exec: &Exec, table: &DataTable, source_database
                     }
                 }
             }
+            Pair::Firebird(src, _) => {
+                // Páginas ordenadas pela chave; cada lote vira blocos `EXECUTE BLOCK` (o Firebird não tem `INSERT` de várias linhas).
+                let type_of = |name: &str| table.columns.iter().find(|(n, _)| n == name).map(|(_, t)| t.clone()).unwrap_or_default();
+                let types: Vec<String> = pairs.iter().map(|(s, _)| type_of(s)).collect();
+                let source_list = pairs.iter().map(|(s, _)| dialect.q(s)).collect::<Vec<_>>().join(", ");
+                let target_list = pairs.iter().map(|(_, t)| dialect.q(t)).collect::<Vec<_>>().join(", ");
+                let target = dialect.q(&target_name);
+                let order = {
+                    let s2 = src.clone();
+                    let name = table.name.clone();
+                    let detail = tokio::task::spawn_blocking(move || s2.table_detail(&name)).await.map_err(|e| DatabaseError::new(ErrorKind::Internal, e.to_string()))??;
+                    let mut keys: Vec<(i32, String)> = detail.columns.iter().filter_map(|c| c.key.map(|k| (k, c.name.clone()))).collect();
+                    keys.sort();
+                    if keys.is_empty() { String::new() } else { format!(" ORDER BY {}", keys.into_iter().map(|(_, n)| dialect.q(&n)).collect::<Vec<_>>().join(", ")) }
+                };
+                let reader = Exec::Firebird(src.clone());
+                let boolean_ok = src.version_num >= 3_000_000;
+                let mut offset = 0usize;
+                loop {
+                    cx.check()?;
+                    let sql = format!("SELECT {source_list} FROM {}{filter}{order} ROWS {} TO {}", dialect.q(&table.name), offset + 1, offset + batch);
+                    let rows = match reader.rows(&sql, batch + 1).await {
+                        Ok(r) => r,
+                        Err(e) => {
+                            cx.error(&table.name, &e.message);
+                            if !cx.spec.continue_on_error {
+                                return Ok(false);
+                            }
+                            break;
+                        }
+                    };
+                    if rows.is_empty() {
+                        break;
+                    }
+                    let mut block = String::new();
+                    let mut in_block = 0u64;
+                    let flush = |block: &mut String, n: &mut u64| -> Option<(String, u64)> {
+                        if *n == 0 {
+                            return None;
+                        }
+                        let out = (format!("EXECUTE BLOCK AS BEGIN {block}END"), *n);
+                        block.clear();
+                        *n = 0;
+                        Some(out)
+                    };
+                    let mut statements: Vec<(String, u64)> = Vec::new();
+                    for r in &rows {
+                        let cells: Vec<String> = r.iter().zip(&types).map(|(v, ty)| atlas_firebird::literal(v.as_deref(), ty, boolean_ok)).collect();
+                        let line = format!("INSERT INTO {target} ({target_list}) VALUES ({}); ", cells.join(", "));
+                        if in_block > 0 && block.len() + line.len() > 48_000 {
+                            statements.extend(flush(&mut block, &mut in_block));
+                        }
+                        block.push_str(&line);
+                        in_block += 1;
+                    }
+                    statements.extend(flush(&mut block, &mut in_block));
+                    for (sql, n) in statements {
+                        match exec.run(&sql, 1).await {
+                            Ok(_) => {
+                                table_rows += n;
+                                cx.stats.transferred += n;
+                                cx.stats.processed += n;
+                            }
+                            Err(e) => {
+                                cx.error(&table.name, &e.message);
+                                if !cx.spec.continue_on_error {
+                                    return Ok(false);
+                                }
+                            }
+                        }
+                    }
+                    (cx.progress)(&cx.stats);
+                    if rows.len() < batch {
+                        break;
+                    }
+                    offset += batch;
+                }
+            }
             Pair::Mysql(..) | Pair::Mssql(..) => {
                 let type_of = |name: &str| table.columns.iter().find(|(n, _)| n == name).map(|(_, t)| t.clone()).unwrap_or_default();
                 let source_list = pairs.iter().map(|(s, _)| dialect.q(s)).collect::<Vec<_>>().join(", ");
@@ -315,7 +407,7 @@ async fn copy_table(pair: &Pair, exec: &Exec, table: &DataTable, source_database
                             )
                             .await
                         }
-                        Pair::Sqlite(..) => Ok(0),
+                        Pair::Sqlite(..) | Pair::Firebird(..) => Ok(0),
                     };
                     if !buf.is_empty() {
                         let _ = tx.send(buf);
@@ -486,3 +578,4 @@ macro_rules! transfer_command {
 transfer_command!(mysql_transfer, MysqlSessions, Mysql);
 transfer_command!(mssql_transfer, MssqlSessions, Mssql);
 transfer_command!(sqlite_transfer, SqliteSessions, Sqlite);
+transfer_command!(firebird_transfer, FirebirdSessions, Firebird);

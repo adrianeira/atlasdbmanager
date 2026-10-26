@@ -61,7 +61,7 @@ const FIREBIRD: Provider = {
   console: true,
   commands: new Set([
     "test_connection", "open", "close", "close_database", "list_databases", "list_schemas", "list_objects", "table_detail", "list_roles",
-    "execute", "cancel", "table_rows", "table_count", "apply", "view_detail", "routine_definition", "export", "export_cancel", "import", "data_profile", "table_profile", "schema_diagram", "fk_labels", "find", "find_data", "dump_sql", "backup", "backup_list", "restore",
+    "execute", "cancel", "table_rows", "table_count", "apply", "view_detail", "routine_definition", "export", "export_cancel", "import", "data_profile", "table_profile", "schema_diagram", "fk_labels", "find", "find_data", "dump_sql", "backup", "backup_list", "restore", "transfer",
     ...TX,
   ]),
 };

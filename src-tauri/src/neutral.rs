@@ -1,4 +1,4 @@
-//! Modelo neutro de tipos e de tabelas para levar estrutura e dados de um produto a outro (PostgreSQL, SQL Server, MySQL e SQLite).
+//! Modelo neutro de tipos e de tabelas para levar estrutura e dados de um produto a outro (PostgreSQL, SQL Server, MySQL, SQLite e Firebird).
 //!
 //! O tipo de cada coluna é lido na linguagem do produto de origem (`NType`) e escrito na do destino; os valores passam por uma forma
 //! canônica em texto (booleano `true`/`false`, binário em hexa, data e hora sem fuso quando o destino não tem fuso). Só o que tem
@@ -14,6 +14,18 @@ pub enum Product {
     Mysql,
     Mssql,
     Sqlite,
+    Firebird,
+}
+
+/// O último Firebird aberto tem o tipo `BOOLEAN` e a identidade (versão 3 em diante)? Decide como escrever booleano e numeração automática.
+static FIREBIRD_V3: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+pub fn set_firebird_v3(v3: bool) {
+    FIREBIRD_V3.store(v3, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn firebird_v3() -> bool {
+    FIREBIRD_V3.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 impl Product {
@@ -25,6 +37,8 @@ impl Product {
             Product::Mssql
         } else if id.starts_with("sqlite_") {
             Product::Sqlite
+        } else if id.starts_with("firebird_") {
+            Product::Firebird
         } else {
             Product::Pg
         }
@@ -36,6 +50,7 @@ impl Product {
             Product::Mysql => Dialect::Mysql,
             Product::Mssql => Dialect::Mssql,
             Product::Sqlite => Dialect::Sqlite,
+            Product::Firebird => Dialect::Firebird,
         }
     }
 }
@@ -143,6 +158,23 @@ pub fn parse(product: Product, formatted: &str) -> NType {
             "uniqueidentifier" => NType::Uuid,
             _ => NType::Other,
         },
+        Product::Firebird => match base.as_str() {
+            "smallint" => NType::Int(2),
+            "integer" => NType::Int(4),
+            "bigint" => NType::Int(8),
+            "int128" => NType::Decimal(Some((38, 0))),
+            "float" => NType::Float(4),
+            "double" => NType::Float(8),
+            "numeric" | "decimal" => decimal(&t),
+            "char" | "varchar" => NType::Text(args(&t).first().copied()),
+            "blob" => if t.contains("sub_type text") || t.contains("sub_type 1") { NType::Text(None) } else { NType::Binary },
+            "boolean" => NType::Bool,
+            "date" => NType::Date,
+            "time" => NType::Time,
+            "timestamp" => NType::Timestamp(t.contains("with time zone")),
+            "decfloat" => NType::Decimal(None),
+            _ => NType::Other,
+        },
         Product::Sqlite => {
             let u = t.to_uppercase();
             if u.contains("BOOL") {
@@ -233,6 +265,23 @@ pub fn render(product: Product, t: &NType) -> String {
             NType::Binary => "varbinary(max)".into(),
             NType::Uuid => "uniqueidentifier".into(),
         },
+        Product::Firebird => match t {
+            NType::Int(1 | 2) => "smallint".into(),
+            NType::Int(4) => "integer".into(),
+            NType::Int(_) => "bigint".into(),
+            NType::Decimal(Some((p, s))) => format!("numeric({},{})", (*p).clamp(1, 18), (*s).min(18).min(*p)),
+            NType::Decimal(None) => "numeric(18,6)".into(),
+            NType::Float(4) => "float".into(),
+            NType::Float(_) => "double precision".into(),
+            NType::Text(Some(n)) if *n <= 8000 => format!("varchar({n})"),
+            NType::Text(_) | NType::Other | NType::Json => "blob sub_type text".into(),
+            NType::Bool => if firebird_v3() { "boolean".into() } else { "smallint".into() },
+            NType::Date => "date".into(),
+            NType::Time => "time".into(),
+            NType::Timestamp(_) => "timestamp".into(),
+            NType::Binary => "blob".into(),
+            NType::Uuid => "char(36)".into(),
+        },
         Product::Sqlite => match t {
             NType::Int(_) => "integer".into(),
             NType::Decimal(_) => "numeric".into(),
@@ -315,16 +364,19 @@ pub fn literal(d: Dialect, t: &NType, v: &Option<String>, from: &NType) -> Strin
     match t {
         NType::Bool => match d {
             Dialect::Pg => if canonical(from, raw) == "1" { "true" } else { "false" }.into(),
+            Dialect::Firebird if firebird_v3() => if c == "1" { "true" } else { "false" }.into(),
             _ => if c == "1" { "1" } else { "0" }.into(),
         },
         NType::Binary => {
             let hex = canonical(&NType::Binary, raw);
             match d {
                 Dialect::Pg => format!("'\\x{hex}'"),
-                Dialect::Sqlite => format!("X'{hex}'"),
+                Dialect::Sqlite | Dialect::Firebird => format!("X'{hex}'"),
                 _ => format!("0x{}", if hex.is_empty() { "00".into() } else { hex }),
             }
         }
+        // Um booleano numa coluna inteira (o Firebird 2.5 não tem `BOOLEAN`): 1 ou 0.
+        NType::Int(_) if matches!(from, NType::Bool) => if c == "1" { "1" } else { "0" }.into(),
         NType::Int(_) | NType::Decimal(_) | NType::Float(_) if is_plain_number(raw.trim()) => raw.trim().to_string(),
         NType::Timestamp(tz) => {
             let s = if *tz && matches!(from, NType::Timestamp(true)) { raw.replace('T', " ") } else { strip_offset(raw) };
@@ -364,7 +416,7 @@ pub fn default_sql(target: Product, t: &NType, d: &str) -> Option<String> {
             "false" | "0" | "b'0'" | "'f'" | "'false'" | "'0'" => "0",
             _ => return None,
         };
-        return Some(if target == Product::Pg { if v == "1" { "true" } else { "false" }.into() } else { v.to_string() });
+        return Some(if target == Product::Pg || (target == Product::Firebird && firebird_v3()) { if v == "1" { "true" } else { "false" }.into() } else { v.to_string() });
     }
     if is_plain_number(&s) {
         return Some(s);
@@ -383,7 +435,9 @@ pub fn check_text(def: &str) -> String {
 
 /// O nome de uma restrição no destino: no PostgreSQL e no SQL Server o nome vale para o schema todo, então leva a tabela na frente.
 pub fn scoped_name(dst: Product, table: &str, name: &str) -> String {
-    if matches!(dst, Product::Pg | Product::Mssql) && !name.starts_with(table) { format!("{table}_{name}") } else { name.to_string() }
+    let full = if matches!(dst, Product::Pg | Product::Mssql | Product::Firebird) && !name.starts_with(table) { format!("{table}_{name}") } else { name.to_string() };
+    // Os nomes do Firebird (antes da versão 4) têm no máximo 31 caracteres.
+    if dst == Product::Firebird && full.chars().count() > 31 { full.chars().take(31).collect() } else { full }
 }
 
 fn key_columns(t: &TableDetail) -> Vec<String> {
@@ -420,7 +474,8 @@ pub fn column_sql(src: Product, dst: Product, c: &ColumnInfo, pk_single_auto: bo
             Product::Pg => s.push_str(" GENERATED BY DEFAULT AS IDENTITY"),
             Product::Mssql => s.push_str(" IDENTITY(1,1)"),
             Product::Mysql => s.push_str(" AUTO_INCREMENT"),
-            Product::Sqlite => {}
+            Product::Firebird if firebird_v3() => s.push_str(" GENERATED BY DEFAULT AS IDENTITY"),
+            Product::Firebird | Product::Sqlite => {}
         }
     }
     s.push_str(if c.not_null || auto { " NOT NULL" } else if dst == Product::Mssql { " NULL" } else { "" });
@@ -509,10 +564,35 @@ pub fn create_table(src: Product, dst: Product, schema: &str, table: &str, detai
         if seen_unique.contains(&cols) || detail.constraints.iter().any(|c| c.name == i.name && c.kind == "u") {
             continue;
         }
-        let name = if matches!(dst, Product::Pg | Product::Sqlite) && !i.name.starts_with(table) { format!("{table}_{}", i.name) } else { i.name.clone() };
+        let name = if matches!(dst, Product::Pg | Product::Sqlite | Product::Firebird) && !i.name.starts_with(table) { scoped_index(dst, &format!("{table}_{}", i.name)) } else { i.name.clone() };
         post.push(format!("CREATE {}INDEX {} ON {target} ({})", if i.unique { "UNIQUE " } else { "" }, d.q(&name), cols.iter().map(|k| d.q(k)).collect::<Vec<_>>().join(", ")));
     }
+    // Firebird antes da versão 3: sem identidade, a numeração vem de um gerador e de um gatilho `BEFORE INSERT`.
+    if dst == Product::Firebird && !firebird_v3() {
+        for c in detail.columns.iter().filter(|c| c.generated.is_none() && is_auto(c)) {
+            post.extend(firebird_numbering(table, &c.name));
+        }
+    }
     (vec![create], post, warnings)
+}
+
+/// Nome de índice do Firebird: no máximo 31 caracteres.
+pub fn scoped_index(dst: Product, name: &str) -> String {
+    if dst == Product::Firebird && name.chars().count() > 31 { name.chars().take(31).collect() } else { name.to_string() }
+}
+
+/// Gerador e gatilho que numeram a coluna `column` (Firebird 2.5): o gerador parte do maior valor que a coluna já tem.
+pub fn firebird_numbering(table: &str, column: &str) -> Vec<String> {
+    let d = Dialect::Firebird;
+    let cut = |s: String| -> String { s.chars().take(31).collect() };
+    let generator = cut(format!("GEN_{table}_{column}"));
+    let trg = cut(format!("{table}_{column}_BI"));
+    vec![
+        // O gerador pode ter ficado de uma tabela apagada: cria só se não existe e o põe no maior valor da coluna.
+        format!("EXECUTE BLOCK AS BEGIN IF (NOT EXISTS(SELECT 1 FROM RDB$GENERATORS WHERE RDB$GENERATOR_NAME = {})) THEN EXECUTE STATEMENT {}; END", d.text(&generator), d.text(&format!("CREATE GENERATOR {}", d.q(&generator)))),
+        format!("EXECUTE BLOCK AS DECLARE v BIGINT; BEGIN SELECT COALESCE(MAX({c}), 0) FROM {t} INTO :v; v = GEN_ID({g}, :v - GEN_ID({g}, 0)); END", c = d.q(column), t = d.q(table), g = d.q(&generator)),
+        format!("CREATE TRIGGER {} FOR {} ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.{c} IS NULL) THEN NEW.{c} = GEN_ID({g}, 1); END", d.q(&trg), d.q(table), c = d.q(column), g = d.q(&generator)),
+    ]
 }
 
 /// A restrição de chave estrangeira e o índice têm o mesmo sentido nos dois lados? (para a comparação entre produtos)

@@ -11,6 +11,7 @@ use crate::genext::{Dialect, Exec};
 use crate::neutral::{NType, Product, canonical, literal as nliteral, parse};
 use crate::sessions::Sessions;
 use crate::xprod::{open_exec, register_flag, unregister_flag};
+use crate::firebird::FirebirdSessions;
 use crate::mssql::MssqlSessions;
 use crate::mysql::MysqlSessions;
 use crate::sqlite::SqliteSessions;
@@ -75,6 +76,8 @@ struct TableDiff {
 
 struct Comparison {
     dialect: Dialect,
+    /// O destino Firebird tem `BOOLEAN` (versão 3 em diante)? Decide como o script escreve os booleanos.
+    firebird_v3: bool,
     target_schema: String,
     tables: Vec<TableDiff>,
 }
@@ -279,18 +282,20 @@ pub async fn ext_datasync_compare(
             })
             .collect(),
     };
-    comparisons.inner.lock().unwrap().insert(req.compare_id, Arc::new(Comparison { dialect: d, target_schema: req.spec.target_schema.clone(), tables }));
+    comparisons.inner.lock().unwrap().insert(req.compare_id, Arc::new(Comparison { dialect: d, firebird_v3: crate::neutral::firebird_v3(), target_schema: req.spec.target_schema.clone(), tables }));
     Ok(summary)
 }
 
 /// Registra o pedido de parada da operação: no registro comum (ids `xp_`, entre produtos) ou no gerenciador do produto da conexão.
 pub(crate) fn register_cancel(id: &str, conn: &str, flag: &Arc<AtomicBool>, mysql: &MysqlSessions, mssql: &MssqlSessions, sqlite: &SqliteSessions) {
-    if id.starts_with("xp_") || !matches!(Product::of_conn(conn), Product::Mysql | Product::Mssql | Product::Sqlite) {
+    if id.starts_with("xp_") || !matches!(Product::of_conn(conn), Product::Mysql | Product::Mssql | Product::Sqlite | Product::Firebird) {
         register_flag(id, flag.clone());
     } else if conn.starts_with("mysql_") {
         mysql.register_cancel(id, flag.clone());
     } else if conn.starts_with("mssql_") {
         mssql.register_cancel(id, flag.clone());
+    } else if conn.starts_with("firebird_") {
+        FirebirdSessions::default().register_cancel(id, flag.clone());
     } else {
         sqlite.register_cancel(id, flag.clone());
     }
@@ -304,6 +309,8 @@ pub(crate) fn unregister_cancel(id: &str, conn: &str, mysql: &MysqlSessions, mss
         mssql.unregister_cancel(id);
     } else if conn.starts_with("sqlite_") {
         sqlite.unregister_cancel(id);
+    } else if conn.starts_with("firebird_") {
+        FirebirdSessions::default().unregister_cancel(id);
     }
 }
 
@@ -323,6 +330,7 @@ pub fn ext_datasync_rows(comparisons: State<'_, ExtComparisons>, compare_id: Str
 
 /// Comandos que levam o destino ao estado da origem: por tabela os `INSERT` e `UPDATE`; no fim os `DELETE`, na ordem inversa.
 fn script(c: &Comparison, selection: &[TableSelection]) -> Vec<String> {
+    crate::neutral::set_firebird_v3(c.firebird_v3);
     let d = c.dialect;
     let mut out = Vec::new();
     let mut deletes: Vec<Vec<String>> = Vec::new();

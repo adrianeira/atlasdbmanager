@@ -1,10 +1,12 @@
 //! Data Generation do SQL Server, MySQL e SQLite: descreve as tabelas, pré-visualiza e insere dados de teste.
 //! Os geradores, a ordem das tabelas e os formatos de resposta são os do PostgreSQL (`atlas_pg`); aqui ficam só o catálogo, as aspas e a gravação de cada banco.
 
+use crate::firebird::FirebirdSessions;
 use crate::mssql::MssqlSessions;
 use crate::mysql::MysqlSessions;
 use crate::sqlite::SqliteSessions;
 use atlas_core::{DatabaseError, ErrorKind, QueryOutcome};
+use atlas_firebird::{FirebirdSession, FirebirdTx};
 use atlas_mssql::{MssqlSession, MssqlTx};
 use atlas_mysql::{MysqlSession, MysqlTx};
 use atlas_pg::{
@@ -25,6 +27,7 @@ pub(crate) enum Dialect {
     Mysql,
     Mssql,
     Sqlite,
+    Firebird,
 }
 
 /// A conexão da geração: a sessão (cada comando confirma sozinho) ou uma transação aberta.
@@ -35,6 +38,8 @@ pub(crate) enum Exec {
     MssqlTx(Arc<MssqlTx>),
     Sqlite(Arc<SqliteSession>),
     SqliteTx(Arc<SqliteTx>),
+    Firebird(Arc<FirebirdSession>),
+    FirebirdTx(Arc<FirebirdTx>),
     /// PostgreSQL: uma conexão exclusiva (a transação é o `BEGIN` dela).
     Pg(Arc<atlas_pg::PgSession>),
     PgTx(Arc<atlas_pg::PgSession>),
@@ -49,6 +54,11 @@ impl Exec {
             Exec::MssqlTx(t) => t.execute(sql, max).await,
             Exec::Sqlite(s) => s.execute(sql, max),
             Exec::SqliteTx(t) => t.execute(sql, max),
+            Exec::Firebird(s) => run_blocking(s.clone(), sql, max).await,
+            Exec::FirebirdTx(t) => {
+                let (t, sql) = (t.clone(), sql.to_string());
+                tokio::task::spawn_blocking(move || t.execute(&sql, max)).await.map_err(|e| DatabaseError::new(ErrorKind::Internal, e.to_string()))?
+            }
             Exec::Pg(s) | Exec::PgTx(s) => atlas_pg::execute(s, sql, max).await,
         }
     }
@@ -64,6 +74,10 @@ impl Exec {
             Exec::Mysql(s, db) => Some(Exec::MysqlTx(Arc::new(s.begin(db).await?))),
             Exec::Mssql(s, db) => Some(Exec::MssqlTx(Arc::new(s.begin(db).await?))),
             Exec::Sqlite(s) => Some(Exec::SqliteTx(Arc::new(s.begin()?))),
+            Exec::Firebird(s) => {
+                let s = s.clone();
+                Some(Exec::FirebirdTx(Arc::new(tokio::task::spawn_blocking(move || s.begin()).await.map_err(|e| DatabaseError::new(ErrorKind::Internal, e.to_string()))??)))
+            }
             Exec::Pg(s) => {
                 atlas_pg::execute(s, "BEGIN", 1).await?;
                 Some(Exec::PgTx(s.clone()))
@@ -78,8 +92,9 @@ impl Exec {
             Exec::Mysql(s, _) => s.table_detail(schema, table).await,
             Exec::Mssql(s, db) => s.table_detail(db, schema, table).await,
             Exec::Sqlite(s) => s.table_detail(table),
+            Exec::Firebird(s) => s.table_detail(table),
             Exec::Pg(s) | Exec::PgTx(s) => atlas_pg::table_detail(s, schema, table).await,
-            Exec::MysqlTx(_) | Exec::MssqlTx(_) | Exec::SqliteTx(_) => Err(DatabaseError::new(ErrorKind::Internal, "table_detail needs a session")),
+            Exec::MysqlTx(_) | Exec::MssqlTx(_) | Exec::SqliteTx(_) | Exec::FirebirdTx(_) => Err(DatabaseError::new(ErrorKind::Internal, "table_detail needs a session")),
         }
     }
 
@@ -89,6 +104,7 @@ impl Exec {
             Exec::Mysql(s, _) => s.view_detail(schema, name).await.map(|d| d.definition),
             Exec::Mssql(s, db) => s.view_detail(db, schema, name).await.map(|d| d.definition),
             Exec::Sqlite(s) => s.view_detail(name).map(|d| d.definition),
+            Exec::Firebird(s) => s.view_detail(name).map(|d| d.definition),
             Exec::Pg(s) | Exec::PgTx(s) => atlas_pg::view_detail(s, schema, name).await.map(|d| d.definition),
             _ => Err(DatabaseError::new(ErrorKind::Internal, "view_definition needs a session")),
         }
@@ -100,6 +116,7 @@ impl Exec {
             Exec::Mysql(s, _) => s.list_objects(schema).await,
             Exec::Mssql(s, db) => s.list_objects(db, schema).await,
             Exec::Sqlite(s) => s.list_objects(),
+            Exec::Firebird(s) => s.list_objects(),
             Exec::Pg(s) | Exec::PgTx(s) => atlas_pg::list_objects(s, schema).await,
             _ => Err(DatabaseError::new(ErrorKind::Internal, "objects needs a session")),
         }
@@ -110,6 +127,7 @@ impl Exec {
             Exec::MysqlTx(t) => t.finish(commit).await,
             Exec::MssqlTx(t) => t.finish(commit).await,
             Exec::SqliteTx(t) => t.finish(commit),
+            Exec::FirebirdTx(t) => t.finish(commit),
             Exec::PgTx(s) => atlas_pg::execute(s, if commit { "COMMIT" } else { "ROLLBACK" }, 1).await.map(|_| ()),
             _ => Ok(()),
         }
@@ -121,14 +139,14 @@ impl Dialect {
         match self {
             Dialect::Mysql => format!("`{}`", name.replace('`', "``")),
             Dialect::Mssql => format!("[{}]", name.replace(']', "]]")),
-            Dialect::Sqlite | Dialect::Pg => format!("\"{}\"", name.replace('"', "\"\"")),
+            Dialect::Sqlite | Dialect::Pg | Dialect::Firebird => format!("\"{}\"", name.replace('"', "\"\"")),
         }
     }
 
     /// `banco.tabela` (MySQL), `schema.tabela` (SQL Server) ou `tabela` (SQLite).
     pub(crate) fn target(self, schema: &str, table: &str) -> String {
         match self {
-            Dialect::Sqlite => self.q(table),
+            Dialect::Sqlite | Dialect::Firebird => self.q(table),
             _ => format!("{}.{}", self.q(schema), self.q(table)),
         }
     }
@@ -138,7 +156,7 @@ impl Dialect {
         match self {
             Dialect::Mysql => format!("'{}'", v.replace('\\', "\\\\").replace('\'', "''")),
             Dialect::Mssql => format!("N'{}'", v.replace('\'', "''")),
-            Dialect::Sqlite | Dialect::Pg => format!("'{}'", v.replace('\'', "''")),
+            Dialect::Sqlite | Dialect::Pg | Dialect::Firebird => format!("'{}'", v.replace('\'', "''")),
         }
     }
 
@@ -146,6 +164,7 @@ impl Dialect {
         match (v, g) {
             (None, _) => "NULL".into(),
             (Some(t), Generator::Boolean { .. }) if self == Dialect::Pg => if t == "true" { "true" } else { "false" }.into(),
+            (Some(t), Generator::Boolean { .. }) if self == Dialect::Firebird && crate::neutral::firebird_v3() => if t == "true" { "true" } else { "false" }.into(),
             (Some(t), Generator::Boolean { .. }) => if t == "true" { "1" } else { "0" }.into(),
             (Some(t), _) => self.text(t),
         }
@@ -170,8 +189,12 @@ pub(crate) fn exec_for(conn: &str, database: &str, schema: &str, mysql: &MysqlSe
         Ok((Dialect::Mssql, Exec::Mssql(mssql.session(conn)?, database.to_string())))
     } else if conn.starts_with("sqlite_") {
         Ok((Dialect::Sqlite, Exec::Sqlite(sqlite.session(conn)?)))
+    } else if conn.starts_with("firebird_") {
+        let s = FirebirdSessions::default().session(conn)?;
+        crate::neutral::set_firebird_v3(s.version_num >= 3_000_000);
+        Ok((Dialect::Firebird, Exec::Firebird(s)))
     } else {
-        Err(DatabaseError::new(ErrorKind::InvalidInput, "this connection is not a SQL Server, MySQL or SQLite connection"))
+        Err(DatabaseError::new(ErrorKind::InvalidInput, "this connection is not a SQL Server, MySQL, SQLite or Firebird connection"))
     }
 }
 
@@ -412,6 +435,74 @@ async fn raw_sqlite(exec: &Exec) -> Result<(Vec<RawColumn>, Vec<[String; 4]>), D
     Ok((out, fks))
 }
 
+async fn raw_firebird(exec: &Exec) -> Result<(Vec<RawColumn>, Vec<[String; 4]>), DatabaseError> {
+    // A coluna de identidade só existe no catálogo a partir do Firebird 3.
+    let v3 = matches!(exec, Exec::Firebird(s) if s.version_num >= 3_000_000);
+    let identity = if v3 { "CASE WHEN rf.RDB$IDENTITY_TYPE IS NULL THEN 0 ELSE 1 END" } else { "0" };
+    let cols = exec
+        .rows(
+            &format!(
+                "SELECT TRIM(rf.RDB$RELATION_NAME), TRIM(rf.RDB$FIELD_NAME), f.RDB$FIELD_TYPE, COALESCE(f.RDB$FIELD_SUB_TYPE, 0), COALESCE(f.RDB$FIELD_LENGTH, 0), COALESCE(f.RDB$CHARACTER_LENGTH, 0), \
+                        COALESCE(f.RDB$FIELD_PRECISION, 0), COALESCE(f.RDB$FIELD_SCALE, 0), COALESCE(rf.RDB$NULL_FLAG, f.RDB$NULL_FLAG, 0), CASE WHEN f.RDB$COMPUTED_SOURCE IS NULL THEN 0 ELSE 1 END, {identity}, \
+                        CASE WHEN EXISTS (SELECT 1 FROM RDB$RELATION_CONSTRAINTS rc JOIN RDB$INDEX_SEGMENTS seg ON seg.RDB$INDEX_NAME = rc.RDB$INDEX_NAME \
+                                           WHERE rc.RDB$CONSTRAINT_TYPE = 'PRIMARY KEY' AND rc.RDB$RELATION_NAME = rf.RDB$RELATION_NAME AND seg.RDB$FIELD_NAME = rf.RDB$FIELD_NAME) THEN 1 ELSE 0 END \
+                   FROM RDB$RELATION_FIELDS rf JOIN RDB$FIELDS f ON f.RDB$FIELD_NAME = rf.RDB$FIELD_SOURCE JOIN RDB$RELATIONS r ON r.RDB$RELATION_NAME = rf.RDB$RELATION_NAME \
+                  WHERE COALESCE(r.RDB$SYSTEM_FLAG, 0) = 0 AND r.RDB$VIEW_BLR IS NULL ORDER BY rf.RDB$RELATION_NAME, rf.RDB$FIELD_POSITION"
+            ),
+            100_000,
+        )
+        .await?;
+    let out = cols
+        .iter()
+        .map(|r| {
+            let (ftype, sub_type, scale) = (cell(r, 2).parse::<i32>().unwrap_or(0), cell(r, 3).parse::<i32>().unwrap_or(0), cell(r, 7).parse::<i32>().unwrap_or(0));
+            let (_base, formatted, length, _) = atlas_firebird::meta::describe_type(ftype, sub_type, cell(r, 4).parse().unwrap_or(0), cell(r, 5).parse().unwrap_or(0), cell(r, 6).parse().unwrap_or(0), scale);
+            let kind = match ftype {
+                7 | 8 | 16 | 26 if scale == 0 && sub_type == 0 => "int",
+                7 | 8 | 16 | 26 | 10 | 27 => "numeric",
+                14 | 37 => "text",
+                261 if sub_type == 1 => "text",
+                12 => "date",
+                35 => "timestamp",
+                23 => "bool",
+                _ => "other",
+            };
+            RawColumn {
+                table: cell(r, 0),
+                name: cell(r, 1),
+                data_type: formatted,
+                not_null: cell(r, 8) == "1",
+                is_pk: cell(r, 11) == "1",
+                generated: cell(r, 9) == "1",
+                auto: cell(r, 10) == "1",
+                char_len: (kind == "text" && matches!(ftype, 14 | 37) && length > 0).then_some(length as u32),
+                kind,
+                precision: num(r, 6).filter(|p| *p > 0),
+                scale: (scale != 0).then(|| (-scale) as u32),
+                labels: Vec::new(),
+            }
+        })
+        .collect();
+    let fks = exec
+        .rows(
+            "SELECT TRIM(rc.RDB$RELATION_NAME), TRIM(seg.RDB$FIELD_NAME), TRIM(rc2.RDB$RELATION_NAME), TRIM(seg2.RDB$FIELD_NAME) FROM RDB$RELATION_CONSTRAINTS rc \
+               JOIN RDB$REF_CONSTRAINTS rfc ON rfc.RDB$CONSTRAINT_NAME = rc.RDB$CONSTRAINT_NAME JOIN RDB$RELATION_CONSTRAINTS rc2 ON rc2.RDB$CONSTRAINT_NAME = rfc.RDB$CONST_NAME_UQ \
+               JOIN RDB$INDEX_SEGMENTS seg ON seg.RDB$INDEX_NAME = rc.RDB$INDEX_NAME JOIN RDB$INDEX_SEGMENTS seg2 ON seg2.RDB$INDEX_NAME = rc2.RDB$INDEX_NAME AND seg2.RDB$FIELD_POSITION = seg.RDB$FIELD_POSITION \
+              WHERE rc.RDB$CONSTRAINT_TYPE = 'FOREIGN KEY'",
+            100_000,
+        )
+        .await?
+        .iter()
+        .map(|r| [cell(r, 0), cell(r, 1), cell(r, 2), cell(r, 3)])
+        .collect();
+    Ok((out, fks))
+}
+
+async fn run_blocking(s: Arc<FirebirdSession>, sql: &str, max: usize) -> Result<QueryOutcome, DatabaseError> {
+    let sql = sql.to_string();
+    tokio::task::spawn_blocking(move || s.execute(&sql, max)).await.map_err(|e| DatabaseError::new(ErrorKind::Internal, e.to_string()))?
+}
+
 /// O gerador sugerido para a coluna (pelo tipo, pela chave e pelo padrão da coluna), como no PostgreSQL.
 fn suggest(c: &GenColumnMeta, raw: &RawColumn, reference: Option<(String, String)>) -> Generator {
     if raw.auto {
@@ -454,6 +545,7 @@ async fn describe(dialect: Dialect, exec: &Exec, schema: &str) -> Result<Vec<Gen
         Dialect::Mysql => raw_mysql(exec, schema).await?,
         Dialect::Mssql => raw_mssql(exec, schema).await?,
         Dialect::Sqlite => raw_sqlite(exec).await?,
+        Dialect::Firebird => raw_firebird(exec).await?,
         Dialect::Pg => return Err(DatabaseError::new(ErrorKind::UnsupportedFeature, "PostgreSQL uses its own data generation")),
     };
     let mut refs: HashMap<(String, String), (String, String)> = HashMap::new();
@@ -490,7 +582,7 @@ async fn prepare(dialect: Dialect, exec: &Exec, schema: &str, table: &GenTableSp
                 let big = match dialect {
                     Dialect::Mysql => format!("CAST(MAX({}) AS SIGNED)", dialect.q(&c.name)),
                     Dialect::Mssql => format!("CAST(MAX({}) AS bigint)", dialect.q(&c.name)),
-                    Dialect::Sqlite | Dialect::Pg => format!("MAX({})", dialect.q(&c.name)),
+                    Dialect::Sqlite | Dialect::Pg | Dialect::Firebird => format!("MAX({})", dialect.q(&c.name)),
                 };
                 let rows = exec.rows(&format!("SELECT COALESCE({big}, 0) + 1 FROM {}", dialect.target(schema, &table.name)), 1).await?;
                 st.next = rows.first().map(|r| cell(r, 0)).and_then(|v| v.parse::<i64>().ok()).unwrap_or(1);
@@ -502,6 +594,7 @@ async fn prepare(dialect: Dialect, exec: &Exec, schema: &str, table: &GenTableSp
                     Dialect::Mssql => format!("SELECT DISTINCT TOP 10000 CAST({col} AS nvarchar(4000)) FROM {} WHERE {col} IS NOT NULL", dialect.target(schema, t)),
                     Dialect::Pg => format!("SELECT DISTINCT CAST({col} AS text) FROM {} WHERE {col} IS NOT NULL LIMIT 10000", dialect.target(schema, t)),
                     Dialect::Sqlite => format!("SELECT DISTINCT CAST({col} AS TEXT) FROM {} WHERE {col} IS NOT NULL LIMIT 10000", dialect.target(schema, t)),
+                    Dialect::Firebird => format!("SELECT FIRST 10000 DISTINCT CAST({col} AS VARCHAR(255)) FROM {} WHERE {col} IS NOT NULL", dialect.target(schema, t)),
                 };
                 st.pool = exec.rows(&sql, 10_000).await?.iter().map(|r| cell(r, 0)).collect();
             }
@@ -583,7 +676,8 @@ async fn run(dialect: Dialect, exec: &Exec, spec: &GenSpec, hooks: GenHooks<'_>)
         log(format!("{tag}: Start records generation"));
         let target = dialect.target(&spec.schema, &t.name);
         let columns = t.columns.iter().map(|c| dialect.q(&c.name)).collect::<Vec<_>>().join(", ");
-        let per_batch = if opts.multi_insert { BATCH } else { 1 };
+        // O Firebird não tem `INSERT` com várias linhas: o lote vira um `EXECUTE BLOCK`, e o comando tem no máximo 64 KB no 2.5.
+        let per_batch = if opts.multi_insert { if dialect == Dialect::Firebird { 40 } else { BATCH } } else { 1 };
         let mut done: u64 = 0;
         let mut failed = false;
         while done < t.rows {
@@ -605,8 +699,11 @@ async fn run(dialect: Dialect, exec: &Exec, spec: &GenSpec, hooks: GenHooks<'_>)
                 match dialect {
                     Dialect::Mssql => format!("INSERT INTO {target} DEFAULT VALUES"),
                     Dialect::Mysql => format!("INSERT INTO {target} () VALUES ()"),
-                    Dialect::Sqlite | Dialect::Pg => format!("INSERT INTO {target} DEFAULT VALUES"),
+                    Dialect::Sqlite | Dialect::Pg | Dialect::Firebird => format!("INSERT INTO {target} DEFAULT VALUES"),
                 }
+            } else if dialect == Dialect::Firebird && rows.len() > 1 {
+                let inserts: Vec<String> = rows.iter().map(|r| format!("INSERT INTO {target} ({columns}) VALUES {r};")).collect();
+                format!("EXECUTE BLOCK AS BEGIN {} END", inserts.join(" "))
             } else {
                 format!("INSERT INTO {target} ({columns}) VALUES {}", rows.join(", "))
             };
@@ -757,3 +854,7 @@ macro_rules! provider_commands {
 provider_commands!(mysql_datagen_describe, mysql_datagen_preview, mysql_datagen_run, MysqlSessions, Dialect::Mysql, |s: Arc<MysqlSession>, db: &str, schema: &str| Exec::Mysql(s, mysql_db(db, schema).to_string()));
 provider_commands!(mssql_datagen_describe, mssql_datagen_preview, mssql_datagen_run, MssqlSessions, Dialect::Mssql, |s: Arc<MssqlSession>, db: &str, _schema: &str| Exec::Mssql(s, db.to_string()));
 provider_commands!(sqlite_datagen_describe, sqlite_datagen_preview, sqlite_datagen_run, SqliteSessions, Dialect::Sqlite, |s: Arc<SqliteSession>, _db: &str, _schema: &str| Exec::Sqlite(s));
+provider_commands!(firebird_datagen_describe, firebird_datagen_preview, firebird_datagen_run, FirebirdSessions, Dialect::Firebird, |s: Arc<FirebirdSession>, _db: &str, _schema: &str| {
+    crate::neutral::set_firebird_v3(s.version_num >= 3_000_000);
+    Exec::Firebird(s)
+});

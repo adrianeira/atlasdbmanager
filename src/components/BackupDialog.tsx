@@ -3,7 +3,7 @@ import { chooseExportFolder, errorText, onBackupLog, pg, toAtlasError, type Tool
 import { useT, type MessageKey } from "../i18n";
 import { SmallIcon, categoryIcon } from "../icons";
 import type { Category } from "../model";
-import { isMssqlId, isSqliteId } from "../providerRoute";
+import { isFirebirdId, isMssqlId, isSqliteId } from "../providerRoute";
 import { readToolsDir, saveToolsDir } from "./RestoreDialog";
 
 /** Grupos da seleção de objetos: o `pg_dump` deixa de fora tabelas, views e sequências por nome; funções e tipos entram sempre. */
@@ -52,7 +52,7 @@ export function BackupDialog({ target, onClose, onDone }: Props) {
   const t = useT();
   // O SQLite copia o próprio arquivo: não precisa das ferramentas do PostgreSQL.
   const mssql = isMssqlId(target.connId);
-  const sqlite = isSqliteId(target.connId) || mssql;
+  const sqlite = isSqliteId(target.connId) || isFirebirdId(target.connId) || mssql;
   const [tab, setTab] = useState<Tab>("general");
   const [comment, setComment] = useState("");
   const [useName, setUseName] = useState(false);

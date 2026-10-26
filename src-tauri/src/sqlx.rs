@@ -132,7 +132,7 @@ fn function(name: &str, dst: Product) -> Option<&'static str> {
         "TRIM" => "TRIM",
         "LENGTH" | "LEN" | "CHAR_LENGTH" | "CHARACTER_LENGTH" => match dst {
             Product::Mssql => "LEN",
-            Product::Mysql => "CHAR_LENGTH",
+            Product::Mysql | Product::Firebird => "CHAR_LENGTH",
             _ => "LENGTH",
         },
         _ => return None,
@@ -211,7 +211,7 @@ pub fn translate(sql: &str, cx: &Ctx<'_>) -> Option<String> {
                         i += 2;
                     }
                 } else if up == "TRUE" || up == "FALSE" {
-                    out.push(if cx.dst == Product::Pg { up.to_lowercase() } else if up == "TRUE" { "1".into() } else { "0".into() });
+                    out.push(if cx.dst == Product::Pg { up.to_lowercase() } else if cx.dst == Product::Firebird && crate::neutral::firebird_v3() { up } else if up == "TRUE" { "1".into() } else { "0".into() });
                 } else if KEYWORDS.contains(&up.as_str()) {
                     if !cx.select && matches!(up.as_str(), "SELECT" | "FROM" | "JOIN" | "GROUP" | "HAVING" | "ORDER" | "EXISTS") {
                         return None;
@@ -249,12 +249,12 @@ fn qualified(toks: &[Tok], i: &mut usize, first: &str, cx: &Ctx<'_>, d: Dialect,
     if cx.select {
         if parts.len() > 1 && parts[0].eq_ignore_ascii_case(cx.src_schema) {
             parts[0] = cx.dst_schema.to_string();
-        } else if is_table && parts.len() == 1 && cx.dst != Product::Sqlite {
+        } else if is_table && parts.len() == 1 && !matches!(cx.dst, Product::Sqlite | Product::Firebird) {
             // `FROM tabela` sem schema: no destino a tabela está no schema da transferência, que pode não estar no caminho de busca.
             parts.insert(0, cx.dst_schema.to_string());
         }
         // O SQLite não tem schema na frente do nome: fica `tabela` ou `tabela.coluna`.
-        if cx.dst == Product::Sqlite && parts.len() > 1 && parts[0].eq_ignore_ascii_case(cx.dst_schema) && (is_table || parts.len() == 3) {
+        if matches!(cx.dst, Product::Sqlite | Product::Firebird) && parts.len() > 1 && parts[0].eq_ignore_ascii_case(cx.dst_schema) && (is_table || parts.len() == 3) {
             parts.remove(0);
         }
     }

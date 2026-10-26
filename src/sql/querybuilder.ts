@@ -107,6 +107,8 @@ const RESERVED = new Set([
 
 /** Aspas só quando preciso (maiúsculas, espaços, palavra reservada...), como num SELECT escrito à mão. */
 export function ident(name: string, d?: QbDialect): string {
+  // Firebird: sem aspas o nome vira maiúsculo; os que o banco guarda em minúsculas só se alcançam entre aspas.
+  if (d === "firebird") return `"${name.replace(/"/g, '""')}"`;
   if (/^[a-z_][a-z0-9_$]*$/.test(name) && !RESERVED.has(name)) return name;
   if (d === "mysql") return `\`${name.replace(/`/g, "``")}\``;
   if (d === "mssql") return `[${name.replace(/]/g, "]]")}]`;
@@ -222,6 +224,11 @@ export function buildSql(state: QbState, defaultSchema: string, d?: QbDialect): 
       out.push(`OFFSET ${offset} ROWS`);
       if (limit) out.push(`FETCH NEXT ${limit} ROWS ONLY`);
     }
+    return out.join("\n");
+  }
+  // Firebird: `ROWS inicio TO fim`.
+  if (d === "firebird") {
+    if (limit || offset) out.push(`ROWS ${Number(offset || 0) + 1} TO ${limit ? Number(offset || 0) + Number(limit) : 2147483647}`);
     return out.join("\n");
   }
   // Fora do PostgreSQL o deslocamento sozinho não vale: o MySQL e o SQLite pedem um LIMIT (o maior possível).

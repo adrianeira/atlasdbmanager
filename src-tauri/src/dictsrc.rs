@@ -1,10 +1,12 @@
 //! De onde o Data Dictionary lê os metadados: cada banco devolve o mesmo formato (tabela, view e função) para o mesmo documento.
 
+use crate::firebird::FirebirdSessions;
 use crate::mssql::MssqlSessions;
 use crate::mysql::MysqlSessions;
 use crate::sessions::Sessions;
 use crate::sqlite::SqliteSessions;
 use atlas_core::{DatabaseError, ErrorKind, TableDetail};
+use atlas_firebird::FirebirdSession;
 use atlas_mssql::MssqlSession;
 use atlas_mysql::MysqlSession;
 use atlas_pg::PgSession;
@@ -25,6 +27,7 @@ pub enum DictSource {
     Sqlite(Arc<SqliteSession>),
     Mssql(Arc<MssqlSession>),
     Mysql(Arc<MysqlSession>),
+    Firebird(Arc<FirebirdSession>),
 }
 
 fn kv(k: &str, v: impl Into<String>) -> (String, String) {
@@ -40,6 +43,8 @@ impl DictSource {
             Self::Mssql(mssql.session(conn_id)?)
         } else if conn_id.starts_with("mysql_") {
             Self::Mysql(mysql.session(conn_id)?)
+        } else if conn_id.starts_with("firebird_") {
+            Self::Firebird(FirebirdSessions::default().session(conn_id)?)
         } else {
             Self::Pg(Box::new(pg.dedicated(conn_id, database).await?))
         })
@@ -65,6 +70,17 @@ impl DictSource {
                 vec![kv("Encoding", d.encoding), kv("Collation Order", d.collate)]
             }
             Self::Mssql(s) => s.database_info(database).await?,
+            Self::Firebird(s) => {
+                let snap = s.monitor_snapshot()?;
+                let pick = |list: &[(String, String)], key: &str| list.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone()).unwrap_or_default();
+                vec![
+                    kv("Database", s.target.database.clone()),
+                    kv("Firebird version", s.version.clone()),
+                    kv("ODS", format!("{}.{}", pick(&snap.variables, "ODS_MAJOR"), pick(&snap.variables, "ODS_MINOR"))),
+                    kv("Page Size", pick(&snap.variables, "PAGE_SIZE")),
+                    kv("Sweep interval", pick(&snap.variables, "SWEEP_INTERVAL")),
+                ]
+            }
             Self::Sqlite(s) => {
                 let snap = s.monitor_snapshot()?;
                 let pick = |list: &[(String, String)], key: &str| list.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone()).unwrap_or_default();
@@ -97,6 +113,7 @@ impl DictSource {
             Self::Sqlite(s) => s.table_detail(name),
             Self::Mssql(s) => s.table_detail(database, schema, name).await,
             Self::Mysql(s) => s.table_detail(database, name).await,
+            Self::Firebird(s) => s.table_detail(name),
         }
     }
 
@@ -107,6 +124,7 @@ impl DictSource {
             Self::Sqlite(s) => s.view_detail(name)?,
             Self::Mssql(s) => s.view_detail(database, schema, name).await?,
             Self::Mysql(s) => s.view_detail(database, name).await?,
+            Self::Firebird(s) => s.view_detail(name)?,
         };
         Ok((d.comment, d.definition))
     }
@@ -127,6 +145,11 @@ impl DictSource {
                 let (arguments, returns, comment) = s.routine_info(database, name).await?;
                 let body = s.routine_definition(database, name).await?;
                 Ok(FunctionDoc { arguments, returns, language: "SQL".into(), comment, body })
+            }
+            Self::Firebird(s) => {
+                let body = s.routine_definition(name)?;
+                // Os parâmetros estão no cabeçalho do texto (`( ... ) RETURNS ( ... )`): o documento mostra o texto todo.
+                Ok(FunctionDoc { arguments: String::new(), returns: None, language: "PSQL".into(), comment: None, body })
             }
             Self::Sqlite(_) => Err(DatabaseError::new(ErrorKind::UnsupportedFeature, "SQLite has no stored functions")),
         }

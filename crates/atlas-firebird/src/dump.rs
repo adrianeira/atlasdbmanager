@@ -103,6 +103,12 @@ fn foreign_keys(table: &str, d: &TableDetail) -> Vec<String> {
         .collect()
 }
 
+/// Um comando de apagar que só roda se o objeto existe (o `DROP ... IF EXISTS` só chega no Firebird 5): confere o catálogo antes.
+fn guarded_drop(catalog: &str, column: &str, drop: &str, name: &str) -> String {
+    let lit = |s: &str| format!("'{}'", s.replace('\'', "''"));
+    format!("EXECUTE BLOCK AS BEGIN IF (EXISTS(SELECT 1 FROM {catalog} WHERE {column} = {})) THEN EXECUTE STATEMENT {}; END;", lit(name), lit(drop))
+}
+
 fn gen_value(conn: &mut Conn, generator: &str) -> Result<i64, DatabaseError> {
     let rows = meta::query(conn, &format!("SELECT GEN_ID({}, 0) FROM RDB$DATABASE", quote_ident(generator)), vec![])?;
     Ok(rows.first().and_then(|r| r.first().cloned().flatten()).and_then(|v| v.parse().ok()).unwrap_or(0))
@@ -140,21 +146,21 @@ pub(crate) fn plan_on(conn: &mut Conn, tables: Option<&[String]>, views: Option<
     if clean {
         for (name, _) in routines.iter().rev() {
             let kind = if objects.functions.iter().any(|f| &f.name == name && f.procedure) { "PROCEDURE" } else { "FUNCTION" };
-            plan.pre_data.push(format!("DROP {kind} {};", quote_ident(name)));
+            plan.pre_data.push(guarded_drop(if kind == "PROCEDURE" { "RDB$PROCEDURES" } else { "RDB$FUNCTIONS" }, if kind == "PROCEDURE" { "RDB$PROCEDURE_NAME" } else { "RDB$FUNCTION_NAME" }, &format!("DROP {kind} {}", quote_ident(name)), name));
         }
         for v in view_names.iter().rev() {
-            plan.pre_data.push(format!("DROP VIEW {};", quote_ident(v)));
+            plan.pre_data.push(guarded_drop("RDB$RELATIONS", "RDB$RELATION_NAME", &format!("DROP VIEW {}", quote_ident(v)), v));
         }
         for (t, d) in &details {
             for c in d.constraints.iter().filter(|c| c.kind == "f") {
-                plan.pre_data.push(format!("ALTER TABLE {} DROP CONSTRAINT {};", quote_ident(t), quote_ident(&c.name)));
+                plan.pre_data.push(guarded_drop("RDB$RELATION_CONSTRAINTS", "RDB$CONSTRAINT_NAME", &format!("ALTER TABLE {} DROP CONSTRAINT {}", quote_ident(t), quote_ident(&c.name)), &c.name));
             }
         }
         for (t, _) in details.iter().rev() {
-            plan.pre_data.push(format!("DROP TABLE {};", quote_ident(t)));
+            plan.pre_data.push(guarded_drop("RDB$RELATIONS", "RDB$RELATION_NAME", &format!("DROP TABLE {}", quote_ident(t)), t));
         }
         for g in &generators {
-            plan.pre_data.push(format!("DROP GENERATOR {};", quote_ident(g)));
+            plan.pre_data.push(guarded_drop("RDB$GENERATORS", "RDB$GENERATOR_NAME", &format!("DROP GENERATOR {}", quote_ident(g)), g));
         }
     }
     for g in &generators {

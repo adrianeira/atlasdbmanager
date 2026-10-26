@@ -5,7 +5,7 @@ import {
 import type { StatusCell } from "../components/StatusBar";
 import { useT, type MessageKey } from "../i18n";
 import { ProviderIcon, SmallIcon, type SmallIconName } from "../icons";
-import { idPrefix, isMssqlId, isSqliteId } from "../providerRoute";
+import { idPrefix, isFirebirdId, isMssqlId, isSqliteId } from "../providerRoute";
 
 export interface FindConn {
   id: string;
@@ -109,7 +109,7 @@ export function FindDoc({ conns, initial, onConnect, onOpen, onOpenRows, active,
   const canFind = open && database !== "" && text.trim() !== "" && !busy;
   // O SQLite não tem funções nem views materializadas.
   const sqlite = isSqliteId(connId);
-  const noMatview = sqlite || isMssqlId(connId);
+  const noMatview = sqlite || isMssqlId(connId) || isFirebirdId(connId);
   const structureOk = inc.tables || inc.views || inc.indexes || inc.triggers || (!sqlite && inc.functions) || (!noMatview && inc.matviews);
 
   const run = () => {

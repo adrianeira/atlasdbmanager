@@ -25,8 +25,26 @@ const MAX_ROWS_CAP: usize = 100_000;
 /// O Firebird não tem schemas: tudo fica num só, com este nome.
 const MAIN: &str = "main";
 
+/// O registro de conexões do Firebird é um só no processo: as ferramentas entre produtos (`genext`, `xprod`...) o alcançam sem receber o estado do Tauri.
+#[derive(Clone)]
+pub struct FirebirdSessions(Arc<Registry>);
+
+impl Default for FirebirdSessions {
+    fn default() -> Self {
+        static SHARED: std::sync::OnceLock<Arc<Registry>> = std::sync::OnceLock::new();
+        Self(SHARED.get_or_init(|| Arc::new(Registry::default())).clone())
+    }
+}
+
+impl std::ops::Deref for FirebirdSessions {
+    type Target = Registry;
+    fn deref(&self) -> &Registry {
+        &self.0
+    }
+}
+
 #[derive(Default)]
-pub struct FirebirdSessions {
+pub struct Registry {
     sessions: Mutex<HashMap<String, Arc<FirebirdSession>>>,
     txs: Mutex<HashMap<String, Arc<FirebirdTx>>>,
     next_tx: AtomicU64,
@@ -36,7 +54,7 @@ pub struct FirebirdSessions {
     finds: Mutex<HashMap<String, Arc<AtomicBool>>>,
 }
 
-impl FirebirdSessions {
+impl Registry {
     /// Registra o pedido de parada de uma operação longa (geração, transferência) pelo id dela.
     pub(crate) fn register_cancel(&self, id: &str, flag: Arc<AtomicBool>) {
         if let Ok(mut m) = self.finds.lock() {

@@ -271,15 +271,17 @@ pub fn table_detail_on(conn: &mut Conn, table: &str) -> Result<TableDetail, Data
             }
         }
         let enabled = n(&r, 2) == 0;
+        // O texto guardado já começa com `AS` (o 2.5 e o 3 o guardam assim); sem ele, o cabeçalho o põe.
+        let source = s(&r, 3);
+        let body = if crate::split::first_word(&source) == "AS" { source.trim().to_string() } else { format!("AS\n{}", source.trim()) };
         let definition = format!(
-            "CREATE OR ALTER TRIGGER {} FOR {} {} {} {} POSITION {}\nAS\n{}",
+            "CREATE OR ALTER TRIGGER {} FOR {} {} {} {} POSITION {}\n{body}",
             quote_ident(&name),
             quote_ident(table),
             if enabled { "ACTIVE" } else { "INACTIVE" },
             timing,
             events.join(" OR "),
-            n(&r, 4),
-            s(&r, 3)
+            n(&r, 4)
         );
         triggers.push(TriggerInfo { name, definition, enabled, timing, events, for_each_row: true, when: None, function: String::new(), args: Vec::new(), update_columns: Vec::new(), comment: opt(&r, 5), read_only: true });
     }

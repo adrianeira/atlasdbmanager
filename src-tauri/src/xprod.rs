@@ -57,6 +57,7 @@ pub(crate) async fn open_exec(
             let p = match d {
                 Dialect::Mysql => Product::Mysql,
                 Dialect::Mssql => Product::Mssql,
+                Dialect::Firebird => Product::Firebird,
                 _ => Product::Sqlite,
             };
             Ok((p, e))
@@ -96,8 +97,39 @@ fn page_sql(p: Product, schema: &str, table: &str, columns: &[String], order: &[
             let ob = if order_by.is_empty() { " ORDER BY (SELECT NULL)".to_string() } else { order_by };
             format!("SELECT {list} FROM {from}{filter}{ob} OFFSET {offset} ROWS FETCH NEXT {limit} ROWS ONLY")
         }
+        Product::Firebird => format!("SELECT {list} FROM {from}{filter}{order_by} ROWS {} TO {}", offset + 1, offset + limit),
         _ => format!("SELECT {list} FROM {from}{filter}{order_by} LIMIT {limit} OFFSET {offset}"),
     }
+}
+
+/// `DROP` de um objeto que pode não existir (o Firebird só tem `IF EXISTS` a partir da versão 5): um bloco que confere o catálogo antes.
+fn firebird_drop(kind: &str, name: &str) -> String {
+    let d = Dialect::Firebird;
+    format!(
+        "EXECUTE BLOCK AS BEGIN IF (EXISTS(SELECT 1 FROM RDB$RELATIONS WHERE RDB$RELATION_NAME = {})) THEN EXECUTE STATEMENT {}; END",
+        d.text(name),
+        d.text(&format!("DROP {kind} {}", d.q(name)))
+    )
+}
+
+/// As linhas (`(v1, v2)`) de um lote como comandos do Firebird, que não tem `INSERT` com várias linhas: blocos `EXECUTE BLOCK` de até ~48 KB
+/// (o comando tem no máximo 64 KB no 2.5). Cada item traz o comando e quantas linhas leva.
+fn firebird_inserts(target: &str, columns: &str, rows: &[String]) -> Vec<(String, u64)> {
+    let mut out = Vec::new();
+    let (mut cur, mut n) = (String::new(), 0u64);
+    for r in rows {
+        if n > 0 && cur.len() + r.len() > 48_000 {
+            out.push((format!("EXECUTE BLOCK AS BEGIN {cur}END"), n));
+            cur.clear();
+            n = 0;
+        }
+        cur.push_str(&format!("INSERT INTO {target} ({columns}) VALUES {r}; "));
+        n += 1;
+    }
+    if n > 0 {
+        out.push((format!("EXECUTE BLOCK AS BEGIN {cur}END"), n));
+    }
+    out
 }
 
 fn drop_table_sql(p: Product, schema: &str, table: &str) -> String {
@@ -105,6 +137,7 @@ fn drop_table_sql(p: Product, schema: &str, table: &str) -> String {
     match p {
         Product::Pg => format!("DROP TABLE IF EXISTS {t} CASCADE"),
         Product::Mssql => format!("IF OBJECT_ID({}) IS NOT NULL DROP TABLE {t}", p.dialect().text(&t)),
+        Product::Firebird => firebird_drop("TABLE", table),
         _ => format!("DROP TABLE IF EXISTS {t}"),
     }
 }
@@ -174,7 +207,7 @@ async fn copy_table(
             let from = parse(sp, &f);
             // O MySQL e o SQLite não têm tipo com fuso: o valor vai sem ele.
             let to = match (&from, dp) {
-                (NType::Timestamp(true), Product::Mysql | Product::Sqlite) => NType::Timestamp(false),
+                (NType::Timestamp(true), Product::Mysql | Product::Sqlite | Product::Firebird) => NType::Timestamp(false),
                 _ => from.clone(),
             };
             (from, to)
@@ -217,19 +250,24 @@ async fn copy_table(
                     format!("({})", cells.join(", "))
                 })
                 .collect();
-            let insert = format!("INSERT INTO {target} ({target_cols}) VALUES {}", values.join(", "));
-            let sql = if identity_insert { format!("SET IDENTITY_INSERT {target} ON; {insert}; SET IDENTITY_INSERT {target} OFF") } else { insert };
-            let n = rows.len() as u64;
-            match dst.run(&sql, 1).await {
-                Ok(_) => {
-                    run.stats.transferred += n;
-                    run.stats.processed += n;
-                    table_rows += n;
-                }
-                Err(e) => {
-                    run.error(table, &e.message);
-                    if !run.continue_on_error {
-                        return Ok(false);
+            let statements: Vec<(String, u64)> = if dp == Product::Firebird {
+                firebird_inserts(&target, &target_cols, &values)
+            } else {
+                let insert = format!("INSERT INTO {target} ({target_cols}) VALUES {}", values.join(", "));
+                vec![(if identity_insert { format!("SET IDENTITY_INSERT {target} ON; {insert}; SET IDENTITY_INSERT {target} OFF") } else { insert }, rows.len() as u64)]
+            };
+            for (sql, n) in statements {
+                match dst.run(&sql, 1).await {
+                    Ok(_) => {
+                        run.stats.transferred += n;
+                        run.stats.processed += n;
+                        table_rows += n;
+                    }
+                    Err(e) => {
+                        run.error(table, &e.message);
+                        if !run.continue_on_error {
+                            return Ok(false);
+                        }
                     }
                 }
             }
@@ -243,6 +281,19 @@ async fn copy_table(
     // PostgreSQL: a numeração automática segue de onde os dados pararam.
     if dp == Product::Pg {
         for c in detail.columns.iter().filter(|c| c.identity.is_some() || c.default.as_deref().is_some_and(|d| d.starts_with("nextval("))) {
+            if let Some((_, t)) = pairs.iter().find(|(s, _)| *s == c.name) {
+                let col = dd.q(t);
+                if let Ok(rows) = dst.rows(&format!("SELECT COALESCE(MAX({col}), 0) + 1 FROM {target}"), 1).await
+                    && let Some(next) = rows.first().and_then(|r| r.first().cloned().flatten())
+                {
+                    let _ = dst.run(&format!("ALTER TABLE {target} ALTER COLUMN {col} RESTART WITH {next}"), 1).await;
+                }
+            }
+        }
+    }
+    // Firebird 3 em diante: a identidade segue de onde os dados pararam (o 2.5 faz isso no gatilho criado depois dos dados).
+    if dp == Product::Firebird && crate::neutral::firebird_v3() {
+        for c in detail.columns.iter().filter(|c| crate::neutral::is_auto(c)) {
             if let Some((_, t)) = pairs.iter().find(|(s, _)| *s == c.name) {
                 let col = dd.q(t);
                 if let Ok(rows) = dst.rows(&format!("SELECT COALESCE(MAX({col}), 0) + 1 FROM {target}"), 1).await
@@ -409,6 +460,7 @@ async fn transfer(sp: Product, dp: Product, src: &Exec, dst: &Exec, req: &Transf
                 if spec.drop_before_create {
                     let drop = match dp {
                         Product::Mssql => format!("IF OBJECT_ID({}) IS NOT NULL DROP VIEW {target}", dd.text(&target)),
+                        Product::Firebird => firebird_drop("VIEW", &name),
                         _ => format!("DROP VIEW IF EXISTS {target}"),
                     };
                     if !run.ddl(dst, &drop).await {
