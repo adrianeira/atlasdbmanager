@@ -111,6 +111,25 @@ impl MysqlSession {
         })
     }
 
+    /// Argumentos, tipo de retorno e comentário de uma função ou procedimento (para o Data Dictionary).
+    pub async fn routine_info(&self, database: &str, name: &str) -> Result<(String, Option<String>, Option<String>), DatabaseError> {
+        let client = self.client(database).await?;
+        let mut conn = client.lock().await;
+        let head = rows_of(&mut conn, "SELECT dtd_identifier, routine_comment, routine_type FROM information_schema.routines WHERE routine_schema = ? AND routine_name = ?", vec![v(database), v(name)]).await?;
+        let Some(h) = head.first() else {
+            return Err(DatabaseError::new(atlas_core::ErrorKind::InvalidInput, format!("routine `{database}`.`{name}` does not exist")));
+        };
+        let params = rows_of(
+            &mut conn,
+            "SELECT parameter_mode, parameter_name, dtd_identifier FROM information_schema.parameters WHERE specific_schema = ? AND specific_name = ? AND parameter_name IS NOT NULL ORDER BY ordinal_position",
+            vec![v(database), v(name)],
+        )
+        .await?;
+        let arguments = params.iter().map(|r| format!("{} {} {}", text(r, 0).unwrap_or_default(), s(r, 1), s(r, 2)).trim().to_string()).collect::<Vec<_>>().join(", ");
+        let returns = if s(h, 2) == "FUNCTION" { text(h, 0) } else { None };
+        Ok((arguments, returns, text(h, 1).filter(|c| !c.is_empty())))
+    }
+
     /// Todas as collations do servidor com o conjunto de caracteres de cada uma (a padrão do conjunto vem primeiro).
     pub async fn collations(&self) -> Result<Vec<[String; 2]>, DatabaseError> {
         let client = self.client("").await?;

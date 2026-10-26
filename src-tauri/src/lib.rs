@@ -4,6 +4,7 @@ mod commands;
 mod datagen;
 mod monitor;
 mod dictionary;
+mod dictsrc;
 mod download;
 mod datasync;
 mod structsync;

@@ -15,6 +15,8 @@ import { LayoutStep, TemplateStep } from "./dictionaryLayout";
 import { formatClock } from "./transferModel";
 
 type Params = DataTransferParams & { title: string };
+const PRODUCT_NAMES: Record<string, string> = { postgresql: "PostgreSQL", sqlserver: "SQL Server", mysql: "MySQL", sqlite: "SQLite" };
+
 type Category = "tables" | "views" | "functions";
 const CATEGORIES: Category[] = ["tables", "views", "functions"];
 
@@ -117,7 +119,7 @@ function Wizard({ params }: { params: Params }) {
     setConnecting(id);
     setMessage(null);
     try {
-      const r = await pg.open(id, { host: c.host, port: c.port, database: c.initialDatabase || "postgres", user: c.user, password: password ?? "", sslMode: c.sslMode ?? "disable" }, id);
+      const r = await pg.open(id, { host: c.host, port: c.port, database: c.initialDatabase || (c.provider === "postgresql" ? "postgres" : ""), user: c.user, password: password ?? "", sslMode: c.sslMode ?? "disable" }, id);
       setOpened((o) => ({ ...o, [id]: { version: r.version, versionNum: r.versionNum } }));
     } catch (e) {
       const err = toAtlasError(e);
@@ -217,7 +219,7 @@ function Wizard({ params }: { params: Params }) {
 
   const serverInfo = (id: string): [string, string][] => {
     const c = connOf(id);
-    return [[t("dd.i.version"), String(c?.versionNum || "--")], [t("dd.i.host"), c?.host ?? "--"], [t("dd.i.port"), String(c?.port ?? "--")], [t("dd.i.initialDb"), c?.initialDatabase || "postgres"], [t("dd.i.user"), c?.user ?? "--"]];
+    return [[t("dd.i.version"), String(c?.versionNum || "--")], [t("dd.i.host"), c?.host ?? "--"], [t("dd.i.port"), String(c?.port ?? "--")], [t("dd.i.initialDb"), c?.initialDatabase || (c?.provider === "postgresql" ? "postgres" : "--")], [t("dd.i.user"), c?.user ?? "--"]];
   };
 
   /* ---------- Etapa 1: bancos e schemas ---------- */
@@ -453,7 +455,7 @@ function Wizard({ params }: { params: Params }) {
     () => plan.map((s) => ({
       connId: s.connId,
       name: conns.find((c) => c.id === s.connId)?.name ?? s.connId,
-      product: "PostgreSQL",
+      product: PRODUCT_NAMES[conns.find((c) => c.id === s.connId)?.provider ?? "postgresql"] ?? "PostgreSQL",
       info: s.info ? serverInfo(s.connId) : null,
       databases: s.dbs.map((d) => ({
         name: d.name,

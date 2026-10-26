@@ -33,7 +33,7 @@ pub struct SqliteSessions {
 }
 
 impl SqliteSessions {
-    fn session(&self, id: &str) -> Result<Arc<SqliteSession>, DatabaseError> {
+    pub(crate) fn session(&self, id: &str) -> Result<Arc<SqliteSession>, DatabaseError> {
         self.sessions.lock().ok().and_then(|m| m.get(id).cloned()).ok_or_else(|| DatabaseError::new(ErrorKind::SessionNotFound, "connection is not open"))
     }
 

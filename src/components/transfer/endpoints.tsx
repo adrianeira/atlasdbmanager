@@ -56,7 +56,7 @@ export function useEndpoints(params: DataTransferParams, opts: { allowFile: bool
     setConnecting(id);
     setMessage(null);
     try {
-      const info = await pg.open(id, { host: c.host, port: c.port, database: c.initialDatabase || "postgres", user: c.user, password: password ?? "", sslMode: c.sslMode ?? "disable" }, id);
+      const info = await pg.open(id, { host: c.host, port: c.port, database: c.initialDatabase || (c.provider === "postgresql" ? "postgres" : ""), user: c.user, password: password ?? "", sslMode: c.sslMode ?? "disable" }, id);
       setOpened((o) => ({ ...o, [id]: { version: info.version, versionNum: info.versionNum } }));
     } catch (e) {
       const err = toAtlasError(e);

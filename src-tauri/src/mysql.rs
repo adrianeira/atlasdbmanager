@@ -36,7 +36,7 @@ pub struct MysqlSessions {
 }
 
 impl MysqlSessions {
-    fn session(&self, id: &str) -> Result<Arc<MysqlSession>, DatabaseError> {
+    pub(crate) fn session(&self, id: &str) -> Result<Arc<MysqlSession>, DatabaseError> {
         self.sessions.lock().ok().and_then(|m| m.get(id).cloned()).ok_or_else(|| DatabaseError::new(ErrorKind::SessionNotFound, "connection is not open"))
     }
 

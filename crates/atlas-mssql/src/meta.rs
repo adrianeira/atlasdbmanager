@@ -180,6 +180,50 @@ impl MssqlSession {
         Ok(SchemaObjects { tables, views, functions, sequences, ..Default::default() })
     }
 
+    /// Argumentos, tipo de retorno e tipo (`P` procedimento, `FN`/`IF`/`TF` função) de uma rotina (para o Data Dictionary).
+    pub async fn routine_info(&self, database: &str, schema: &str, name: &str) -> Result<(String, Option<String>), DatabaseError> {
+        let client = self.client(database).await?;
+        let mut conn = client.lock().await;
+        let object = format!("{}.{}", quote_ident(schema), quote_ident(name));
+        let rows = rows_of(
+            &mut conn,
+            "SELECT CAST(p.parameter_id AS int), p.name, TYPE_NAME(p.user_type_id), CAST(p.max_length AS int), CAST(p.is_output AS bit) FROM sys.parameters p WHERE p.object_id = OBJECT_ID(@P1) ORDER BY p.parameter_id",
+            &[&object],
+        )
+        .await?;
+        let mut returns = None;
+        let mut args = Vec::new();
+        for r in &rows {
+            if n(r, 0) == 0 {
+                returns = Some(s(r, 2));
+            } else {
+                args.push(format!("{} {}{}", s(r, 1), s(r, 2), if b(r, 4) { " OUTPUT" } else { "" }));
+            }
+        }
+        Ok((args.join(", "), returns))
+    }
+
+    /// Collation, nível de compatibilidade e modelo de recuperação de um banco (para o Data Dictionary).
+    pub async fn database_info(&self, database: &str) -> Result<Vec<(String, String)>, DatabaseError> {
+        let client = self.client("master").await?;
+        let mut conn = client.lock().await;
+        let rows = rows_of(
+            &mut conn,
+            "SELECT collation_name, CAST(compatibility_level AS nvarchar(10)), recovery_model_desc, state_desc, user_access_desc, SUSER_SNAME(owner_sid) FROM sys.databases WHERE name = @P1",
+            &[&database],
+        )
+        .await?;
+        let Some(r) = rows.first() else { return Ok(Vec::new()) };
+        Ok(vec![
+            ("Owner".into(), s(r, 5)),
+            ("Collation Order".into(), s(r, 0)),
+            ("Compatibility Level".into(), s(r, 1)),
+            ("Recovery Model".into(), s(r, 2)),
+            ("State".into(), s(r, 3)),
+            ("User Access".into(), s(r, 4)),
+        ])
+    }
+
     /// O texto de um procedimento ou função (`CREATE PROCEDURE ...`), como o servidor o guarda.
     pub async fn routine_definition(&self, database: &str, schema: &str, name: &str) -> Result<String, DatabaseError> {
         let client = self.client(database).await?;

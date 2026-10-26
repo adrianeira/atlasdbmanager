@@ -1,7 +1,11 @@
 //! Data Dictionary: lê os objetos marcados (servidores, bancos e schemas), monta o modelo do documento e grava o PDF.
 //! A pré-visualização das abas de layout sai do mesmo desenho, em SVG.
 
+use crate::dictsrc::DictSource;
+use crate::mssql::MssqlSessions;
+use crate::mysql::MysqlSessions;
 use crate::sessions::Sessions;
+use crate::sqlite::SqliteSessions;
 use atlas_core::{DatabaseError, ErrorKind};
 use atlas_docs::dictionary as doc;
 use atlas_docs::pdf::write_pdf;
@@ -96,10 +100,6 @@ pub struct GenerateResult {
     pub elapsed_ms: u64,
 }
 
-fn kv(k: &str, v: impl Into<String>) -> (String, String) {
-    (k.to_string(), v.into())
-}
-
 fn convert_table(name: &str, d: atlas_core::TableDetail, own_schema: &str) -> doc::Table {
     let columns = d
         .columns
@@ -179,16 +179,24 @@ fn target_path(req: &GenerateRequest) -> Result<PathBuf, DatabaseError> {
 }
 
 #[tauri::command]
-pub async fn dict_generate(app: AppHandle, sessions: State<'_, Sessions>, runs: State<'_, DictRuns>, req: GenerateRequest) -> Result<GenerateResult, DatabaseError> {
+pub async fn dict_generate(
+    app: AppHandle,
+    sessions: State<'_, Sessions>,
+    sqlite: State<'_, SqliteSessions>,
+    mssql: State<'_, MssqlSessions>,
+    mysql: State<'_, MysqlSessions>,
+    runs: State<'_, DictRuns>,
+    req: GenerateRequest,
+) -> Result<GenerateResult, DatabaseError> {
     let started = Instant::now();
     let cancel = Arc::new(AtomicBool::new(false));
     runs.active.lock().unwrap().insert(req.run_id.clone(), cancel.clone());
-    let result = run(&app, &sessions, &req, &cancel, started).await;
+    let result = run(&app, (&sessions, &sqlite, &mssql, &mysql), &req, &cancel, started).await;
     runs.active.lock().unwrap().remove(&req.run_id);
     result
 }
 
-async fn run(app: &AppHandle, sessions: &Sessions, req: &GenerateRequest, cancel: &AtomicBool, started: Instant) -> Result<GenerateResult, DatabaseError> {
+async fn run(app: &AppHandle, all: (&Sessions, &SqliteSessions, &MssqlSessions, &MysqlSessions), req: &GenerateRequest, cancel: &AtomicBool, started: Instant) -> Result<GenerateResult, DatabaseError> {
     let log = |line: String| {
         let _ = app.emit("dict-log", LogEvent { id: &req.run_id, line: format!("[DDI] {line}") });
     };
@@ -213,20 +221,11 @@ async fn run(app: &AppHandle, sessions: &Sessions, req: &GenerateRequest, cancel
         let mut out_server = doc::Server { name: server.name.clone(), product: server.product.clone(), info: server.info.clone(), databases: Vec::new() };
         log(format!("Start processing server - {}", server.name));
         for db in &server.databases {
-            let session = sessions.dedicated(&server.conn_id, &db.name).await?;
+            let session = DictSource::open(&server.conn_id, &db.name, all.0, all.1, all.2, all.3).await?;
             log(format!("Start processing catalog - {}", db.name));
             let mut out_db = doc::Database { name: db.name.clone(), info: None, schemas: Vec::new() };
             if db.info {
-                let d = atlas_pg::database_detail(&session, &db.name).await?;
-                out_db.info = Some(vec![
-                    kv("Owner", d.owner),
-                    kv("Tablespace", d.tablespace),
-                    kv("Encoding", d.encoding),
-                    kv("Collation Order", d.collate),
-                    kv("Character Type", d.ctype),
-                    kv("Connection Limit", if d.connection_limit < 0 { "N/A".to_string() } else { d.connection_limit.to_string() }),
-                    kv("Comment", d.comment.unwrap_or_else(|| "--".into())),
-                ]);
+                out_db.info = Some(session.database_info(&db.name).await?);
             }
             for schema in &db.schemas {
                 if cancel.load(Ordering::Relaxed) {
@@ -235,8 +234,7 @@ async fn run(app: &AppHandle, sessions: &Sessions, req: &GenerateRequest, cancel
                 log(format!("Start processing schema - {}", schema.name));
                 let mut out = doc::Schema { name: schema.name.clone(), ..Default::default() };
                 if schema.info {
-                    let d = atlas_pg::schema_detail(&session, &schema.name).await?;
-                    out.info = Some(vec![kv("Owner", d.owner), kv("Comment", d.comment.unwrap_or_else(|| "--".into()))]);
+                    out.info = Some(session.schema_info(&schema.name).await?);
                 }
                 if let Some(names) = &schema.tables {
                     log(format!("Fetching tables - {}", schema.name));
@@ -248,7 +246,7 @@ async fn run(app: &AppHandle, sessions: &Sessions, req: &GenerateRequest, cancel
                         }
                         done += 1;
                         log(format!("{done}> Generating table - {name}"));
-                        match atlas_pg::table_detail(&session, &schema.name, name).await {
+                        match session.table(&db.name, &schema.name, name).await {
                             Ok(d) => {
                                 counts.tables += 1;
                                 tables.push(convert_table(name, d, &schema.name));
@@ -277,10 +275,10 @@ async fn run(app: &AppHandle, sessions: &Sessions, req: &GenerateRequest, cancel
                         }
                         done += 1;
                         log(format!("{done}> Generating view - {name}"));
-                        match atlas_pg::view_detail(&session, &schema.name, name).await {
-                            Ok(d) => {
+                        match session.view(&db.name, &schema.name, name).await {
+                            Ok((comment, definition)) => {
                                 counts.views += 1;
-                                views.push(doc::View { name: name.clone(), comment: d.comment, definition: d.definition });
+                                views.push(doc::View { name: name.clone(), comment, definition });
                             }
                             Err(e) => {
                                 counts.errors += 1;
@@ -310,7 +308,7 @@ async fn run(app: &AppHandle, sessions: &Sessions, req: &GenerateRequest, cancel
                             None => (full.clone(), String::new()),
                         };
                         log(format!("{done}> Generating function - {name}"));
-                        match atlas_pg::function_detail(&session, &schema.name, &name, &identity).await {
+                        match session.function(&db.name, &schema.name, &name, &identity).await {
                             Ok(d) => {
                                 counts.functions += 1;
                                 functions.push(doc::Function { name: full.clone(), arguments: d.arguments, returns: d.returns, language: d.language, comment: d.comment, body: d.body });
