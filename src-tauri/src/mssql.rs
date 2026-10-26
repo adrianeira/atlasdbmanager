@@ -561,7 +561,7 @@ struct DumpSpec<'a> {
 /// Escreve o script do dump em `out`: o DDL lido do catálogo e os dados em `INSERT`, com lotes separados por `GO`. Devolve (objetos, tabelas, linhas).
 async fn write_dump(s: &MssqlSession, spec: &DumpSpec<'_>, out: &mut DumpOut, cancel: &AtomicBool, mut progress: impl FnMut(u64) + Send) -> Result<(usize, usize, u64), DatabaseError> {
     use std::io::Write;
-    let plan = s.dump_plan(spec.database, spec.schema, spec.tables, spec.views, spec.clean).await?;
+    let plan = s.dump_plan(spec.database, spec.schema, spec.tables, spec.views, None, spec.clean).await?;
     let canceled = || DatabaseError::new(ErrorKind::Canceled, "dump canceled");
     let write = |text: &str, out: &mut DumpOut| -> Result<(), DatabaseError> { out.write_all(text.as_bytes()).map_err(io_error) };
     write(&format!("-- Atlas DB Manager: SQL dump\n-- SQL Server {}; banco: {}\n\nSET QUOTED_IDENTIFIER ON;\nGO\n", s.version, spec.database), out)?;

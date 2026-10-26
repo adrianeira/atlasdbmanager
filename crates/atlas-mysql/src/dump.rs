@@ -50,7 +50,7 @@ pub(crate) fn without_definer(sql: &str) -> String {
 
 impl MysqlSession {
     /// O plano do dump do banco: `tables` e `views` escolhidos (`None` = todos) e `clean` para o `DROP` antes de cada objeto.
-    pub async fn dump_plan(&self, database: &str, tables: Option<&[String]>, views: Option<&[String]>, clean: bool) -> Result<DumpPlan, DatabaseError> {
+    pub async fn dump_plan(&self, database: &str, tables: Option<&[String]>, views: Option<&[String]>, functions: Option<&[String]>, clean: bool) -> Result<DumpPlan, DatabaseError> {
         let objects = self.list_objects(database).await?;
         let wanted = |list: Option<&[String]>, name: &str| list.is_none_or(|l| l.iter().any(|n| n == name));
         let mut plan = DumpPlan::default();
@@ -78,8 +78,13 @@ impl MysqlSession {
             plan.post_data.push(format!("{};", without_definer(&ddl)));
             plan.objects += 1;
         }
-        if views.is_none() {
-            for f in &objects.functions {
+        {
+            // Sem lista de funções, as rotinas entram quando as views também entram todas.
+            let wanted_fn = |name: &str| match functions {
+                Some(list) => list.iter().any(|x| x.split('(').next() == Some(name)),
+                None => views.is_none(),
+            };
+            for f in objects.functions.iter().filter(|f| wanted_fn(&f.name)) {
                 let kind = if f.procedure { "PROCEDURE" } else { "FUNCTION" };
                 let rows = rows_of(&mut conn, &format!("SHOW CREATE {kind} {}", quote_ident(&f.name)), vec![]).await?;
                 let Some(ddl) = rows.first().and_then(|r| text(r, 2)) else { continue };

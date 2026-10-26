@@ -5,6 +5,7 @@ mod datagen;
 mod monitor;
 mod dictionary;
 mod genext;
+mod xfer;
 mod dictsrc;
 mod download;
 mod datasync;
@@ -218,6 +219,9 @@ pub fn run() {
             genext::sqlite_datagen_describe,
             genext::sqlite_datagen_preview,
             genext::sqlite_datagen_run,
+            xfer::mysql_transfer,
+            xfer::mssql_transfer,
+            xfer::sqlite_transfer,
             mysql::mysql_find,
             mysql::mysql_monitor_snapshot,
             mysql::mysql_monitor_end_process,

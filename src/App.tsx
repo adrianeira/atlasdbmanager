@@ -2540,8 +2540,7 @@ export default function App() {
     dataTransfer: {
       id: "dataTransfer", label: "cmd.dataTransfer",
       run: () => {
-        // Estas ferramentas ainda são do PostgreSQL: o SQLite não entra na lista de conexões delas.
-        const live = connections.filter((c) => c.live && c.provider === "postgresql");
+        const live = connections.filter((c) => c.live);
         if (live.length === 0) return;
         void openDataTransfer(t("dt.title"), {
           connections: live.map((c) => ({
@@ -2549,7 +2548,7 @@ export default function App() {
             version: c.serverVersion, versionNum: c.serverVersionNum, open: openConnections.has(c.id),
             initialDatabase: c.initialDatabase, sslMode: c.sslMode, hasPassword: c.hasPassword,
           })),
-          source: ctx.connection?.live && ctx.connection.provider === "postgresql" && ctx.database && ctx.schema ? { connId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name } : undefined,
+          source: ctx.connection?.live && ctx.database && ctx.schema ? { connId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name } : undefined,
         }).catch((e) => showError(t("dt.title"), e));
       },
     },

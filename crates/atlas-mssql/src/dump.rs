@@ -93,7 +93,7 @@ fn post_table(schema: &str, table: &str, d: &TableDetail) -> Vec<String> {
 
 impl MssqlSession {
     /// O plano do dump: `schema` (ou todos), `tables` e `views` escolhidos (`None` = todos) e `clean` para o `DROP` antes de cada objeto.
-    pub async fn dump_plan(&self, database: &str, schema: Option<&str>, tables: Option<&[String]>, views: Option<&[String]>, clean: bool) -> Result<DumpPlan, DatabaseError> {
+    pub async fn dump_plan(&self, database: &str, schema: Option<&str>, tables: Option<&[String]>, views: Option<&[String]>, functions: Option<&[String]>, clean: bool) -> Result<DumpPlan, DatabaseError> {
         let schemas: Vec<String> = match schema {
             Some(sc) => vec![sc.to_string()],
             None => self.list_schemas(database, false).await?.into_iter().map(|x| x.name).collect(),
@@ -119,8 +119,9 @@ impl MssqlSession {
             }
             let client = self.client(database).await?;
             let mut conn = client.lock().await;
-            for (list, wanted_list) in [( objects.views.iter().map(|v| v.name.clone()).collect::<Vec<_>>(), views), (objects.functions.iter().map(|f| f.name.clone()).collect(), None)] {
-                for name in list.iter().filter(|n| wanted(wanted_list, n)) {
+            for (list, wanted_list) in [( objects.views.iter().map(|v| v.name.clone()).collect::<Vec<_>>(), views), (objects.functions.iter().map(|f| f.name.clone()).collect(), functions)] {
+                let base = |x: &str| x.split('(').next().unwrap_or(x).to_string();
+                for name in list.iter().filter(|n| wanted_list.is_none_or(|l| l.iter().any(|x| base(x) == base(n)))) {
                     let fnname = name.split('(').next().unwrap_or(name);
                     let object = format!("{}.{}", quote_ident(sc), quote_ident(fnname));
                     let rows = rows_of(&mut conn, "SELECT CAST(OBJECT_DEFINITION(OBJECT_ID(@P1)) AS nvarchar(max))", &[&object]).await?;

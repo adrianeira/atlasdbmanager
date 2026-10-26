@@ -20,14 +20,14 @@ use std::time::Instant;
 use tauri::{AppHandle, Emitter, State};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Dialect {
+pub(crate) enum Dialect {
     Mysql,
     Mssql,
     Sqlite,
 }
 
 /// A conexão da geração: a sessão (cada comando confirma sozinho) ou uma transação aberta.
-enum Exec {
+pub(crate) enum Exec {
     Mysql(Arc<MysqlSession>, String),
     MysqlTx(Arc<MysqlTx>),
     Mssql(Arc<MssqlSession>, String),
@@ -37,7 +37,7 @@ enum Exec {
 }
 
 impl Exec {
-    async fn run(&self, sql: &str, max: usize) -> Result<QueryOutcome, DatabaseError> {
+    pub(crate) async fn run(&self, sql: &str, max: usize) -> Result<QueryOutcome, DatabaseError> {
         match self {
             Exec::Mysql(s, db) => s.execute(db, sql, max).await,
             Exec::MysqlTx(t) => t.execute(sql, max).await,
@@ -48,13 +48,13 @@ impl Exec {
         }
     }
 
-    async fn rows(&self, sql: &str, max: usize) -> Result<Vec<Vec<Option<String>>>, DatabaseError> {
+    pub(crate) async fn rows(&self, sql: &str, max: usize) -> Result<Vec<Vec<Option<String>>>, DatabaseError> {
         let out = self.run(sql, max).await?;
         Ok(out.statements.into_iter().find_map(|s| s.result).map(|r| r.rows).unwrap_or_default())
     }
 
     /// Abre uma transação no mesmo banco (ou devolve `None` se este já é uma transação).
-    async fn begin(&self) -> Result<Option<Exec>, DatabaseError> {
+    pub(crate) async fn begin(&self) -> Result<Option<Exec>, DatabaseError> {
         Ok(match self {
             Exec::Mysql(s, db) => Some(Exec::MysqlTx(Arc::new(s.begin(db).await?))),
             Exec::Mssql(s, db) => Some(Exec::MssqlTx(Arc::new(s.begin(db).await?))),
@@ -63,7 +63,7 @@ impl Exec {
         })
     }
 
-    async fn finish(&self, commit: bool) -> Result<(), DatabaseError> {
+    pub(crate) async fn finish(&self, commit: bool) -> Result<(), DatabaseError> {
         match self {
             Exec::MysqlTx(t) => t.finish(commit).await,
             Exec::MssqlTx(t) => t.finish(commit).await,
@@ -74,7 +74,7 @@ impl Exec {
 }
 
 impl Dialect {
-    fn q(self, name: &str) -> String {
+    pub(crate) fn q(self, name: &str) -> String {
         match self {
             Dialect::Mysql => format!("`{}`", name.replace('`', "``")),
             Dialect::Mssql => format!("[{}]", name.replace(']', "]]")),
@@ -83,7 +83,7 @@ impl Dialect {
     }
 
     /// `banco.tabela` (MySQL), `schema.tabela` (SQL Server) ou `tabela` (SQLite).
-    fn target(self, schema: &str, table: &str) -> String {
+    pub(crate) fn target(self, schema: &str, table: &str) -> String {
         match self {
             Dialect::Sqlite => self.q(table),
             _ => format!("{}.{}", self.q(schema), self.q(table)),
@@ -91,7 +91,7 @@ impl Dialect {
     }
 
     /// O texto entre aspas do banco: barra invertida dobrada no MySQL, `N'...'` no SQL Server.
-    fn text(self, v: &str) -> String {
+    pub(crate) fn text(self, v: &str) -> String {
         match self {
             Dialect::Mysql => format!("'{}'", v.replace('\\', "\\\\").replace('\'', "''")),
             Dialect::Mssql => format!("N'{}'", v.replace('\'', "''")),
@@ -99,7 +99,7 @@ impl Dialect {
         }
     }
 
-    fn literal(self, v: &Option<String>, g: &Generator) -> String {
+    pub(crate) fn literal(self, v: &Option<String>, g: &Generator) -> String {
         match (v, g) {
             (None, _) => "NULL".into(),
             // Nenhum dos três tem `true`/`false` de verdade para todos os tipos: 1 e 0 valem em todos.
@@ -108,13 +108,13 @@ impl Dialect {
         }
     }
 
-    fn savepoint(self) -> &'static str {
+    pub(crate) fn savepoint(self) -> &'static str {
         if self == Dialect::Mssql { "SAVE TRANSACTION atlas_dg" } else { "SAVEPOINT atlas_dg" }
     }
-    fn rollback_to(self) -> &'static str {
+    pub(crate) fn rollback_to(self) -> &'static str {
         if self == Dialect::Mssql { "ROLLBACK TRANSACTION atlas_dg" } else { "ROLLBACK TO SAVEPOINT atlas_dg" }
     }
-    fn release(self) -> Option<&'static str> {
+    pub(crate) fn release(self) -> Option<&'static str> {
         (self != Dialect::Mssql).then_some("RELEASE SAVEPOINT atlas_dg")
     }
 }

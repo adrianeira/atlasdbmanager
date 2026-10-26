@@ -27,7 +27,7 @@ const SQLITE: Provider = {
   console: true,
   commands: new Set([
     "test_connection", "open", "close", "close_database", "list_databases", "list_schemas", "list_objects", "table_detail", "list_roles",
-    "execute", "cancel", "table_rows", "table_count", "apply", "fk_labels", "data_profile", "table_profile", "find", "find_data", "export_cancel", "schema_diagram", "export", "import", "backup", "backup_list", "restore", "dump_sql", "view_detail",
+    "execute", "cancel", "table_rows", "table_count", "apply", "fk_labels", "data_profile", "table_profile", "find", "find_data", "export_cancel", "schema_diagram", "export", "import", "backup", "backup_list", "restore", "dump_sql", "transfer", "view_detail",
     ...TX,
   ]),
 };
@@ -38,7 +38,7 @@ const MSSQL: Provider = {
   console: true,
   commands: new Set([
     "test_connection", "open", "close", "close_database", "list_databases", "list_schemas", "list_objects", "table_detail", "list_roles",
-    "execute", "cancel", "table_rows", "table_count", "apply", "fk_labels", "schema_diagram", "find", "find_data", "export_cancel", "export", "import", "view_detail", "data_profile", "table_profile", "routine_definition", "dump_sql", "backup", "backup_list", "backup_delete", "restore",
+    "execute", "cancel", "table_rows", "table_count", "apply", "fk_labels", "schema_diagram", "find", "find_data", "export_cancel", "export", "import", "view_detail", "data_profile", "table_profile", "routine_definition", "dump_sql", "transfer", "backup", "backup_list", "backup_delete", "restore",
     ...TX,
   ]),
 };
@@ -49,7 +49,7 @@ const MYSQL: Provider = {
   console: true,
   commands: new Set([
     "test_connection", "open", "close", "close_database", "list_databases", "list_schemas", "list_objects", "table_detail", "list_roles",
-    "execute", "cancel", "table_rows", "table_count", "apply", "fk_labels", "schema_diagram", "view_detail", "export", "export_cancel", "import", "dump_sql", "routine_definition", "find", "find_data", "data_profile", "table_profile", "database_detail", "collations", "backup", "backup_list", "restore",
+    "execute", "cancel", "table_rows", "table_count", "apply", "fk_labels", "schema_diagram", "view_detail", "export", "export_cancel", "import", "dump_sql", "transfer", "routine_definition", "find", "find_data", "data_profile", "table_profile", "database_detail", "collations", "backup", "backup_list", "restore",
     ...TX,
   ]),
 };
@@ -62,7 +62,7 @@ export interface Routed {
 }
 
 const idOf = (args?: Record<string, unknown>): unknown =>
-  args?.sessionId ?? args?.txId ?? args?.exportId ?? args?.conn ?? (args?.req as { sessionId?: string; conn?: string } | undefined)?.sessionId ?? (args?.req as { conn?: string } | undefined)?.conn;
+  args?.sessionId ?? args?.txId ?? args?.exportId ?? args?.conn ?? (args?.req as { sourceConn?: string } | undefined)?.sourceConn ?? (args?.req as { sessionId?: string; conn?: string } | undefined)?.sessionId ?? (args?.req as { conn?: string } | undefined)?.conn;
 
 export function routeCommand(cmd: string, args?: Record<string, unknown>): Routed {
   const id = idOf(args);

@@ -23,6 +23,8 @@ export function Arrow() {
  * Origem e destino das janelas Data Transfer e Data Synchronization: conexão, banco e schema de cada lado, abrir a conexão
  * escolhida (senha do cofre; pede só se faltar), listas de bancos e schemas, cabeçalho, painéis de informação e a troca.
  */
+const PRODUCT_NAMES: Record<string, string> = { postgresql: "PostgreSQL", sqlserver: "SQL Server", mysql: "MySQL", sqlite: "SQLite" };
+
 export function useEndpoints(params: DataTransferParams, opts: { allowFile: boolean; onSourceChange?: () => void; /** Um lado só (Data Generation): o destino, com `aside` no lugar do outro lado. */ single?: boolean; aside?: ReactNode }) {
   const t = useT();
   // Conexões que a janela abriu sozinha (a janela principal continua achando que estão fechadas, e tudo bem).
@@ -153,13 +155,15 @@ export function useEndpoints(params: DataTransferParams, opts: { allowFile: bool
   };
 
   const connItems = conns.map((c) => ({ value: c.id, label: c.name }));
+  // A origem e o destino de uma transferência ou comparação são do mesmo produto (PostgreSQL com PostgreSQL, e assim por diante).
+  const targetItems = conns.filter((c) => c.provider === sourceConn?.provider).map((c) => ({ value: c.id, label: c.name }));
   const connIcon = (c?: DataTransferConn) => (c ? <ProviderIcon provider={c.provider as never} open={c.open} /> : <SmallIcon name="myConnections" />);
 
   const info = (c?: DataTransferConn) => (
     <dl className="dt-info">
       <dt>{t("dt.info.cloud")}</dt><dd>--</dd>
       <dt>{t("dt.info.project")}</dt><dd>{t("nav.myConnections")}</dd>
-      <dt>{t("dt.info.type")}</dt><dd>{c ? "PostgreSQL" : "--"}</dd>
+      <dt>{t("dt.info.type")}</dt><dd>{c ? PRODUCT_NAMES[c.provider] ?? c.provider : "--"}</dd>
       <dt>{t("dt.info.name")}</dt><dd>{c?.name ?? "--"}</dd>
       <dt>{t("dt.info.host")}</dt><dd>{c?.host ?? "--"}</dd>
       <dt>{t("dt.info.port")}</dt><dd>{c?.port ?? "--"}</dd>
@@ -219,7 +223,7 @@ export function useEndpoints(params: DataTransferParams, opts: { allowFile: bool
         ) : <label>{t("dt.connection")}</label>}
         {targetKind === "connection" ? (
           <>
-            <Dropdown className="dt-dd" value={target.connId} items={connItems} leftIcon={connIcon(targetConn)} onChange={(v) => setTarget({ connId: v, database: "", schema: "" })} />
+            <Dropdown className="dt-dd" value={target.connId} items={targetItems} leftIcon={connIcon(targetConn)} onChange={(v) => setTarget({ connId: v, database: "", schema: "" })} />
             <label>{t("dt.database")}</label>
             <Dropdown className="dt-dd" value={target.database} items={(targetDbs ?? []).map((d) => ({ value: d, label: d }))} leftIcon={<SmallIcon name="database" />}
               onChange={(v) => setTarget((s) => ({ ...s, database: v, schema: "" }))} disabled={!targetConn?.open} />

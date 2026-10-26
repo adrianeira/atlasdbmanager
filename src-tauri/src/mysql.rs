@@ -542,7 +542,7 @@ async fn write_dump<W: std::io::Write + Send>(
     cancel: &AtomicBool,
     mut progress: impl FnMut(u64) + Send,
 ) -> Result<(usize, usize, u64), DatabaseError> {
-    let plan = s.dump_plan(&spec.database, spec.tables.as_deref(), spec.views.as_deref(), spec.clean).await?;
+    let plan = s.dump_plan(&spec.database, spec.tables.as_deref(), spec.views.as_deref(), None, spec.clean).await?;
     let canceled = || DatabaseError::new(ErrorKind::Canceled, "dump canceled");
     let io = io_error;
     let emit = |out: &mut W, stmt: &str| -> Result<(), DatabaseError> {
