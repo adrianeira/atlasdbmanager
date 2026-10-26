@@ -421,12 +421,33 @@ pub fn column_sql(src: Product, dst: Product, c: &ColumnInfo, pk_single_auto: bo
 
 /// A tabela de origem como `CREATE TABLE` (e o que vem depois dos dados: chaves estrangeiras e índices) no produto de destino.
 /// Devolve também os avisos do que não atravessou.
-pub fn create_table(src: Product, dst: Product, schema: &str, table: &str, detail: &TableDetail) -> (Vec<String>, Vec<String>, Vec<String>) {
+pub fn create_table(src: Product, dst: Product, schema: &str, table: &str, detail: &TableDetail, ref_type: &dyn Fn(&str, &str) -> Option<String>) -> (Vec<String>, Vec<String>, Vec<String>) {
     let d = dst.dialect();
     let target = d.target(schema, table);
     let pk = key_columns(detail);
     let single_auto = dst == Product::Sqlite && pk.len() == 1 && detail.columns.iter().any(|c| c.name == pk[0] && is_auto(c) && matches!(parse(src, &c.formatted_type), NType::Int(_)));
-    let mut lines: Vec<String> = detail.columns.iter().filter(|c| c.generated.is_none()).map(|c| column_sql(src, dst, c, single_auto && c.name == pk[0])).collect();
+    // Uma coluna de chave estrangeira para uma tabela que já existe no destino usa o tipo da coluna referenciada.
+    let mut fk_types: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for c in detail.constraints.iter().filter(|c| c.kind == "f") {
+        let (cols, refs) = (split_fields(&c.fields), split_fields(c.ref_fields.as_deref().unwrap_or("")));
+        for (col, rc) in cols.iter().zip(refs.iter()) {
+            if let Some(t) = ref_type(c.ref_table.as_deref().unwrap_or(""), rc) {
+                fk_types.insert(col.clone(), t);
+            }
+        }
+    }
+    let mut lines: Vec<String> = detail
+        .columns
+        .iter()
+        .filter(|c| c.generated.is_none())
+        .map(|c| {
+            let line = column_sql(src, dst, c, single_auto && c.name == pk[0]);
+            match fk_types.get(&c.name) {
+                Some(t) => line.replacen(&render(dst, &parse(src, &c.formatted_type)), t, 1),
+                None => line,
+            }
+        })
+        .collect();
     let mut warnings = Vec::new();
     if !pk.is_empty() && !single_auto {
         lines.push(format!("PRIMARY KEY ({})", pk.iter().map(|k| d.q(k)).collect::<Vec<_>>().join(", ")));

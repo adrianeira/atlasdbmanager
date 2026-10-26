@@ -73,8 +73,8 @@ export function routeCommand(cmd: string, args?: Record<string, unknown>): Route
   if (cmd === "pg_export_cancel" && typeof args?.exportId === "string" && args.exportId.startsWith("xp_")) return { cmd: "ext_cancel", args };
   if (cmd.startsWith("datasync_") || cmd.startsWith("structsync_")) {
     // Fora do PostgreSQL e entre produtos as comparações são as `ext_*`; qualquer id de um lado ou da operação diz isso.
-    const r = args?.req as { compareId?: string; sourceConn?: string; targetConn?: string } | undefined;
-    const ids = [args?.compareId, r?.compareId, r?.sourceConn, r?.targetConn];
+    const r = args?.req as { compareId?: string; deployId?: string; sourceConn?: string; targetConn?: string } | undefined;
+    const ids = [args?.compareId, r?.compareId, r?.deployId, r?.sourceConn, r?.targetConn];
     if (ids.some((x) => typeof x === "string" && (x.startsWith("xp_") || PROVIDERS.some((p) => x.startsWith(p.prefix))))) return { cmd: `ext_${cmd}`, args };
   }
   if ((cmd.startsWith("monitor_") || cmd.startsWith("datagen_")) && typeof id === "string") {

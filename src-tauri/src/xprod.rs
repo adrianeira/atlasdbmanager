@@ -350,7 +350,7 @@ async fn transfer(sp: Product, dp: Product, src: &Exec, dst: &Exec, req: &Transf
                     }
                 };
                 let target_name = spec.overrides.iter().find(|o| o.table == *t).and_then(|o| o.target_name.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| t.clone());
-                let (pre, after, warnings) = create_table(sp, dp, &spec.target_schema, &target_name, &detail);
+                let (pre, after, warnings) = create_table(sp, dp, &spec.target_schema, &target_name, &detail, &|_, _| None);
                 for w in warnings {
                     (run.log)(format!("[DTF] {w}"));
                 }

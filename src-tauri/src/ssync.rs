@@ -7,7 +7,10 @@
 
 use crate::datasync::{DeployCounts, DeployProgress, LogEvent, ProgressEvent};
 use crate::dsync::{deploy, register_cancel, unregister_cancel};
-use crate::genext::{Dialect, Exec, exec_for, mssql_schema_rewrite};
+use crate::genext::{Dialect, Exec, mssql_schema_rewrite};
+use crate::neutral::{NType, Product, column_sql, create_table, parse, render};
+use crate::sessions::Sessions;
+use crate::xprod::open_exec;
 use crate::mssql::MssqlSessions;
 use crate::mysql::MysqlSessions;
 use crate::sqlite::SqliteSessions;
@@ -565,9 +568,238 @@ fn sqlite_rebuild(src: &TableDetail, dst: &TableDetail, name: &str, s_pre: &[Str
     v
 }
 
+// ---------------------------------------------------------------- entre produtos
+
+/// O tipo da coluna de origem como o destino o guarda (ida e volta pelo modelo neutro): é com ele que se compara.
+fn expected_type(sp: Product, dp: Product, c: &ColumnInfo) -> NType {
+    parse(dp, &render(dp, &parse(sp, &c.formatted_type)))
+}
+
+fn same_column_cross(sp: Product, dp: Product, s: &ColumnInfo, t: &ColumnInfo) -> bool {
+    let (want, have) = (expected_type(sp, dp, s), parse(dp, &t.formatted_type));
+    // O SQLite chama de INTEGER qualquer inteiro: a largura que o destino escolheu não é diferença.
+    let same_type = want == have || (sp == Product::Sqlite && matches!((&want, &have), (NType::Int(_), NType::Int(_))));
+    // Uma coluna da chave primária nunca aceita nulo (o SQLite não marca isso na coluna).
+    same_type && (s.not_null || s.key.is_some()) == (t.not_null || t.key.is_some())
+}
+
+fn fields_of(f: &str) -> Vec<String> {
+    f.split(',').map(|x| x.trim().trim_matches(['"', '`', '[', ']']).to_string()).filter(|x| !x.is_empty()).collect()
+}
+
+fn fk_key(c: &ConstraintInfo) -> (Vec<String>, String, Vec<String>) {
+    (fields_of(&c.fields), c.ref_table.clone().unwrap_or_default(), fields_of(c.ref_fields.as_deref().unwrap_or("")))
+}
+
+/// O que muda numa tabela que existe nos dois lados, de produtos diferentes. Só estrutura que atravessa: colunas, chaves, índices.
+#[allow(clippy::too_many_arguments)]
+fn diff_table_cross(sp: Product, dp: Product, src: &TableDetail, dst: &TableDetail, name: &str, src_schema: &str, dst_schema: &str, rebuild: &[String]) -> TableDiff {
+    let d = dp.dialect();
+    let target = d.target(dst_schema, name);
+    let mut out = TableDiff { parts: Vec::new(), stmts: Vec::new() };
+    let mut order = 0i64;
+    let mut next = || {
+        order += 1;
+        order
+    };
+    let uniques = |t: &TableDetail| -> Vec<(Vec<String>, String)> { t.constraints.iter().filter(|c| c.kind == "u").map(|c| (fields_of(&c.fields), c.name.clone())).collect() };
+    let (s_uni, d_uni) = (uniques(src), uniques(dst));
+    let s_fks: Vec<_> = src.constraints.iter().filter(|c| c.kind == "f").collect();
+    let d_fks: Vec<_> = dst.constraints.iter().filter(|c| c.kind == "f").collect();
+    let sqlite_rebuild = dp == Product::Sqlite
+        && (dst.columns.iter().any(|x| !src.columns.iter().any(|c| c.name == x.name))
+            || src.columns.iter().any(|c| dst.columns.iter().any(|x| x.name == c.name && !same_column_cross(sp, dp, c, x)))
+            || pk_columns(src) != pk_columns(dst)
+            || s_uni.iter().any(|(f, _)| !d_uni.iter().any(|(g, _)| g == f))
+            || d_uni.iter().any(|(g, _)| !s_uni.iter().any(|(f, _)| g == f))
+            || s_fks.iter().any(|c| !d_fks.iter().any(|x| fk_key(x) == fk_key(c)))
+            || d_fks.iter().any(|x| !s_fks.iter().any(|c| fk_key(x) == fk_key(c))));
+    if sqlite_rebuild {
+        let n = next();
+        out.add("options", name, StructOp::Modify, 4, n, rebuild.to_vec());
+        return out;
+    }
+    // Colunas.
+    for c in &dst.columns {
+        if !src.columns.iter().any(|s| s.name == c.name) {
+            let n = next();
+            let mut sql = Vec::new();
+            if dp == Product::Mssql {
+                sql.push(mssql_drop_default(&target, &c.name));
+            }
+            sql.push(format!("ALTER TABLE {target} DROP COLUMN {}", d.q(&c.name)));
+            out.add("column", &c.name, StructOp::Delete, 4, n, sql);
+        }
+    }
+    for c in &src.columns {
+        match dst.columns.iter().find(|x| x.name == c.name) {
+            None => {
+                let n = next();
+                let kw = if dp == Product::Mssql { "ADD" } else { "ADD COLUMN" };
+                out.add("column", &c.name, StructOp::Add, 4, n, vec![format!("ALTER TABLE {target} {kw} {}", column_sql(sp, dp, c, false))]);
+            }
+            Some(x) if !same_column_cross(sp, dp, c, x) => {
+                let n = next();
+                let t = render(dp, &parse(sp, &c.formatted_type));
+                let sql = match dp {
+                    Product::Pg => {
+                        let col = d.q(&c.name);
+                        let mut v = vec![format!("ALTER TABLE {target} ALTER COLUMN {col} TYPE {t} USING {col}::{t}")];
+                        if c.not_null != x.not_null {
+                            v.push(format!("ALTER TABLE {target} ALTER COLUMN {col} {} NOT NULL", if c.not_null { "SET" } else { "DROP" }));
+                        }
+                        v
+                    }
+                    Product::Mysql => vec![format!("ALTER TABLE {target} MODIFY COLUMN {}", column_sql(sp, dp, c, false))],
+                    _ => vec![format!("ALTER TABLE {target} ALTER COLUMN {} {t}{}", d.q(&c.name), if c.not_null { " NOT NULL" } else { " NULL" })],
+                };
+                out.add("column", &c.name, StructOp::Modify, 4, n, sql);
+            }
+            _ => {}
+        }
+    }
+    // Chave primária.
+    if pk_columns(src) != pk_columns(dst) {
+        let n = next();
+        let mut sql = Vec::new();
+        if !pk_columns(dst).is_empty() {
+            sql.push(match dp {
+                Product::Mysql => format!("ALTER TABLE {target} DROP PRIMARY KEY"),
+                _ => format!("ALTER TABLE {target} DROP CONSTRAINT {}", d.q(&pk_name(dst).unwrap_or_default())),
+            });
+        }
+        if !pk_columns(src).is_empty() {
+            sql.push(format!("ALTER TABLE {target} ADD PRIMARY KEY ({})", list(&pk_columns(src), d)));
+        }
+        let op = if pk_columns(dst).is_empty() { StructOp::Add } else if pk_columns(src).is_empty() { StructOp::Delete } else { StructOp::Modify };
+        out.add("primary", "PRIMARY", op, 5, n, sql);
+    }
+    // Únicas, chaves estrangeiras e índices: comparados pelas colunas (os nomes mudam de um produto para outro).
+    for c in dst.constraints.iter().filter(|c| c.kind == "u") {
+        if !s_uni.iter().any(|(f, _)| *f == fields_of(&c.fields)) {
+            let n = next();
+            out.add("unique", &c.name, StructOp::Delete, 1, n, vec![drop_constraint(d, &target, c)]);
+        }
+    }
+    for c in src.constraints.iter().filter(|c| c.kind == "u") {
+        if !d_uni.iter().any(|(g, _)| *g == fields_of(&c.fields)) {
+            let n = next();
+            out.add("unique", &c.name, StructOp::Add, 5, n, vec![format!("ALTER TABLE {target} ADD CONSTRAINT {} UNIQUE ({})", d.q(&c.name), list(&c.fields, d))]);
+        }
+    }
+    for c in &d_fks {
+        if !s_fks.iter().any(|x| fk_key(x) == fk_key(c)) {
+            let n = next();
+            out.add("foreign", &c.name, StructOp::Delete, 1, n, vec![drop_constraint(d, &target, c)]);
+        }
+    }
+    for c in &s_fks {
+        if !d_fks.iter().any(|x| fk_key(x) == fk_key(c)) {
+            let n = next();
+            out.add("foreign", &c.name, StructOp::Add, 6, n, vec![fk_sql(d, &target, c, src_schema, dst_schema)]);
+        }
+    }
+    // O MySQL cria sozinho um índice para cada chave estrangeira: ele não é diferença.
+    let plain = |t: &TableDetail, i: &IndexInfo| !i.primary && !i.fields.contains('(') && !t.constraints.iter().any(|c| c.kind == "f" && fields_of(&c.fields) == fields_of(&i.fields)) && !t.constraints.iter().any(|c| c.kind == "u" && (c.name == i.name || fields_of(&c.fields) == fields_of(&i.fields))) && !i.name.starts_with("sqlite_autoindex_");
+    let drop_ix = |name: &str| match dp {
+        Product::Pg => format!("DROP INDEX {}", d.target(dst_schema, name)),
+        Product::Sqlite => format!("DROP INDEX {}", d.q(name)),
+        _ => format!("DROP INDEX {} ON {target}", d.q(name)),
+    };
+    for i in dst.indexes.iter().filter(|i| plain(dst, i)) {
+        if !src.indexes.iter().any(|x| plain(src, x) && fields_of(&x.fields) == fields_of(&i.fields) && x.unique == i.unique) {
+            let n = next();
+            out.add("index", &i.name, StructOp::Delete, 1, n, vec![drop_ix(&i.name)]);
+        }
+    }
+    for i in src.indexes.iter().filter(|i| plain(src, i)) {
+        if !dst.indexes.iter().any(|x| plain(dst, x) && fields_of(&x.fields) == fields_of(&i.fields) && x.unique == i.unique) {
+            let n = next();
+            let iname = if matches!(dp, Product::Pg | Product::Sqlite) && !i.name.starts_with(name) { format!("{name}_{}", i.name) } else { i.name.clone() };
+            let mut ix = i.clone();
+            ix.name = iname;
+            out.add("index", &i.name, StructOp::Add, 5, n, vec![index_sql(d, &target, &ix)]);
+        }
+    }
+    out
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn compare_cross(app: &AppHandle, sp: Product, dp: Product, src: &Exec, dst: &Exec, spec: (&str, &str), id: &str, cancel: &AtomicBool) -> Result<Vec<Diff>, DatabaseError> {
+    let (src_schema, dst_schema) = spec;
+    let progress = |text: &str, f: f64| {
+        let _ = app.emit("datasync-progress", ProgressEvent { id, text: text.to_string(), fraction: f });
+    };
+    let names = |o: atlas_core::SchemaObjects| o.tables.into_iter().map(|t| t.name).collect::<Vec<_>>();
+    let s_names = names(src.objects(src_schema).await?);
+    let t_names = names(dst.objects(dst_schema).await?);
+    let mut all: Vec<String> = s_names.iter().chain(t_names.iter()).cloned().collect();
+    all.sort();
+    all.dedup();
+    // Os tipos das colunas que já existem no destino: uma tabela nova com chave estrangeira para elas usa o mesmo tipo.
+    let mut existing: HashMap<(String, String), String> = HashMap::new();
+    for t in &t_names {
+        if let Ok(det) = dst.table_detail(dst_schema, t).await {
+            for c in det.columns {
+                existing.insert((t.clone(), c.name.clone()), c.formatted_type);
+            }
+        }
+    }
+    let ref_type = |t: &str, c: &str| existing.get(&(t.to_string(), c.to_string())).cloned();
+    let mut out = Vec::new();
+    for (n, name) in all.iter().enumerate() {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(canceled());
+        }
+        progress(name, n as f64 / all.len().max(1) as f64);
+        let (in_s, in_t) = (s_names.contains(name), t_names.contains(name));
+        let d = dp.dialect();
+        let target = d.target(dst_schema, name);
+        let sd = if in_s { Some(src.table_detail(src_schema, name).await?) } else { None };
+        let td = if in_t { Some(dst.table_detail(dst_schema, name).await?) } else { None };
+        let text = |p: Product, schema: &str, det: &TableDetail| -> (Vec<String>, Vec<String>) {
+            let (pre, post, _) = create_table(p, dp, schema, name, det, &ref_type);
+            (pre, post)
+        };
+        let (s_pre, s_post) = sd.as_ref().map(|x| text(sp, dst_schema, x)).unwrap_or_default();
+        let (t_pre, t_post) = td.as_ref().map(|x| text(dp, dst_schema, x)).unwrap_or_default();
+        let mut diff = Diff { kind: "table", name: name.clone(), op: StructOp::Same, parts: Vec::new(), source_ddl: [s_pre.clone(), s_post.clone()].concat().join(";\n\n"), target_ddl: [t_pre.clone(), t_post.clone()].concat().join(";\n\n"), stmts: Vec::new() };
+        match (sd, td) {
+            (Some(_), None) => {
+                diff.op = StructOp::Add;
+                for (i, sql) in s_pre.into_iter().enumerate() {
+                    diff.stmts.push(Stmt { phase: 3, order: i as i64, part: None, sql });
+                }
+                for (i, sql) in s_post.into_iter().enumerate() {
+                    let phase = if sql.to_uppercase().contains("FOREIGN KEY") { 6 } else { 5 };
+                    diff.stmts.push(Stmt { phase, order: i as i64, part: None, sql });
+                }
+            }
+            (None, Some(_)) => {
+                diff.op = StructOp::Delete;
+                diff.stmts.push(Stmt { phase: 2, order: 0, part: None, sql: format!("DROP TABLE {target}") });
+            }
+            (Some(sd), Some(td)) => {
+                let rebuild = if dp == Product::Sqlite { sqlite_rebuild(&sd, &td, name, &s_pre, &s_post) } else { Vec::new() };
+                let t = diff_table_cross(sp, dp, &sd, &td, name, src_schema, dst_schema, &rebuild);
+                if !t.parts.is_empty() {
+                    diff.op = StructOp::Modify;
+                    diff.parts = t.parts;
+                    diff.stmts = t.stmts;
+                }
+            }
+            (None, None) => continue,
+        }
+        out.push(diff);
+    }
+    progress("", 1.0);
+    Ok(out)
+}
+
 #[tauri::command]
 pub async fn ext_structsync_compare(
     app: AppHandle,
+    pg: State<'_, Sessions>,
     mysql: State<'_, MysqlSessions>,
     mssql: State<'_, MssqlSessions>,
     sqlite: State<'_, SqliteSessions>,
@@ -575,19 +807,21 @@ pub async fn ext_structsync_compare(
     req: StructCompareRequest,
 ) -> Result<Vec<ObjectOut>, DatabaseError> {
     comparisons.inner.lock().unwrap().remove(&req.compare_id);
-    let (d, s_exec) = exec_for(&req.source_conn, &req.source_database, &req.spec.source_schema, &mysql, &mssql, &sqlite)?;
-    let (d2, t_exec) = exec_for(&req.target_conn, &req.target_database, &req.spec.target_schema, &mysql, &mssql, &sqlite)?;
-    if d != d2 {
-        return Err(DatabaseError::new(ErrorKind::InvalidInput, "the source and the target must be connections of the same database product"));
-    }
+    let (sp, s_exec) = open_exec(&req.source_conn, &req.source_database, &req.spec.source_schema, &pg, &mysql, &mssql, &sqlite).await?;
+    let (dp, t_exec) = open_exec(&req.target_conn, &req.target_database, &req.spec.target_schema, &pg, &mysql, &mssql, &sqlite).await?;
     if req.source_conn == req.target_conn && req.source_database == req.target_database && req.spec.source_schema == req.spec.target_schema {
         return Err(DatabaseError::new(ErrorKind::InvalidInput, "the source and the target are the same"));
     }
-    let src = Side { pair: backend_for(&req.source_conn, &mysql, &mssql, &sqlite)?, exec: s_exec, database: req.source_database.clone(), schema: req.spec.source_schema.clone() };
-    let dst = Side { pair: backend_for(&req.target_conn, &mysql, &mssql, &sqlite)?, exec: t_exec, database: req.target_database.clone(), schema: req.spec.target_schema.clone() };
     let cancel = Arc::new(AtomicBool::new(false));
     register_cancel(&req.compare_id, &req.source_conn, &cancel, &mysql, &mssql, &sqlite);
-    let result = compare(&app, d, &src, &dst, &req.compare_id, &cancel).await;
+    // Produtos diferentes: só as tabelas atravessam (views e rotinas são texto de cada produto).
+    let result = if sp != dp {
+        compare_cross(&app, sp, dp, &s_exec, &t_exec, (&req.spec.source_schema, &req.spec.target_schema), &req.compare_id, &cancel).await
+    } else {
+        let src = Side { pair: backend_for(&req.source_conn, &mysql, &mssql, &sqlite)?, exec: s_exec, database: req.source_database.clone(), schema: req.spec.source_schema.clone() };
+        let dst = Side { pair: backend_for(&req.target_conn, &mysql, &mssql, &sqlite)?, exec: t_exec, database: req.target_database.clone(), schema: req.spec.target_schema.clone() };
+        compare(&app, dp.dialect(), &src, &dst, &req.compare_id, &cancel).await
+    };
     unregister_cancel(&req.compare_id, &req.source_conn, &mysql, &mssql, &sqlite);
     let diffs = result?;
     let out = diffs
@@ -622,12 +856,14 @@ pub fn ext_structsync_script(comparisons: State<'_, ExtStructComparisons>, compa
 #[tauri::command]
 pub async fn ext_structsync_deploy(
     app: AppHandle,
+    pg: State<'_, Sessions>,
     mysql: State<'_, MysqlSessions>,
     mssql: State<'_, MssqlSessions>,
     sqlite: State<'_, SqliteSessions>,
     req: StructDeployRequest,
 ) -> Result<DeployCounts, DatabaseError> {
-    let (d, dst) = exec_for(&req.target_conn, &req.target_database, &req.target_database, &mysql, &mssql, &sqlite)?;
+    let (dp, dst) = open_exec(&req.target_conn, &req.target_database, &req.target_database, &pg, &mysql, &mssql, &sqlite).await?;
+    let d = dp.dialect();
     let cancel = Arc::new(AtomicBool::new(false));
     register_cancel(&req.deploy_id, &req.target_conn, &cancel, &mysql, &mssql, &sqlite);
     let (log_app, log_id) = (app.clone(), req.deploy_id.clone());
