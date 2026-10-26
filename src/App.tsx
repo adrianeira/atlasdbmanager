@@ -2006,7 +2006,6 @@ export default function App() {
         item("cmd.restoreBackup", live ? () => openRestore("restore", c) : undefined),
         item("cmd.extractSql", live ? () => openRestore("extract", c) : undefined),
         sep,
-        item("cmd.reverseToModel"),
         item("cmd.findInDatabase", live ? () => openFind(conn.id, dbName) : undefined),
         item("cmd.share", () => setDialog({ kind: "share", connId: conn.id, database: dbName })),
         sep,
@@ -2055,7 +2054,6 @@ export default function App() {
         dumpMenu({ kind: "schema", schema: scName }, scName, conn.id, dbName),
         item("cmd.newBackup", live ? () => void openBackup(c, scName) : undefined),
         sep,
-        item("cmd.reverseToModel"),
         sep,
         item("cmd.refresh", live ? () => refreshNode(node) : undefined),
       );

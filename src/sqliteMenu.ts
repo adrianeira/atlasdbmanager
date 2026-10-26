@@ -7,18 +7,16 @@ import type { MessageKey } from "./i18n";
  */
 const NOT_IN_SQLITE = new Set<MessageKey>([
   "cmd.newDatabase", "cmd.editDatabase", "cmd.deleteDatabase", "cmd.newSchema", "cmd.editSchema", "cmd.deleteSchema",
-  "cmd.extractSql", "cmd.reverseToModel",
+  "cmd.extractSql",
   "cmd.truncateTable", "cmd.renameView",
 ]);
 
 const NOT_IN_MSSQL = new Set<MessageKey>([
   "cmd.newDatabase", "cmd.editDatabase", "cmd.deleteDatabase", "cmd.editSchema",
-  "cmd.reverseToModel",
 ]);
 
 const NOT_IN_MYSQL = new Set<MessageKey>([
   "cmd.newSchema", "cmd.editSchema", "cmd.deleteSchema",
-  "cmd.reverseToModel",
 ]);
 
 const SETS: Record<string, Set<MessageKey>> = { sqlite: NOT_IN_SQLITE, sqlserver: NOT_IN_MSSQL, mysql: NOT_IN_MYSQL };
