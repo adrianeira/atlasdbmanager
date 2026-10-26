@@ -10,6 +10,7 @@ import { FullscreenButton } from "../components/FullscreenButton";
 import type { CellValue } from "../model";
 import { beautifySql } from "../sql/format";
 import { viewStatementsMssql } from "../sql/mssqlDdl";
+import { viewStatementsMysql } from "../sql/mysqlDdl";
 import { viewStatementsSqlite } from "../sql/sqliteDdl";
 import {
   alterMatviewStatements, alterViewStatements, cleanDefinition, createMatviewStatements, createViewStatements, emptyView, refreshMatviewSql, type ViewState,
@@ -41,7 +42,7 @@ interface Props {
   onSaved: (name: string, state: ViewState) => void;
   backend?: ViewBackend;
   /** Banco da conexão; ausente = PostgreSQL. */
-  dialect?: "sqlite" | "mssql";
+  dialect?: "sqlite" | "mssql" | "mysql";
 }
 
 type SubTab = "definition" | "rules" | "advanced" | "comment" | "sql";
@@ -81,9 +82,10 @@ export function ViewDesignerDoc({
   const t = useT();
   const sqlite = dialect === "sqlite";
   const mssql = dialect === "mssql";
+  const mysql = dialect === "mysql";
   /** Sem `CREATE OR REPLACE VIEW`/dono/regras do PostgreSQL: só a definição e o SQL. */
-  const lite = sqlite || mssql;
-  const viewSql = (n: string, replace: boolean) => (mssql ? viewStatementsMssql(schema, n, cleanDefinition(d.definition), replace) : viewStatementsSqlite(n, cleanDefinition(d.definition), replace)).map((x) => `${x};`);
+  const lite = sqlite || mssql || mysql;
+  const viewSql = (n: string, replace: boolean) => (mysql ? viewStatementsMysql(schema, n, cleanDefinition(d.definition), replace) : mssql ? viewStatementsMssql(schema, n, cleanDefinition(d.definition), replace) : viewStatementsSqlite(n, cleanDefinition(d.definition), replace)).map((x) => `${x};`);
   const editor = useRef<SqlEditorHandle | null>(null);
   const [name, setName] = useState(viewName);
   const [original, setOriginal] = useState<ViewState | null>(viewName && !backend ? { ...emptyView(), ...mock } : null);
@@ -130,7 +132,7 @@ export function ViewDesignerDoc({
         ? cleanDefinition(original.definition) === cleanDefinition(d.definition) ? [] : viewSql(name, true)
         : materialized ? alterMatviewStatements(schema, name, original, d) : alterViewStatements(schema, name, original, d, serverVersionNum)
       : []),
-    [name, original, d, schema, serverVersionNum, materialized, lite, mssql],
+    [name, original, d, schema, serverVersionNum, materialized, lite, mssql, mysql],
   );
   const dirty = isNew ? cleanDefinition(d.definition) !== "" : alterStatements.length > 0;
 

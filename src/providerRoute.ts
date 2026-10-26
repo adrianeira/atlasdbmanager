@@ -49,7 +49,7 @@ const MYSQL: Provider = {
   console: false,
   commands: new Set([
     "test_connection", "open", "close", "close_database", "list_databases", "list_schemas", "list_objects", "table_detail", "list_roles",
-    "execute", "cancel", "table_rows", "table_count", "apply", "fk_labels", "schema_diagram",
+    "execute", "cancel", "table_rows", "table_count", "apply", "fk_labels", "schema_diagram", "view_detail",
     ...TX,
   ]),
 };

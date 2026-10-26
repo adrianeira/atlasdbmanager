@@ -181,6 +181,12 @@ pub async fn mysql_schema_diagram(sessions: State<'_, MysqlSessions>, session_id
     sessions.session(&session_id)?.schema_diagram(&database).await
 }
 
+/// Definição de uma view para o designer.
+#[tauri::command]
+pub async fn mysql_view_detail(sessions: State<'_, MysqlSessions>, session_id: String, database: String, _schema: String, view: String) -> Result<atlas_core::ViewDetail, DatabaseError> {
+    sessions.session(&session_id)?.view_detail(&database, &view).await
+}
+
 /// Tudo que o MySQL ainda não tem nesta interface: a tela recebe "indisponível".
 #[tauri::command]
 pub async fn mysql_unsupported(what: String) -> Result<(), DatabaseError> {

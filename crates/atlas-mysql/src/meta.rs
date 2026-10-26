@@ -89,6 +89,18 @@ impl MysqlSession {
         Ok(SchemaObjects { tables, views, functions, ..Default::default() })
     }
 
+    /// Definição de uma view para o designer (só o SELECT).
+    pub async fn view_detail(&self, database: &str, view: &str) -> Result<atlas_core::ViewDetail, DatabaseError> {
+        let client = self.client(database).await?;
+        let mut conn = client.lock().await;
+        let rows = rows_of(&mut conn, "SELECT view_definition, check_option FROM information_schema.views WHERE table_schema = ? AND table_name = ?", vec![v(database), v(view)]).await?;
+        let Some(r) = rows.first() else {
+            return Err(DatabaseError::new(atlas_core::ErrorKind::InvalidInput, format!("view `{database}`.`{view}` does not exist")));
+        };
+        let check = text(r, 1).map(|c| c.to_lowercase()).filter(|c| c == "local" || c == "cascaded");
+        Ok(atlas_core::ViewDetail { definition: s(r, 0).trim().trim_end_matches(';').to_string(), owner: None, comment: None, check_option: check, security_barrier: false, rules: Vec::new(), populated: true })
+    }
+
     pub async fn table_detail(&self, database: &str, table: &str) -> Result<TableDetail, DatabaseError> {
         let client = self.client(database).await?;
         let mut conn = client.lock().await;

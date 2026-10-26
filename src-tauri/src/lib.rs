@@ -203,6 +203,7 @@ pub fn run() {
             mysql::mysql_apply,
             mysql::mysql_fk_labels,
             mysql::mysql_schema_diagram,
+            mysql::mysql_view_detail,
             mysql::mysql_unsupported,
             mysql::mysql_tx_begin,
             mysql::mysql_tx_apply,
