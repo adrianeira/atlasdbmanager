@@ -27,7 +27,7 @@ pub struct DumpTable {
 }
 
 /// Tira o `DEFINER=...` (o usuário pode não existir onde o script rodar).
-fn without_definer(sql: &str) -> String {
+pub(crate) fn without_definer(sql: &str) -> String {
     let Some(start) = sql.find("DEFINER=") else { return sql.to_string() };
     // `DEFINER=`user`@`host` ` termina no primeiro espaço fora das crases.
     let mut in_quote = false;

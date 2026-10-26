@@ -89,6 +89,19 @@ impl MysqlSession {
         Ok(SchemaObjects { tables, views, functions, ..Default::default() })
     }
 
+    /// O texto de uma função ou procedimento (`CREATE ...`), sem o `DEFINER`.
+    pub async fn routine_definition(&self, database: &str, name: &str) -> Result<String, DatabaseError> {
+        let client = self.client(database).await?;
+        let mut conn = client.lock().await;
+        let kinds = rows_of(&mut conn, "SELECT routine_type FROM information_schema.routines WHERE routine_schema = ? AND routine_name = ?", vec![v(database), v(name)]).await?;
+        let Some(kind) = kinds.first().map(|r| s(r, 0)) else {
+            return Err(DatabaseError::new(atlas_core::ErrorKind::InvalidInput, format!("routine `{database}`.`{name}` does not exist")));
+        };
+        let rows = rows_of(&mut conn, &format!("SHOW CREATE {kind} {}", super::quote_ident(name)), vec![]).await?;
+        let ddl = rows.first().and_then(|r| text(r, 2)).ok_or_else(|| DatabaseError::new(atlas_core::ErrorKind::PermissionDenied, "the definition is not visible to this login"))?;
+        Ok(crate::dump::without_definer(&ddl))
+    }
+
     /// Definição de uma view para o designer (só o SELECT).
     pub async fn view_detail(&self, database: &str, view: &str) -> Result<atlas_core::ViewDetail, DatabaseError> {
         let client = self.client(database).await?;

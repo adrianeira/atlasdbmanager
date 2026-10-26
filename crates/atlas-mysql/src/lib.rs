@@ -4,6 +4,7 @@
 //! No MySQL "banco" e "schema" são a mesma coisa: cada banco aparece na árvore com um schema de mesmo nome. Uma sessão guarda uma
 //! conexão por banco (aberta quando alguém pede). Os valores voltam em texto, como a grade os espera.
 
+mod console;
 mod dump;
 mod extra;
 mod import;
@@ -19,6 +20,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
+pub use console::{Completion as ConsoleCompletion, ConsoleOptions, ConsoleOutput};
 pub use dump::{DumpPlan, DumpTable, literal};
 pub use extra::FkLabels;
 pub use import::{Feed as ImportFeed, Hooks as ImportHooks, ImportMode, ImportSpec, ImportStats, TargetColumn, declared_type};

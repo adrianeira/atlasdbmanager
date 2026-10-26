@@ -1050,6 +1050,11 @@ export default function App() {
 
   const newFunction = () => {
     if (!ctx.connection || !ctx.database || !ctx.schema) return;
+    if (ctx.connection.provider === "mysql") {
+      const schema = ctx.schema.name;
+      openTab({ kind: "query", title: t("tab.untitledQuery"), windowTitle: t("tab.untitledQuery"), icon: "query", connectionId: ctx.connection.id, database: ctx.database.name, schema, sql: `CREATE PROCEDURE ${quoteMysql(schema)}.\`new_procedure\`()\nBEGIN\n  SELECT 1 AS x;\nEND;` });
+      return;
+    }
     if (ctx.connection.provider === "sqlserver") {
       // SQL Server: o procedimento nasce num modelo numa aba de consulta (não há designer de procedimento).
       const schema = ctx.schema.name;
@@ -1286,13 +1291,14 @@ export default function App() {
       } else if (cat === "view" && kind === "design") {
         const title = objectTitle(name, "tb.view", c);
         openTab({ ...base, kind: "viewDesigner", title, windowTitle: title, icon: "view" }, `${t("act.designView")} - ${name}`);
-      } else if (cat === "function" && c.connection?.live && c.connection.provider === "sqlserver") {
-        // SQL Server: o texto do procedimento abre numa aba de consulta, pronto para `CREATE OR ALTER`.
+      } else if (cat === "function" && c.connection?.live && (c.connection.provider === "sqlserver" || c.connection.provider === "mysql")) {
+        // SQL Server e MySQL: o texto do procedimento abre numa aba de consulta, pronto para recriar (`CREATE OR ALTER` / `DROP` + `CREATE`).
         const conn = c.connection;
-        const schemaName = c.schema?.name ?? "dbo";
+        const schemaName = c.schema?.name ?? (conn.provider === "mysql" ? base.database ?? "" : "dbo");
+        const mysqlRoutine = conn.provider === "mysql";
         const routine = c.schema?.objects.function?.find((o) => o.name === name)?.fnName ?? name;
         void pg.routineDefinition(conn.id, base.database ?? "", schemaName, routine)
-          .then((def) => openTab({ kind: "query", title: `${routine} - ${t("tb.function")}`, windowTitle: routine, icon: "function", connectionId: conn.id, database: base.database, schema: schemaName, sql: def.replace(/^\s*CREATE\s+(PROC|PROCEDURE|FUNCTION)\b/i, "CREATE OR ALTER $1") }))
+          .then((def) => openTab({ kind: "query", title: `${routine} - ${t("tb.function")}`, windowTitle: routine, icon: "function", connectionId: conn.id, database: base.database, schema: schemaName, sql: mysqlRoutine ? `DROP ${/^\s*CREATE\s+PROCEDURE\b/i.test(def) ? "PROCEDURE" : "FUNCTION"} IF EXISTS ${quoteMysql(routine)};\n\n${def};` : def.replace(/^\s*CREATE\s+(PROC|PROCEDURE|FUNCTION)\b/i, "CREATE OR ALTER $1") }))
           .catch((e) => showError(t("act.designFunction"), e));
       } else if (cat === "function" && c.connection?.live) {
         const fn = c.schema?.objects.function?.find((o) => o.name === name);
@@ -2314,7 +2320,7 @@ export default function App() {
         item("act.designFunction", () => openObjects("design", [fn.name], "function", c)),
         item("act.newFunction", newFunction),
         item("act.deleteFunction", live ? () => askDdl({
-          ...scope, title: t("act.deleteFunction"), message: confirmDelete(fn.procedure ? "procedure" : "function", fn.name), statements: c.connection?.provider === "sqlserver" ? [`DROP ${fn.procedure ? "PROCEDURE" : "FUNCTION"} ${quoteMssql(scName)}.${quoteMssql(fn.fnName ?? fn.name)};`] : [dropFuncSql(scName, fn.fnName ?? fn.name, fn.args ?? "", !!fn.procedure)], danger: true, confirmText: prod ? fn.fnName : undefined,
+          ...scope, title: t("act.deleteFunction"), message: confirmDelete(fn.procedure ? "procedure" : "function", fn.name), statements: c.connection?.provider === "mysql" ? [`DROP ${fn.procedure ? "PROCEDURE" : "FUNCTION"} ${quoteMysql(scName)}.${quoteMysql(fn.fnName ?? fn.name)};`] : c.connection?.provider === "sqlserver" ? [`DROP ${fn.procedure ? "PROCEDURE" : "FUNCTION"} ${quoteMssql(scName)}.${quoteMssql(fn.fnName ?? fn.name)};`] : [dropFuncSql(scName, fn.fnName ?? fn.name, fn.args ?? "", !!fn.procedure)], danger: true, confirmText: prod ? fn.fnName : undefined,
         }) : undefined),
         sep,
         item("cmd.copyName", () => { void navigator.clipboard?.writeText(fn.fnName ?? fn.name).catch(() => undefined); }),

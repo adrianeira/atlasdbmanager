@@ -562,6 +562,30 @@ pub async fn mysql_dump_sql(app: tauri::AppHandle, sessions: State<'_, MysqlSess
     out
 }
 
+/// Console (estilo `mysql`): `input` é um comando completo, SQL ou com `.`.
+#[tauri::command]
+pub async fn mysql_console_run(sessions: State<'_, MysqlSessions>, session_id: String, database: String, input: String, options: atlas_mysql::ConsoleOptions) -> Result<atlas_mysql::ConsoleOutput, DatabaseError> {
+    sessions.session(&session_id)?.console_run(&database, &input, options).await
+}
+
+/// O texto do prompt (`atlas_demo=>`).
+#[tauri::command]
+pub async fn mysql_console_prompt(sessions: State<'_, MysqlSessions>, session_id: String, database: String) -> Result<String, DatabaseError> {
+    sessions.session(&session_id)?.console_prompt(&database).await
+}
+
+/// Tab no console.
+#[tauri::command]
+pub async fn mysql_console_complete(sessions: State<'_, MysqlSessions>, session_id: String, database: String, text: String) -> Result<atlas_mysql::ConsoleCompletion, DatabaseError> {
+    sessions.session(&session_id)?.console_complete(&database, &text).await
+}
+
+/// O texto de uma função ou procedimento, para abrir numa aba de consulta.
+#[tauri::command]
+pub async fn mysql_routine_definition(sessions: State<'_, MysqlSessions>, session_id: String, database: String, _schema: String, name: String) -> Result<String, DatabaseError> {
+    sessions.session(&session_id)?.routine_definition(&database, &name).await
+}
+
 /// Definição de uma view para o designer.
 #[tauri::command]
 pub async fn mysql_view_detail(sessions: State<'_, MysqlSessions>, session_id: String, database: String, _schema: String, view: String) -> Result<atlas_core::ViewDetail, DatabaseError> {
