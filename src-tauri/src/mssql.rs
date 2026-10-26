@@ -533,10 +533,99 @@ pub async fn mssql_routine_definition(sessions: State<'_, MssqlSessions>, sessio
 /// Destino do dump.
 type DumpOut = std::io::BufWriter<File>;
 
+/// O que o dump leva.
+struct DumpSpec<'a> {
+    database: &'a str,
+    schema: Option<&'a str>,
+    tables: Option<&'a [String]>,
+    views: Option<&'a [String]>,
+    structure: bool,
+    data: bool,
+    clean: bool,
+    rows_per_insert: usize,
+}
+
+/// Escreve o script do dump em `out`: o DDL lido do catálogo e os dados em `INSERT`, com lotes separados por `GO`. Devolve (objetos, tabelas, linhas).
+async fn write_dump(s: &MssqlSession, spec: &DumpSpec<'_>, out: &mut DumpOut, cancel: &AtomicBool, mut progress: impl FnMut(u64) + Send) -> Result<(usize, usize, u64), DatabaseError> {
+    use std::io::Write;
+    let plan = s.dump_plan(spec.database, spec.schema, spec.tables, spec.views, spec.clean).await?;
+    let canceled = || DatabaseError::new(ErrorKind::Canceled, "dump canceled");
+    let write = |text: &str, out: &mut DumpOut| -> Result<(), DatabaseError> { out.write_all(text.as_bytes()).map_err(io_error) };
+    write(&format!("-- Atlas DB Manager: SQL dump\n-- SQL Server {}; banco: {}\n\nSET QUOTED_IDENTIFIER ON;\nGO\n", s.version, spec.database), out)?;
+    if spec.structure {
+        for stmt in &plan.pre_data {
+            write(&format!("\n{stmt}\n"), out)?;
+        }
+        write("\nGO\n", out)?;
+    }
+    let mut rows = 0u64;
+    if spec.data {
+        for table in &plan.data_tables {
+            if cancel.load(Ordering::Relaxed) {
+                return Err(canceled());
+            }
+            let target = format!("{}.{}", atlas_mssql::quote_ident(&table.schema), atlas_mssql::quote_ident(&table.name));
+            if table.columns.is_empty() {
+                continue;
+            }
+            let list = table.columns.iter().map(|(n, _)| atlas_mssql::quote_ident(n)).collect::<Vec<_>>().join(", ");
+            write(&format!("\n-- Dados de {target}\n"), out)?;
+            if table.has_identity {
+                write(&format!("SET IDENTITY_INSERT {target} ON;\n"), out)?;
+            }
+            let mut batch: Vec<String> = Vec::new();
+            let mut table_rows = 0u64;
+            let flush = |batch: &mut Vec<String>, out: &mut DumpOut| -> Result<(), DatabaseError> {
+                if batch.is_empty() {
+                    return Ok(());
+                }
+                let text = format!("INSERT INTO {target} ({list}) VALUES\n{};\n", batch.join(",\n"));
+                batch.clear();
+                out.write_all(text.as_bytes()).map_err(io_error)
+            };
+            s.stream_rows(
+                spec.database,
+                &format!("SELECT {list} FROM {target}"),
+                |_| Ok(()),
+                |values| {
+                    if cancel.load(Ordering::Relaxed) {
+                        return Ok(false);
+                    }
+                    let cells: Vec<String> = values.iter().zip(&table.columns).map(|(v, (_, ty))| atlas_mssql::literal(*v, ty)).collect();
+                    batch.push(format!("({})", cells.join(", ")));
+                    table_rows += 1;
+                    if batch.len() >= spec.rows_per_insert {
+                        flush(&mut batch, out)?;
+                    }
+                    progress(rows + table_rows);
+                    Ok(true)
+                },
+            )
+            .await?;
+            if cancel.load(Ordering::Relaxed) {
+                return Err(canceled());
+            }
+            flush(&mut batch, out)?;
+            if table.has_identity {
+                write(&format!("SET IDENTITY_INSERT {target} OFF;\n"), out)?;
+            }
+            write("GO\n", out)?;
+            rows += table_rows;
+        }
+    }
+    if spec.structure {
+        for stmt in &plan.post_data {
+            write(&format!("\n{stmt}\n"), out)?;
+        }
+        write("\nGO\n", out)?;
+    }
+    out.flush().map_err(io_error)?;
+    Ok((plan.objects, plan.data_tables.len(), rows))
+}
+
 /// Dump SQL: o DDL lido do catálogo e os dados em `INSERT`, num script com lotes separados por `GO`.
 #[tauri::command]
 pub async fn mssql_dump_sql(app: tauri::AppHandle, sessions: State<'_, MssqlSessions>, req: DumpRequest) -> Result<DumpResult, DatabaseError> {
-    use std::io::Write;
     let started = Instant::now();
     let dest = validate_path(&req.path)?;
     if !req.options.structure && !req.options.data {
@@ -554,90 +643,31 @@ pub async fn mssql_dump_sql(app: tauri::AppHandle, sessions: State<'_, MssqlSess
             atlas_pg::DumpScope::Tables { schema, tables } => (Some(schema.clone()), Some(tables.clone()), Some(Vec::new())),
             atlas_pg::DumpScope::Selection { schema, tables, views, .. } => (Some(schema.clone()), Some(tables.clone()), Some(views.clone())),
         };
-        let plan = s.dump_plan(&req.database, schema.as_deref(), tables.as_deref(), views.as_deref(), req.options.clean).await?;
+        let spec = DumpSpec {
+            database: &req.database,
+            schema: schema.as_deref(),
+            tables: tables.as_deref(),
+            views: views.as_deref(),
+            structure: req.options.structure,
+            data: req.options.data,
+            clean: req.options.clean,
+            rows_per_insert: req.rows_per_insert.clamp(1, 1000) as usize,
+        };
         let mut part = PartFile::new(part_path(&dest));
         let mut out: DumpOut = std::io::BufWriter::with_capacity(256 * 1024, File::create(&part.path).map_err(io_error)?);
-        let canceled = || DatabaseError::new(ErrorKind::Canceled, "dump canceled");
-        let write = |text: &str, out: &mut DumpOut| -> Result<(), DatabaseError> { out.write_all(text.as_bytes()).map_err(io_error) };
-        write(&format!("-- Atlas DB Manager: SQL dump\n-- SQL Server {}; banco: {}\n\nSET QUOTED_IDENTIFIER ON;\nGO\n", s.version, req.database), &mut out)?;
-        if req.options.structure {
-            for stmt in &plan.pre_data {
-                write(&format!("\n{stmt}\n"), &mut out)?;
-            }
-            write("\nGO\n", &mut out)?;
-        }
-        let mut rows = 0u64;
         let mut last_emit = Instant::now();
-        let per = req.rows_per_insert.clamp(1, 1000) as usize;
-        if req.options.data {
-            for table in &plan.data_tables {
-                if cancel.load(Ordering::Relaxed) {
-                    return Err(canceled());
-                }
-                let target = format!("{}.{}", atlas_mssql::quote_ident(&table.schema), atlas_mssql::quote_ident(&table.name));
-                if table.columns.is_empty() {
-                    continue;
-                }
-                let list = table.columns.iter().map(|(n, _)| atlas_mssql::quote_ident(n)).collect::<Vec<_>>().join(", ");
-                write(&format!("\n-- Dados de {target}\n"), &mut out)?;
-                if table.has_identity {
-                    write(&format!("SET IDENTITY_INSERT {target} ON;\n"), &mut out)?;
-                }
-                let mut batch: Vec<String> = Vec::new();
-                let mut table_rows = 0u64;
-                let flush = |batch: &mut Vec<String>, out: &mut DumpOut| -> Result<(), DatabaseError> {
-                    if batch.is_empty() {
-                        return Ok(());
-                    }
-                    let text = format!("INSERT INTO {target} ({list}) VALUES\n{};\n", batch.join(",\n"));
-                    batch.clear();
-                    out.write_all(text.as_bytes()).map_err(io_error)
-                };
-                s.stream_rows(
-                    &req.database,
-                    &format!("SELECT {list} FROM {target}"),
-                    |_| Ok(()),
-                    |values| {
-                        if cancel.load(Ordering::Relaxed) {
-                            return Ok(false);
-                        }
-                        let cells: Vec<String> = values.iter().zip(&table.columns).map(|(v, (_, ty))| atlas_mssql::literal(*v, ty)).collect();
-                        batch.push(format!("({})", cells.join(", ")));
-                        table_rows += 1;
-                        if batch.len() >= per {
-                            flush(&mut batch, &mut out)?;
-                        }
-                        if last_emit.elapsed() >= Duration::from_millis(200) {
-                            last_emit = Instant::now();
-                            let _ = app.emit("export-progress", Progress { export_id: &req.dump_id, rows: rows + table_rows });
-                        }
-                        Ok(true)
-                    },
-                )
-                .await?;
-                if cancel.load(Ordering::Relaxed) {
-                    return Err(canceled());
-                }
-                flush(&mut batch, &mut out)?;
-                if table.has_identity {
-                    write(&format!("SET IDENTITY_INSERT {target} OFF;\n"), &mut out)?;
-                }
-                write("GO\n", &mut out)?;
-                rows += table_rows;
+        let (objects, tables, rows) = write_dump(&s, &spec, &mut out, &cancel, |n| {
+            if last_emit.elapsed() >= Duration::from_millis(200) {
+                last_emit = Instant::now();
+                let _ = app.emit("export-progress", Progress { export_id: &req.dump_id, rows: n });
             }
-        }
-        if req.options.structure {
-            for stmt in &plan.post_data {
-                write(&format!("\n{stmt}\n"), &mut out)?;
-            }
-            write("\nGO\n", &mut out)?;
-        }
-        out.flush().map_err(io_error)?;
+        })
+        .await?;
         drop(out);
         fs::rename(&part.path, &dest).map_err(io_error)?;
         part.keep = true;
         let _ = app.emit("export-progress", Progress { export_id: &req.dump_id, rows });
-        Ok(DumpResult { objects: plan.objects, tables: plan.data_tables.len(), rows, bytes: fs::metadata(&dest).map(|m| m.len()).unwrap_or(0), elapsed_ms: started.elapsed().as_millis() as u64, path: dest.to_string_lossy().into_owned() })
+        Ok(DumpResult { objects, tables, rows, bytes: fs::metadata(&dest).map(|m| m.len()).unwrap_or(0), elapsed_ms: started.elapsed().as_millis() as u64, path: dest.to_string_lossy().into_owned() })
     }
     .await;
     if let Ok(mut m) = sessions.finds.lock() {
@@ -687,8 +717,26 @@ pub async fn mssql_backup_delete(sessions: State<'_, MssqlSessions>, session_id:
 #[tauri::command]
 pub async fn mssql_restore(sessions: State<'_, MssqlSessions>, req: RestoreRequest) -> Result<BackupResult, DatabaseError> {
     let started = Instant::now();
-    if req.extract_to.is_some() {
-        return Err(DatabaseError::new(ErrorKind::UnsupportedFeature, "extracting SQL from a backup is not available for SQL Server"));
+    if let Some(target) = &req.extract_to {
+        // O servidor restaura o backup num banco temporário, o Atlas grava o script dele e o banco temporário é apagado.
+        let dest = validate_path(target)?;
+        let s = sessions.session(&req.session_id)?;
+        let temp = format!("atlas_extract_{}", std::process::id());
+        s.restore_temp(&req.path, &temp).await?;
+        let result = async {
+            let spec = DumpSpec { database: &temp, schema: None, tables: None, views: None, structure: true, data: true, clean: false, rows_per_insert: 200 };
+            let mut part = PartFile::new(part_path(&dest));
+            let mut out: DumpOut = std::io::BufWriter::with_capacity(256 * 1024, File::create(&part.path).map_err(io_error)?);
+            write_dump(&s, &spec, &mut out, &AtomicBool::new(false), |_| {}).await?;
+            drop(out);
+            fs::rename(&part.path, &dest).map_err(io_error)?;
+            part.keep = true;
+            Ok::<(), DatabaseError>(())
+        }
+        .await;
+        s.drop_temp_database(&temp).await;
+        result?;
+        return Ok(BackupResult { bytes: fs::metadata(&dest).map(|m| m.len()).unwrap_or(0), elapsed_ms: started.elapsed().as_millis() as u64, path: dest.to_string_lossy().into_owned(), tool: "sqlserver".into(), name: String::new() });
     }
     sessions.session(&req.session_id)?.restore(&req.database, &req.path).await?;
     Ok(BackupResult { bytes: 0, elapsed_ms: started.elapsed().as_millis() as u64, path: req.path, tool: "sqlserver".into(), name: String::new() })

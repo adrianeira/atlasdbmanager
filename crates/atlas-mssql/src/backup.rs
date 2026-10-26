@@ -88,6 +88,46 @@ impl MssqlSession {
         Ok(())
     }
 
+    /// Restaura o backup num banco temporário (arquivos novos na pasta de dados padrão) para ler o conteúdo dele; devolve o nome do banco.
+    /// Quem chama apaga o banco com `drop_temp_database`.
+    pub async fn restore_temp(&self, path: &str, name: &str) -> Result<String, DatabaseError> {
+        let mut conn = self.dedicated("master").await?;
+        let file = quote_literal(path);
+        let list = conn.simple_query(format!("RESTORE FILELISTONLY FROM DISK = {file}")).await.map_err(map_err)?.into_first_result().await.map_err(map_err)?;
+        let dirs = conn
+            .simple_query("SELECT CAST(SERVERPROPERTY('InstanceDefaultDataPath') AS nvarchar(512)), CAST(SERVERPROPERTY('InstanceDefaultLogPath') AS nvarchar(512))")
+            .await
+            .map_err(map_err)?
+            .into_first_result()
+            .await
+            .map_err(map_err)?;
+        let (data_dir, log_dir) = dirs.first().map(|r| (os(r, 0).unwrap_or_default(), os(r, 1).unwrap_or_default())).unwrap_or_default();
+        let moves: Vec<String> = list
+            .iter()
+            .enumerate()
+            .map(|(i, r)| {
+                let logical = s(r, 0);
+                let is_log = s(r, 2) == "L";
+                let target = format!("{}{name}_{i}.{}", if is_log { &log_dir } else { &data_dir }, if is_log { "ldf" } else { "mdf" });
+                format!("MOVE {} TO {}", quote_literal(&logical), quote_literal(&target))
+            })
+            .collect();
+        let sql = format!("RESTORE DATABASE {} FROM DISK = {file} WITH {}, REPLACE", quote_ident(name), moves.join(", "));
+        conn.simple_query(sql).await.map_err(map_err)?.into_results().await.map_err(map_err)?;
+        Ok(name.to_string())
+    }
+
+    /// Apaga um banco temporário criado por `restore_temp`.
+    pub async fn drop_temp_database(&self, name: &str) {
+        self.close_database(name).await;
+        if let Ok(mut conn) = self.dedicated("master").await {
+            let db = quote_ident(name);
+            if let Ok(stream) = conn.simple_query(format!("ALTER DATABASE {db} SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE {db}")).await {
+                let _ = stream.into_results().await;
+            }
+        }
+    }
+
     /// Troca o conteúdo do banco pelo do backup (`REPLACE`): as conexões do banco são derrubadas e o banco volta a aceitar todos.
     pub async fn restore(&self, database: &str, path: &str) -> Result<(), DatabaseError> {
         self.close_database(database).await;

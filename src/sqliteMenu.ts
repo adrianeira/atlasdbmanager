@@ -13,7 +13,7 @@ const NOT_IN_SQLITE = new Set<MessageKey>([
 
 const NOT_IN_MSSQL = new Set<MessageKey>([
   "cmd.newDatabase", "cmd.editDatabase", "cmd.deleteDatabase", "cmd.editSchema",
-  "cmd.extractSql", "cmd.reverseToModel", "cmd.share",
+  "cmd.reverseToModel", "cmd.share",
 ]);
 
 const NOT_IN_MYSQL = new Set<MessageKey>([
