@@ -135,6 +135,6 @@ Unicode-3.0, MPL-2.0, entre outras). A lista completa está em
 `node scripts/third-party-licenses.mjs`. Os poucos componentes sob **MPL-2.0** (usados pelo
 Tauri) continuam sob essa licença; ela vale arquivo a arquivo e não afeta o código do Atlas.
 
-Os logotipos dos bancos de dados vêm do projeto [Simple Icons](https://simpleicons.org) (CC0-1.0).
+Os logotipos dos bancos de dados vêm do projeto [Simple Icons](https://simpleicons.org) (CC0-1.0); os do SQL Server e do Firebird vêm do [Devicon](https://github.com/devicons/devicon) (MIT). As marcas pertencem aos respectivos donos e só identificam o banco.
 PostgreSQL, Firebird e os demais nomes e logotipos são marcas dos seus respectivos donos; o uso
 aqui é apenas para identificar o tipo de conexão e não implica afiliação ou endosso.

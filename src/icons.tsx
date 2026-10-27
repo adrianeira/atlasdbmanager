@@ -3,6 +3,8 @@
  * Equivalência semântica com a referência, sem reproduzir ícones proprietários.
  */
 import type { ReactElement } from "react";
+import sqlserverLogo from "./assets/brands/sqlserver.svg";
+import firebirdLogo from "./assets/brands/firebird.svg";
 import { siMariadb, siMongodb, siMysql, siPostgresql, siRedis, siSqlite, type SimpleIcon } from "simple-icons";
 import type { Category, ProviderId } from "./model";
 
@@ -668,10 +670,15 @@ const BRANDS: Record<string, SimpleIcon> = {
   redis: siRedis,
 };
 
+/** Logotipos em arquivo (várias cores): o SQL Server e o Firebird não estão no Simple Icons (do projeto Devicon, licença MIT). */
+const FILE_LOGOS: Record<string, string> = { sqlserver: sqlserverLogo, firebird: firebirdLogo };
+
 export const brandOf = (id: string): SimpleIcon | undefined => BRANDS[id];
 
 /** Ícone de conexão por provedor: logotipo do SGBD (cinza quando a conexão está fechada, como na referência). */
 export function ProviderIcon({ provider, open }: { provider: ProviderId; open: boolean }) {
+  const file = FILE_LOGOS[provider];
+  if (file) return <img src={file} width={16} height={16} alt="" aria-hidden="true" className={`icon16 brand-logo${open ? "" : " is-closed"}`} />;
   const brand = BRANDS[provider];
   if (brand) {
     return (
@@ -696,7 +703,17 @@ export function ProviderIcon({ provider, open }: { provider: ProviderId; open: b
 /** Ladrilho grande do seletor de tipo de conexão: logotipo branco sobre a cor da marca, ou sigla. */
 export function ProviderTile({ color, label, size = 48, provider, disabled }: { color: string; label: string; size?: number; provider?: string; disabled?: boolean }) {
   const brand = provider ? BRANDS[provider] : undefined;
+  const file = provider ? FILE_LOGOS[provider] : undefined;
   const bg = disabled ? "#b9b9b9" : brand ? `#${brand.hex}` : color;
+  if (file) {
+    // Logotipo colorido: ladrilho branco com a marca, em cinza quando indisponível.
+    return (
+      <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden="true">
+        <rect x="1" y="1" width="46" height="46" rx="6" fill="#fff" stroke="#d6d6d6" />
+        <image href={file} x="7" y="7" width="34" height="34" style={disabled ? { filter: "grayscale(1)", opacity: 0.6 } : undefined} />
+      </svg>
+    );
+  }
   return (
     <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden="true">
       <rect x="1" y="1" width="46" height="46" rx="6" fill={bg} />
