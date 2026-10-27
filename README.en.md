@@ -10,6 +10,8 @@ even of **different products** — with the safety of reviewing what is about to
 > **Status:** version 0.1.0, pre-alpha. It works with **PostgreSQL**, **SQL Server**, **MySQL**,
 > **SQLite** and **Firebird**. MariaDB, Oracle, MongoDB and Redis are planned and postponed.
 
+![Atlas DB Manager: connection tree on the left and the data grid of a Firebird table](docs/home.png)
+
 ## Supported databases
 
 | Database | Tested versions | Notes |

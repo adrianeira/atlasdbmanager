@@ -10,6 +10,8 @@ bancos, inclusive de **produtos diferentes**, com a segurança de revisar o que 
 > **Status:** versão 0.1.0, pré-alfa. Funciona com **PostgreSQL**, **SQL Server**, **MySQL**,
 > **SQLite** e **Firebird**. MariaDB, Oracle, MongoDB e Redis estão previstos e ficam para depois.
 
+![Atlas DB Manager: árvore de conexões à esquerda e o grid de dados de uma tabela Firebird](docs/home.png)
+
 ## Bancos suportados
 
 | Banco | Versões testadas | Observações |
