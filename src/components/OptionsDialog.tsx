@@ -138,6 +138,7 @@ export function OptionsDialog({ options, appearance, onApply, onClose }: Props) 
               <select className="field" value={look.lang} onChange={(e) => setLook({ ...look, lang: e.target.value as Lang })}>
                 <option value="pt-BR">Português (Brasil)</option>
                 <option value="en-US">English</option>
+                <option value="es-ES">Español</option>
               </select>
             ))}
             {row("opt.theme", (

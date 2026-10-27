@@ -8,11 +8,15 @@
     var layout = JSON.parse(localStorage.getItem("atlas.layout.v1") || "null");
     saved = layout && layout.lang ? String(layout.lang) : null;
   } catch (e) {}
-  var pt = /^pt/i.test(saved || navigator.language || "");
+  var code = String(saved || navigator.language || "").toLowerCase();
+  var pt = /^pt/.test(code);
+  var es = /^es/.test(code);
   var stages = pt
     ? [[0, "Iniciando..."], [30, "Abrindo o banco local..."], [60, "Lendo as conexões..."], [85, "Carregando a interface..."]]
-    : [[0, "Starting..."], [30, "Opening the local database..."], [60, "Reading connections..."], [85, "Loading the interface..."]];
-  var doneText = pt ? "Pronto" : "Ready";
+    : es
+      ? [[0, "Iniciando..."], [30, "Abriendo la base de datos local..."], [60, "Leyendo las conexiones..."], [85, "Cargando la interfaz..."]]
+      : [[0, "Starting..."], [30, "Opening the local database..."], [60, "Reading connections..."], [85, "Loading the interface..."]];
+  var doneText = pt ? "Pronto" : es ? "Listo" : "Ready";
   var fill = document.getElementById("fill");
   var status = document.getElementById("status");
   var pct = 0;

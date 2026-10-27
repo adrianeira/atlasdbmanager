@@ -1,6 +1,7 @@
 import { createContext, useContext } from "react";
+import { es } from "./i18n.es";
 
-export type Lang = "pt-BR" | "en-US";
+export type Lang = "pt-BR" | "en-US" | "es-ES";
 
 const en = {
   "menu.file": "File",
@@ -3868,7 +3869,7 @@ const pt: Record<MessageKey, string> = {
   "query.errorPosition": "Erro no caractere {n}",
 };
 
-const dictionaries: Record<Lang, Record<MessageKey, string>> = { "en-US": en, "pt-BR": pt };
+const dictionaries: Record<Lang, Record<MessageKey, string>> = { "en-US": en, "pt-BR": pt, "es-ES": es };
 
 export type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
 
@@ -3882,7 +3883,8 @@ export function makeTranslator(lang: Lang): Translate {
 }
 
 export function detectLang(): Lang {
-  return navigator.language.toLowerCase().startsWith("pt") ? "pt-BR" : "en-US";
+  const l = navigator.language.toLowerCase();
+  return l.startsWith("pt") ? "pt-BR" : l.startsWith("es") ? "es-ES" : "en-US";
 }
 
 export const I18nContext = createContext<Translate>(makeTranslator("en-US"));

@@ -104,7 +104,7 @@ bancos, inclusive de **produtos diferentes**, com a segurança de revisar o que 
   conexão.
 
 **Interface**
-- Tema claro/escuro (acompanha o sistema), português e inglês, painéis ocultáveis e janelas do
+- Tema claro/escuro (acompanha o sistema), português, inglês e espanhol, painéis ocultáveis e janelas do
   sistema à parte para as ferramentas grandes.
 
 ## Requisitos

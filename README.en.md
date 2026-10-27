@@ -100,7 +100,7 @@ even of **different products** — with the safety of reviewing what is about to
   connection.
 
 **Interface**
-- Light/dark theme (follows the system), Portuguese and English, hideable panes and separate
+- Light/dark theme (follows the system), Portuguese, English and Spanish, hideable panes and separate
   system windows for the big tools.
 
 ## Requirements
