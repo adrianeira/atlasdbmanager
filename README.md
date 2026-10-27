@@ -14,13 +14,13 @@ bancos, inclusive de **produtos diferentes**, com a segurança de revisar o que 
 
 ## Bancos suportados
 
-| Banco | Versões testadas | Observações |
-|---|---|---|
-| **PostgreSQL** | 9.6, 10, 12, 14, 16 e 18 | O mais completo: também views materializadas, sequências, tipos, extensões, papéis, tablespaces, servidores e tabelas externas, funções em PL/pgSQL |
-| **SQL Server** | 2022 | Schemas, procedimentos e funções, `IDENTITY` |
-| **MySQL** | 5.7, 8.0, 8.4 e 9 | Bancos como schemas, procedimentos e funções, `AUTO_INCREMENT`. O 5.7 não guarda `CHECK` (o próprio servidor o descarta) |
-| **SQLite** | arquivo local | Escolher ou criar o arquivo na tela de conexão |
-| **Firebird** | 2.5.3, 3.0, 4.0 e 5.0 | Cliente em **Rust puro** (não precisa do `fbclient.dll`); abre `.fdb` e `.gdb`; identidade no 3+ e gerador com gatilho no 2.5. |
+| Banco | Observações |
+|---|---|
+| **PostgreSQL** | O mais completo: também views materializadas, sequências, tipos, extensões, papéis, tablespaces, servidores e tabelas externas, funções em PL/pgSQL |
+| **SQL Server** | Schemas, procedimentos e funções, `IDENTITY` |
+| **MySQL** | Bancos como schemas, procedimentos e funções, `AUTO_INCREMENT`. Nas versões antigas o servidor não guarda `CHECK` |
+| **SQLite** | Escolher ou criar o arquivo na tela de conexão |
+| **Firebird** | Cliente em **Rust puro** (não precisa do `fbclient.dll`); abre `.fdb` e `.gdb`; identidade ou gerador com gatilho, conforme a versão do servidor. |
 
 ## Funcionalidades
 
@@ -176,7 +176,7 @@ crates/
   atlas-mssql/     provedor SQL Server (tiberius)
   atlas-mysql/     provedor MySQL (mysql_async)
   atlas-sqlite/    provedor SQLite (rusqlite)
-  atlas-firebird/  provedor Firebird (cliente em Rust puro, 2.5 a 5)
+  atlas-firebird/  provedor Firebird (cliente em Rust puro)
   atlas-local/     armazenamento local (SQLite) e cofre de credenciais do sistema
   atlas-export/    gravação de resultados em CSV, JSON, SQL, Excel e outros (streaming)
   atlas-import/    leitura de arquivos para o assistente de importação

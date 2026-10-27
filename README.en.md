@@ -14,13 +14,13 @@ even of **different products** — with the safety of reviewing what is about to
 
 ## Supported databases
 
-| Database | Tested versions | Notes |
-|---|---|---|
-| **PostgreSQL** | 9.6, 10, 12, 14, 16 and 18 | The most complete: also materialized views, sequences, types, extensions, roles, tablespaces, foreign servers and tables, PL/pgSQL functions |
-| **SQL Server** | 2022 | Schemas, procedures and functions, `IDENTITY` |
-| **MySQL** | 5.7, 8.0, 8.4 and 9 | Databases as schemas, procedures and functions, `AUTO_INCREMENT`. 5.7 does not keep `CHECK` (the server itself discards it) |
-| **SQLite** | local file | Pick or create the file on the connection screen |
-| **Firebird** | 2.5.3, 3.0, 4.0 and 5.0 | **Pure-Rust** client (no `fbclient.dll` needed); opens `.fdb` and `.gdb`; identity on 3+ and generator plus trigger on 2.5. |
+| Database | Notes |
+|---|---|
+| **PostgreSQL** | The most complete: also materialized views, sequences, types, extensions, roles, tablespaces, foreign servers and tables, PL/pgSQL functions |
+| **SQL Server** | Schemas, procedures and functions, `IDENTITY` |
+| **MySQL** | Databases as schemas, procedures and functions, `AUTO_INCREMENT`. Older server versions do not keep `CHECK` |
+| **SQLite** | Pick or create the file on the connection screen |
+| **Firebird** | **Pure-Rust** client (no `fbclient.dll` needed); opens `.fdb` and `.gdb`; identity or a generator plus trigger, depending on the server version. |
 
 ## Features
 
@@ -172,7 +172,7 @@ crates/
   atlas-mssql/     SQL Server provider (tiberius)
   atlas-mysql/     MySQL provider (mysql_async)
   atlas-sqlite/    SQLite provider (rusqlite)
-  atlas-firebird/  Firebird provider (pure-Rust client, 2.5 to 5)
+  atlas-firebird/  Firebird provider (pure-Rust client)
   atlas-local/     local storage (SQLite) and the OS credential vault
   atlas-export/    writing results as CSV, JSON, SQL, Excel and more (streaming)
   atlas-import/    reading files for the import wizard
