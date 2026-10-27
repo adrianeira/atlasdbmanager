@@ -4,53 +4,106 @@
 
 Gerenciador de bancos de dados para desktop, nativo e multiplataforma (Windows, Linux e macOS),
 feito em **Rust + Tauri 2 + React**. O foco é o trabalho do dia a dia com o banco: navegar pelos
-objetos, editar dados num grid rápido, escrever SQL e projetar tabelas e views, com a segurança
-de revisar o que vai ser executado.
+objetos, editar dados num grid rápido, escrever SQL, projetar tabelas e views, mover dados entre
+bancos, inclusive de **produtos diferentes**, com a segurança de revisar o que vai ser executado.
 
-> **Status:** em desenvolvimento (versão 0.1, pré-alfa). O primeiro provedor é o **PostgreSQL**;
-> o **Firebird** (versão 1.5 em diante) está planejado.
+> **Status:** versão 0.1.0, pré-alfa. Funciona com **PostgreSQL**, **SQL Server**, **MySQL**,
+> **SQLite** e **Firebird**. MariaDB, Oracle, MongoDB e Redis estão previstos e ficam para depois.
+
+## Bancos suportados
+
+| Banco | Versões testadas | Observações |
+|---|---|---|
+| **PostgreSQL** | 9.6 e 18 | O mais completo: também views materializadas, sequências, tipos, extensões, papéis, tablespaces, servidores e tabelas externas, funções em PL/pgSQL |
+| **SQL Server** | 2022 | Schemas, procedimentos e funções, `IDENTITY` |
+| **MySQL** | 8.4 | Bancos como schemas, procedimentos e funções, `AUTO_INCREMENT` |
+| **SQLite** | arquivo local | Escolher ou criar o arquivo na tela de conexão |
+| **Firebird** | 2.5.3 e 4.0 | Cliente em **Rust puro** (não precisa do `fbclient.dll`); abre `.fdb` e `.gdb`; identidade no 3+ e gerador com gatilho no 2.5. O 3 e o 5 usam o mesmo protocolo, mas ainda não foram testados |
 
 ## Funcionalidades
 
 **Conexões**
-- Conexões PostgreSQL com SSL, teste de conexão e cores/favoritos por conexão.
+- Teste de conexão, cores e favoritos, **grupos (pastas)** na árvore, SSL e **túnel SSH** (senha ou
+  chave privada, com a chave do servidor guardada no primeiro uso).
+- Nova conexão por **URI**, importar/exportar conexões (arquivo sem senhas) e compartilhar uma
+  conexão por um endereço `atlas://`.
 - Senhas guardadas no **cofre de credenciais do sistema** (Windows Credential Manager, Keychain
   do macOS, Secret Service no Linux) — nunca em arquivo nem enviadas para a interface.
 - Configurações locais em SQLite no perfil do usuário, **sem precisar de administrador**.
 
 **Navegação**
-- Árvore de conexões → bancos → schemas → tabelas, views, views materializadas e funções, com
-  colunas e ícones próprios para chave primária e chave estrangeira.
-- Lista de objetos (detalhes, lista e ícones) e menus de contexto em ambos.
+- Árvore de conexões → bancos → schemas → tabelas, views, funções e consultas salvas, com
+  colunas e ícones próprios para chave primária e chave estrangeira; filtro avançado da árvore.
+- Lista de objetos (detalhes, lista e ícones), painel de informações e menus de contexto.
 
 **Dados (grid)**
 - Grid virtualizado com cabeçalho de nome + tipo, linhas zebradas e `(Null)` destacado.
-- Edição direta com **gravação automática ao mudar de registro**; botão Aplicar/Descartar.
+- Edição direta com **gravação automática ao mudar de registro**, transação manual (Begin
+  Transaction), Aplicar/Descartar e edição de tabelas sem chave primária.
 - Valores sempre enviados como **parâmetros** (nada concatenado no SQL) e concorrência otimista:
   o `UPDATE` confere o valor original e falha se outra pessoa alterou o registro.
-- Campos obrigatórios (`NOT NULL`) bloqueados para vazio; booleanos como checkbox.
-- Lookup de chave estrangeira (botão `…` na célula), paginação e limite de registros configurável.
-- Menu de contexto da célula: definir NULL/vazio, gerar UUID (v4/v7), copiar, copiar como
+- Filtro e ordenação em vários campos, escolha de colunas, Cell Editor, lookup de chave
+  estrangeira com o rótulo do registro, paginação e limite de registros configurável.
+- Menu de contexto da célula: definir NULL/vazio, gerar UUID, copiar, copiar como
   `INSERT`/`UPDATE`/TSV, colar, excluir registro.
+- **Data Profiling** (nulos, distintos, únicos, menor e maior valor, valores mais frequentes) e
+  **Table Profile** (estrutura, tamanhos e estatísticas).
 
-**Exportação**
-- Assistente de exportação **em etapas** (formato → tabelas e arquivos → campos → resumo com log e
-  progresso), para **várias tabelas de uma vez**, em **TXT, CSV, JSON, XML, HTML, SQL (`INSERT`) e
-  Excel (`.xlsx` e `.xls`) e dBase (`.dbf`)**; perfis de exportação salvos para reutilizar.
-- Do grid, já vem com o filtro, a ordenação e as colunas visíveis da tabela; no editor SQL, exporta o
-  **resultado completo** da consulta (sem o limite de linhas da tela).
-- Gravação em **streaming** (memória estável mesmo com milhões de linhas), com progresso e **Parar**;
-  o arquivo só passa a existir quando a exportação termina com sucesso.
+**SQL**
+- Editor SQL (CodeMirror) com destaque do dialeto do banco, autocomplete, executar o trecho
+  selecionado, `EXPLAIN`, formatar, cancelar a consulta no servidor, **histórico** de consultas e
+  **snippets**.
+- **Query Builder** em janela própria: tabelas arrastadas para o canvas, ligações pelas chaves
+  estrangeiras, filtros, agrupamento, ordenação e o SQL ao vivo no dialeto do banco.
+- **Console** (`F6`) no estilo do terminal de cada banco, com Tab para completar e comandos de
+  ajuda.
+- **Execute SQL File** de forma atômica, com os lotes `GO` do SQL Server e os blocos `SET TERM`
+  do Firebird respeitados.
 
-**SQL e estrutura**
-- Editor SQL (CodeMirror) com destaque do dialeto PostgreSQL, autocomplete, executar,
-  `EXPLAIN`, formatar e cancelar consulta no servidor.
-- Designer de tabela (campos, índices, FKs, únicos, checks, triggers, comentário) com prévia do SQL.
-- Designer de view (definição, opções, comentário) e abertura dos dados da view.
-- Comandos de estrutura (criar/excluir/renomear/duplicar) sempre revisados antes de executar.
+**Estrutura**
+- **Designer de tabela** (campos, índices, chaves estrangeiras, únicos, checks, gatilhos,
+  comentário) com prévia do SQL e o **auto incremento** de cada banco: `IDENTITY` no PostgreSQL e
+  no SQL Server, `AUTO_INCREMENT` no MySQL, `INTEGER PRIMARY KEY` no SQLite e identidade ou
+  gerador com gatilho no Firebird.
+- **Designer de view** e **designer de rotinas** (procedimentos, funções e, no Firebird, gatilhos
+  pelo texto do `CREATE OR ALTER`).
+- Criar, excluir, renomear (onde o banco permite), duplicar e esvaziar objetos, **novo e excluir
+  banco**; os comandos de estrutura são sempre revisados antes de executar.
+- **Diagrama ER** do schema, **Find in Database** (estrutura e dados, com busca por texto,
+  palavra inteira, prefixo ou expressão regular) e **Data Dictionary** (documento PDF com tabelas,
+  views e rotinas).
+
+**Importar e exportar**
+- Assistente de **exportação** em etapas, para **várias tabelas de uma vez**, em **TXT, CSV,
+  JSON, XML, HTML, SQL (`INSERT`), Excel (`.xlsx` e `.xls`) e dBase (`.dbf`)**; do grid já vem com
+  o filtro, a ordenação e as colunas visíveis; no editor SQL exporta o **resultado completo** da
+  consulta. Gravação em **streaming**, com progresso e **Parar**.
+- Assistente de **importação** em 7 etapas, com vários arquivos ou planilhas de uma vez, tabela
+  nova com os tipos inferidos e seis modos (acrescentar, atualizar, acrescentar ou atualizar,
+  acrescentar sem atualizar, excluir, copiar), continuar em erro por linha e perfis salvos.
+
+**Backup e restauração**
+- **Dump SQL** (estrutura e/ou dados), **backup** com comentário e pasta de destino, **restauração**
+  e extração do SQL de um backup. No PostgreSQL usa as ferramentas do próprio servidor; nos outros
+  bancos o Atlas gera e executa o script, sem depender de ferramentas externas.
+
+**Ferramentas (menu Tools)**
+- **Data Transfer**: copia estrutura e dados de um schema para outro banco ou servidor, com
+  mapeamento de tabelas e campos, filtros, perfis salvos e registro.
+- **Data Synchronization** e **Structure Synchronization**: comparam dois lados, mostram as
+  diferenças, geram o script de implantação e o executam (em transação, com opção de continuar em
+  erro).
+- **Entre produtos diferentes**, em qualquer par de PostgreSQL, SQL Server, MySQL, SQLite e
+  Firebird: um modelo neutro traduz tipos, valores, `CHECK` simples, views e a numeração
+  automática. Gatilhos e rotinas só atravessam entre bancos do mesmo produto.
+- **Data Generation**: dados de teste com geradores por tipo, referências entre tabelas e ordem de
+  dependência.
+- **Server Monitor**: conexões e comandos em andamento, variáveis e contadores, e encerrar uma
+  conexão.
 
 **Interface**
-- Tema claro/escuro (acompanha o sistema), português e inglês.
+- Tema claro/escuro (acompanha o sistema), português e inglês, painéis ocultáveis e janelas do
+  sistema à parte para as ferramentas grandes.
 
 ## Requisitos
 
@@ -75,14 +128,17 @@ npm run tauri dev
 npm run dev        # http://localhost:1420
 ```
 
-## Gerar o instalador
+## Gerar o aplicativo
 
 ```bash
+# Instalador (MSI/NSIS no Windows, .deb/.rpm/AppImage no Linux, .app/.dmg no macOS)
 npm run tauri build
+
+# Só o executável, sem instalador (pasta portátil)
+npm run tauri build -- --no-bundle
 ```
 
-Os pacotes ficam em `target/release/bundle/` (MSI/NSIS no Windows, `.deb`/`.rpm`/AppImage no
-Linux, `.app`/`.dmg` no macOS).
+Os pacotes ficam em `target/release/bundle/`; o executável solto, em `target/release/`.
 
 ## Testes
 
@@ -91,13 +147,20 @@ npx tsc --noEmit -p .        # tipos do frontend
 cargo test --workspace       # testes Rust
 ```
 
-Os testes contra um PostgreSQL real só rodam quando as variáveis abaixo existem (as credenciais
+Os testes contra um banco real só rodam quando as variáveis do banco existem (as credenciais
 nunca ficam no repositório). Eles usam apenas objetos temporários:
 
 ```bash
+# PostgreSQL
 ATLAS_TEST_PG_HOST=localhost ATLAS_TEST_PG_PORT=5432 \
 ATLAS_TEST_PG_USER=postgres ATLAS_TEST_PG_PASSWORD=... \
 cargo test -p atlas-pg --test live_postgres
+
+# MySQL, SQL Server e Firebird: ATLAS_TEST_MYSQL_*, ATLAS_TEST_MSSQL_* e ATLAS_TEST_FIREBIRD_*
+# (HOST, PORT, USER, PASSWORD e, no Firebird, DATABASE)
+ATLAS_TEST_FIREBIRD_HOST=localhost ATLAS_TEST_FIREBIRD_PORT=3050 \
+ATLAS_TEST_FIREBIRD_DATABASE=/caminho/banco.fdb ATLAS_TEST_FIREBIRD_USER=SYSDBA \
+ATLAS_TEST_FIREBIRD_PASSWORD=... cargo test -p atlas-firebird
 ```
 
 O teste do cofre de credenciais é opcional: `ATLAS_TEST_KEYRING=1 cargo test -p atlas-local`.
@@ -106,13 +169,21 @@ O teste do cofre de credenciais é opcional: `ATLAS_TEST_KEYRING=1 cargo test -p
 
 ```
 crates/
-  atlas-core/    domínio e contratos (tipos, erros, segredo que não vaza em log)
-  atlas-pg/      provedor PostgreSQL (tokio-postgres): conexão, catálogo, execução, gravação
-  atlas-local/   armazenamento local (SQLite) e cofre de credenciais do sistema
-  atlas-export/  gravação de resultados em CSV, JSON, SQL e Excel (streaming)
-src-tauri/       aplicativo desktop (comandos Tauri, sessões, janela)
-src/             interface React + TypeScript
-scripts/         utilitários (ex.: geração da lista de licenças de terceiros)
+  atlas-core/      domínio e contratos (tipos, erros, segredo que não vaza em log)
+  atlas-pg/        provedor PostgreSQL (tokio-postgres)
+  atlas-mssql/     provedor SQL Server (tiberius)
+  atlas-mysql/     provedor MySQL (mysql_async)
+  atlas-sqlite/    provedor SQLite (rusqlite)
+  atlas-firebird/  provedor Firebird (cliente em Rust puro, 2.5 a 5)
+  atlas-local/     armazenamento local (SQLite) e cofre de credenciais do sistema
+  atlas-export/    gravação de resultados em CSV, JSON, SQL, Excel e outros (streaming)
+  atlas-import/    leitura de arquivos para o assistente de importação
+  atlas-docs/      geração do documento do Data Dictionary (PDF)
+  atlas-ssh/       túnel SSH
+src-tauri/         aplicativo desktop (comandos Tauri, sessões, ferramentas entre produtos)
+src/               interface React + TypeScript
+vendor/            cópia ajustada do cliente Firebird em Rust puro (veja ATLAS-CHANGES.md)
+scripts/           utilitários (ex.: geração da lista de licenças de terceiros)
 ```
 
 ## Onde ficam os dados locais
@@ -124,6 +195,7 @@ scripts/         utilitários (ex.: geração da lista de licenças de terceiros
 | macOS | `~/Library/Application Support/dev.atlas.dbmanager/` |
 
 O arquivo `atlas.db` guarda conexões e preferências — **sem senhas**, que ficam no cofre do sistema.
+Ele não fica na pasta do executável: trocar o aplicativo por uma versão nova mantém as conexões.
 
 ## Licença
 
@@ -135,6 +207,8 @@ Unicode-3.0, MPL-2.0, entre outras). A lista completa está em
 `node scripts/third-party-licenses.mjs`. Os poucos componentes sob **MPL-2.0** (usados pelo
 Tauri) continuam sob essa licença; ela vale arquivo a arquivo e não afeta o código do Atlas.
 
-Os logotipos dos bancos de dados vêm do projeto [Simple Icons](https://simpleicons.org) (CC0-1.0); os do SQL Server e do Firebird vêm do [Devicon](https://github.com/devicons/devicon) (MIT). As marcas pertencem aos respectivos donos e só identificam o banco.
-PostgreSQL, Firebird e os demais nomes e logotipos são marcas dos seus respectivos donos; o uso
-aqui é apenas para identificar o tipo de conexão e não implica afiliação ou endosso.
+Os logotipos dos bancos de dados vêm do projeto [Simple Icons](https://simpleicons.org) (CC0-1.0);
+os do SQL Server e do Firebird vêm do [Devicon](https://github.com/devicons/devicon) (MIT).
+PostgreSQL, SQL Server, MySQL, SQLite, Firebird e os demais nomes e logotipos são marcas dos seus
+respectivos donos; o uso aqui é apenas para identificar o tipo de conexão e não implica afiliação
+ou endosso.
