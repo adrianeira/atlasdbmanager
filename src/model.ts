@@ -359,7 +359,8 @@ export const designerDialectOf = (provider: ProviderId | undefined): "sqlite" | 
 
 export const foldersFor = (provider: ProviderId): Category[] =>
   provider === "sqlite" ? SCHEMA_FOLDERS.filter((c) => c === "table" || c === "view" || c === "query")
-  : provider === "sqlserver" || provider === "mysql" || provider === "firebird" ? SCHEMA_FOLDERS.filter((c) => c === "table" || c === "view" || c === "function" || c === "query")
+  : provider === "firebird" ? (["table", "view", "function", "sequence", "query"] as Category[])
+  : provider === "sqlserver" || provider === "mysql" ? SCHEMA_FOLDERS.filter((c) => c === "table" || c === "view" || c === "function" || c === "query")
   : SCHEMA_FOLDERS;
 
 export interface NodeContext {

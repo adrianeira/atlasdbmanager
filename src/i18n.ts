@@ -318,6 +318,8 @@ const en = {
   "act.open": "Open",
   "act.design": "Design",
   "act.new": "New",
+  "act.setGenerator": "Set Value...",
+  "msg.generatorValue": "Current value of the generator {name} (the next one is this plus 1):",
   "act.delete": "Delete",
   "act.searchObjects": "Search objects",
 
@@ -2250,6 +2252,8 @@ const pt: Record<MessageKey, string> = {
   "act.open": "Abrir",
   "act.design": "Projetar",
   "act.new": "Novo",
+  "act.setGenerator": "Definir valor...",
+  "msg.generatorValue": "Valor atual do gerador {name} (o próximo será este mais 1):",
   "act.delete": "Excluir",
   "act.searchObjects": "Pesquisar objetos",
 

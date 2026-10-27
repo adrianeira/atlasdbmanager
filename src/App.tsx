@@ -1143,8 +1143,30 @@ export default function App() {
     openTab({ kind: "typeDesigner", title, windowTitle: title, icon: "design", connectionId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name });
   };
 
+  /** Firebird: um gerador só tem o valor atual (`SET GENERATOR ... TO`), então não há designer: pergunta o valor numa janela. */
+  const setGenerator = (connId: string, database: string, schema: string, name: string) => {
+    void (async () => {
+      try {
+        const r = await pg.execute(connId, database, `SELECT GEN_ID(${quoteFb(name)}, 0) FROM RDB$DATABASE`, 1, schema);
+        const current = r.statements[0]?.result?.rows[0]?.[0] ?? "0";
+        askName(t("act.setGenerator"), t("msg.generatorValue", { name }), current, (v) => {
+          if (!/^-?\d+$/.test(v.trim())) return;
+          askDdl({ connId, database, schema, refresh: "schema", title: t("act.setGenerator"), statements: [`SET GENERATOR ${quoteFb(name)} TO ${v.trim()};`] });
+        });
+      } catch (e) {
+        showError(t("act.setGenerator"), e);
+      }
+    })();
+  };
+
   const newSequence = () => {
     if (!ctx.connection || !ctx.database || !ctx.schema) return;
+    if (ctx.connection.provider === "firebird") {
+      const conn = ctx.connection;
+      const [db, sc] = [ctx.database.name, ctx.schema.name];
+      askName(t("act.new"), t("msg.newName"), "", (name) => askDdl({ connId: conn.id, database: db, schema: sc, refresh: "schema", title: t("act.new"), statements: [`CREATE GENERATOR ${quoteFb(normFb(name.trim()))};`] }));
+      return;
+    }
     const title = objectTitle(t("des.untitled"), "cat.sequence");
     openTab({ kind: "sequenceDesigner", title, windowTitle: title, icon: "sequence", connectionId: ctx.connection.id, database: ctx.database.name, schema: ctx.schema.name });
   };
@@ -1340,6 +1362,8 @@ export default function App() {
       } else if (cat === "type" && c.connection?.live) {
         const title = objectTitle(name, "cat.type", c);
         openTab({ ...base, kind: "typeDesigner", title, windowTitle: title, icon: "design" }, `${t("act.design")} - ${name}`);
+      } else if (cat === "sequence" && c.connection?.live && c.connection.provider === "firebird" && c.database && c.schema) {
+        setGenerator(c.connection.id, c.database.name, c.schema.name, name);
       } else if (cat === "sequence" && c.connection?.live) {
         const title = objectTitle(name, "cat.sequence", c);
         openTab({ ...base, kind: "sequenceDesigner", title, windowTitle: title, icon: "sequence" }, `${t("act.design")} - ${name}`);
@@ -2268,10 +2292,10 @@ export default function App() {
       const name = c.objectName;
       const scope = { connId: c.connection.id, database: c.database.name, schema: scName, refresh: "schema" as const };
       items.push(
-        item("act.design", () => openObjects("design", [name], "sequence", c)),
+        c.connection.provider === "firebird" ? item("act.setGenerator", live ? () => setGenerator(c.connection!.id, c.database!.name, scName, name) : undefined) : item("act.design", () => openObjects("design", [name], "sequence", c)),
         item("act.new", newSequence),
         item("act.delete", live ? () => askDdl({
-          ...scope, title: t("act.delete"), message: confirmDelete("sequence", name), statements: [dropSeqSql(scName, name)], danger: true, confirmText: prod ? name : undefined,
+          ...scope, title: t("act.delete"), message: confirmDelete("sequence", name), statements: [c.connection?.provider === "firebird" ? `DROP GENERATOR ${quoteFb(name)};` : dropSeqSql(scName, name)], danger: true, confirmText: prod ? name : undefined,
         }) : undefined),
         sep,
         item("cmd.copyName", () => { void navigator.clipboard?.writeText(name).catch(() => undefined); }),
