@@ -560,7 +560,7 @@ Fora desta entrega: partições externas e `IMPORT FOREIGN SCHEMA`.
 - [x] **Firebird — gatilhos**: aparecem na pasta Functions (nome e tabela) e abrem no designer de rotinas com o texto do `CREATE OR ALTER TRIGGER` (gravar e excluir); a estrutura da tabela mostra os gatilhos dela
 - [x] **Firebird — geradores e transferência 3+ → 2.5**: pasta de geradores na árvore (criar, definir o valor atual por `SET GENERATOR` e excluir); transferir de um Firebird 3 ou 4 para um 2.5 troca a identidade por gerador + gatilho `BEFORE INSERT`
 - [ ] **Firebird — limites conhecidos**: o Firebird não renomeia tabela nem view (precisaria recriar o objeto); o `SIMILAR TO` do Find usa a sintaxe de expressão regular do SQL (não a do Rust)
-- [ ] MariaDB, Oracle, MongoDB, Redis (nesta ordem)
+- [ ] MariaDB, Oracle, MongoDB, Redis *(**pendentes por decisão** (2026-10-26): os bancos que o Atlas tem bastam por enquanto; a ordem sugerida, quando voltar, é Oracle, MongoDB, Redis e por último o MariaDB, que quase repete o MySQL)*
 
 ## 2. Árvore / Navegação
 - [x] **Filtro avançado da árvore**: o funil ao lado da busca abre o menu **Contém** / **Começa com** e **Diferenciar maiúsculas**
