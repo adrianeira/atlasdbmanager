@@ -37,7 +37,7 @@ export function EditTable<T>({ columns, rows, selected, onSelect, onChange, read
         <thead>
           <tr>
             <th />
-            {columns.map((c, i) => <th key={c.key} className={i === 0 ? "is-first" : undefined}>{c.label}</th>)}
+            {columns.map((c, i) => <th key={c.key} className={`${i === 0 ? "is-first" : ""}${c.kind === "check" ? " et-center" : ""}`.trim() || undefined}>{c.label}</th>)}
           </tr>
         </thead>
         <tbody>
@@ -97,7 +97,7 @@ export function EditTable<T>({ columns, rows, selected, onSelect, onChange, read
           ) : (
             <tr className="is-placeholder">
               <td className="et-rowhead" />
-              {columns.map((c, i) => <td key={c.key} className={i === 0 ? "et-td is-ghost" : "et-td"}>{c.kind === "check" ? <input type="checkbox" disabled /> : null}</td>)}
+              {columns.map((c, i) => <td key={c.key} className={`${i === 0 ? "et-td is-ghost" : "et-td"}${c.kind === "check" ? " et-center" : ""}`}>{c.kind === "check" ? <input type="checkbox" disabled /> : null}</td>)}
             </tr>
           )}
         </tbody>
