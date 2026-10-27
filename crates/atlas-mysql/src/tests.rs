@@ -47,7 +47,10 @@ async fn live_server_lists_reads_and_writes() {
         assert_eq!((d.columns[0].identity.as_deref(), d.columns[0].key), (Some("d"), Some(1)));
         assert_eq!(d.columns[1].formatted_type, "varchar(20)");
         assert_eq!((d.columns[2].formatted_type.as_str(), d.columns[2].default.as_deref()), ("decimal(10,2)", Some("0.00")));
-        assert!(d.constraints.iter().any(|c| c.kind == "c" && c.name == "ck_total"));
+        // O MySQL 5.7 aceita a sintaxe do CHECK mas descarta a restrição; ela só existe a partir do 8.0.16.
+        if s.version_num >= 80016 {
+            assert!(d.constraints.iter().any(|c| c.kind == "c" && c.name == "ck_total"));
+        }
         let (sql, out) = s.table_rows(&name, "clients", &[], None, Some(10), 0, 100).await?;
         assert!(sql.ends_with("LIMIT 10 OFFSET 0"));
         let rows = &out.statements[0].result.as_ref().unwrap().rows;

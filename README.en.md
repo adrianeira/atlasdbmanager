@@ -16,11 +16,11 @@ even of **different products** — with the safety of reviewing what is about to
 
 | Database | Tested versions | Notes |
 |---|---|---|
-| **PostgreSQL** | 9.6 and 18 | The most complete: also materialized views, sequences, types, extensions, roles, tablespaces, foreign servers and tables, PL/pgSQL functions |
+| **PostgreSQL** | 9.6, 10, 12, 14, 16 and 18 | The most complete: also materialized views, sequences, types, extensions, roles, tablespaces, foreign servers and tables, PL/pgSQL functions |
 | **SQL Server** | 2022 | Schemas, procedures and functions, `IDENTITY` |
-| **MySQL** | 8.4 | Databases as schemas, procedures and functions, `AUTO_INCREMENT` |
+| **MySQL** | 5.7, 8.0, 8.4 and 9 | Databases as schemas, procedures and functions, `AUTO_INCREMENT`. 5.7 does not keep `CHECK` (the server itself discards it) |
 | **SQLite** | local file | Pick or create the file on the connection screen |
-| **Firebird** | 2.5.3 and 4.0 | **Pure-Rust** client (no `fbclient.dll` needed); opens `.fdb` and `.gdb`; identity on 3+ and generator plus trigger on 2.5. 3 and 5 use the same protocol but are not tested yet |
+| **Firebird** | 2.5.3, 3.0, 4.0 and 5.0 | **Pure-Rust** client (no `fbclient.dll` needed); opens `.fdb` and `.gdb`; identity on 3+ and generator plus trigger on 2.5. |
 
 ## Features
 

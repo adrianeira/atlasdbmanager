@@ -16,11 +16,11 @@ bancos, inclusive de **produtos diferentes**, com a segurança de revisar o que 
 
 | Banco | Versões testadas | Observações |
 |---|---|---|
-| **PostgreSQL** | 9.6 e 18 | O mais completo: também views materializadas, sequências, tipos, extensões, papéis, tablespaces, servidores e tabelas externas, funções em PL/pgSQL |
+| **PostgreSQL** | 9.6, 10, 12, 14, 16 e 18 | O mais completo: também views materializadas, sequências, tipos, extensões, papéis, tablespaces, servidores e tabelas externas, funções em PL/pgSQL |
 | **SQL Server** | 2022 | Schemas, procedimentos e funções, `IDENTITY` |
-| **MySQL** | 8.4 | Bancos como schemas, procedimentos e funções, `AUTO_INCREMENT` |
+| **MySQL** | 5.7, 8.0, 8.4 e 9 | Bancos como schemas, procedimentos e funções, `AUTO_INCREMENT`. O 5.7 não guarda `CHECK` (o próprio servidor o descarta) |
 | **SQLite** | arquivo local | Escolher ou criar o arquivo na tela de conexão |
-| **Firebird** | 2.5.3 e 4.0 | Cliente em **Rust puro** (não precisa do `fbclient.dll`); abre `.fdb` e `.gdb`; identidade no 3+ e gerador com gatilho no 2.5. O 3 e o 5 usam o mesmo protocolo, mas ainda não foram testados |
+| **Firebird** | 2.5.3, 3.0, 4.0 e 5.0 | Cliente em **Rust puro** (não precisa do `fbclient.dll`); abre `.fdb` e `.gdb`; identidade no 3+ e gerador com gatilho no 2.5. |
 
 ## Funcionalidades
 
