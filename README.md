@@ -7,7 +7,7 @@ feito em **Rust + Tauri 2 + React**. O foco é o trabalho do dia a dia com o ban
 objetos, editar dados num grid rápido, escrever SQL, projetar tabelas e views, mover dados entre
 bancos, inclusive de **produtos diferentes**, com a segurança de revisar o que vai ser executado.
 
-> **Status:** versão 0.1.0, pré-alfa. Funciona com **PostgreSQL**, **SQL Server**, **MySQL**,
+> **Status:** versão 0.2.0, pré-alfa. Funciona com **PostgreSQL**, **SQL Server**, **MySQL**,
 > **SQLite**, **Firebird** e **Oracle** (em andamento). MariaDB, MongoDB e Redis estão previstos e ficam para depois.
 
 ![Atlas DB Manager: árvore de conexões à esquerda e o grid de dados de uma tabela Firebird](docs/home.png)
