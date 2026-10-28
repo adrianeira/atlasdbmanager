@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["src-tauri", "crates/atlas-core", "crates/atlas-pg", "crates/atlas-local", "crates/atlas-export", "crates/atlas-import", "crates/atlas-docs", "crates/atlas-ssh", "crates/atlas-sqlite", "crates/atlas-mssql", "crates/atlas-mysql", "crates/atlas-firebird"]
+members = ["src-tauri", "crates/atlas-core", "crates/atlas-pg", "crates/atlas-local", "crates/atlas-export", "crates/atlas-import", "crates/atlas-docs", "crates/atlas-ssh", "crates/atlas-sqlite", "crates/atlas-mssql", "crates/atlas-mysql", "crates/atlas-firebird", "crates/atlas-oracle"]
 
 [workspace.package]
 version = "0.1.0"
@@ -21,6 +21,7 @@ atlas-sqlite = { path = "crates/atlas-sqlite" }
 atlas-mssql = { path = "crates/atlas-mssql" }
 atlas-mysql = { path = "crates/atlas-mysql" }
 atlas-firebird = { path = "crates/atlas-firebird" }
+atlas-oracle = { path = "crates/atlas-oracle" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
@@ -34,3 +35,5 @@ log = "0.4"
 # Cópia do cliente Firebird em Rust puro (MIT) com um ajuste: mantém o tipo e a escala originais das colunas (NUMERIC, DATE, TIME) em vez de convertê-las.
 [patch.crates-io]
 rsfbclient-rust = { path = "vendor/rsfbclient-rust" }
+# Cópia do cliente Oracle em Rust puro (MIT/Apache-2.0) com dois ajustes no tratamento de erros (ver vendor/oracle-rs/ATLAS-CHANGES.md).
+oracle-rs = { path = "vendor/oracle-rs" }
