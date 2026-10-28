@@ -7,7 +7,7 @@ A native, cross-platform desktop database manager (Windows, Linux and macOS), bu
 in a fast grid, writing SQL, designing tables and views, and moving data between databases —
 even of **different products** — with the safety of reviewing what is about to run.
 
-> **Status:** version 0.2.0, pre-alpha. It works with **PostgreSQL**, **SQL Server**, **MySQL**,
+> **Status:** version 0.2.1, pre-alpha. It works with **PostgreSQL**, **SQL Server**, **MySQL**,
 > **SQLite**, **Firebird** and **Oracle** (in progress). MariaDB, MongoDB and Redis are planned and postponed.
 
 ![Atlas DB Manager: connection tree on the left and the data grid of a Firebird table](docs/home.png)

@@ -218,7 +218,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -227,7 +227,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-desktop"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "atlas-core",
  "atlas-docs",
@@ -256,14 +256,14 @@ dependencies = [
 
 [[package]]
 name = "atlas-docs"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "atlas-export"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "calamine",
  "cfb 0.15.0",
@@ -276,7 +276,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-firebird"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "atlas-core",
  "chrono",
@@ -289,7 +289,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-import"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "atlas-export",
  "calamine",
@@ -302,7 +302,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-local"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "atlas-core",
  "keyring",
@@ -316,7 +316,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-mssql"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "atlas-core",
  "chrono",
@@ -331,7 +331,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-mysql"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "atlas-core",
  "futures-util",
@@ -344,7 +344,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-oracle"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "atlas-core",
  "oracle-rs",
@@ -355,7 +355,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-pg"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "atlas-core",
  "bytes",
@@ -371,7 +371,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-sqlite"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "atlas-core",
  "regex",
@@ -382,7 +382,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-ssh"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "atlas-core",
  "log",
