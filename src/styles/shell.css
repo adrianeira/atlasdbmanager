@@ -537,7 +537,7 @@ input {
 
 /* Sem schema/conexão escolhidos a lista não tem o que mostrar: fundo cinza, sem linha sob a barra de botões. */
 .object-list.no-context {
-  background: var(--c-surface-alt);
+  background: var(--c-list-empty, var(--c-surface-alt));
 }
 
 .objects-view:has(> .object-list.no-context) > .object-toolbar {
