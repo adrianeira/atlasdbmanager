@@ -8,7 +8,7 @@ in a fast grid, writing SQL, designing tables and views, and moving data between
 even of **different products** — with the safety of reviewing what is about to run.
 
 > **Status:** version 0.1.0, pre-alpha. It works with **PostgreSQL**, **SQL Server**, **MySQL**,
-> **SQLite** and **Firebird**. MariaDB, Oracle, MongoDB and Redis are planned and postponed.
+> **SQLite**, **Firebird** and **Oracle** (in progress). MariaDB, MongoDB and Redis are planned and postponed.
 
 ![Atlas DB Manager: connection tree on the left and the data grid of a Firebird table](docs/home.png)
 
@@ -21,6 +21,7 @@ even of **different products** — with the safety of reviewing what is about to
 | **MySQL** | Databases as schemas, procedures and functions, `AUTO_INCREMENT`. Older server versions do not keep `CHECK` |
 | **SQLite** | Pick or create the file on the connection screen |
 | **Firebird** | **Pure-Rust** client (no `fbclient.dll` needed); opens `.fdb` and `.gdb`; identity or a generator plus trigger, depending on the server version. |
+| **Oracle** | **Pure-Rust** client (no Oracle Instant Client needed), 12.1 and later. **In progress**: connection, tree, editable grid, SQL editor (PL/SQL blocks included), manual transaction and a table designer with identity/sequence. Import, export, dump, backup and the Tools menu are still missing |
 
 ## Features
 
@@ -159,6 +160,8 @@ cargo test -p atlas-pg --test live_postgres
 ATLAS_TEST_FIREBIRD_HOST=localhost ATLAS_TEST_FIREBIRD_PORT=3050 \
 ATLAS_TEST_FIREBIRD_DATABASE=/path/to/db.fdb ATLAS_TEST_FIREBIRD_USER=SYSDBA \
 ATLAS_TEST_FIREBIRD_PASSWORD=... cargo test -p atlas-firebird
+# Oracle: ATLAS_TEST_ORACLE_HOST, _PORT, _SERVICE (e.g. FREEPDB1), _USER and _PASSWORD
+ATLAS_TEST_ORACLE_HOST=localhost ATLAS_TEST_ORACLE_PORT=1521 ATLAS_TEST_ORACLE_SERVICE=FREEPDB1 \nATLAS_TEST_ORACLE_USER=system ATLAS_TEST_ORACLE_PASSWORD=... cargo test -p atlas-oracle
 ```
 
 The credential-vault test is opt-in: `ATLAS_TEST_KEYRING=1 cargo test -p atlas-local`.
@@ -173,6 +176,7 @@ crates/
   atlas-mysql/     MySQL provider (mysql_async)
   atlas-sqlite/    SQLite provider (rusqlite)
   atlas-firebird/  Firebird provider (pure-Rust client)
+  atlas-oracle/    Oracle provider (pure-Rust client)
   atlas-local/     local storage (SQLite) and the OS credential vault
   atlas-export/    writing results as CSV, JSON, SQL, Excel and more (streaming)
   atlas-import/    reading files for the import wizard
@@ -180,7 +184,7 @@ crates/
   atlas-ssh/       SSH tunnel
 src-tauri/         desktop app (Tauri commands, sessions, cross-product tools)
 src/               React + TypeScript interface
-vendor/            patched copy of the pure-Rust Firebird client (see ATLAS-CHANGES.md)
+vendor/            patched copies of the pure-Rust Firebird and Oracle clients (see the ATLAS-CHANGES.md files)
 scripts/           utilities (e.g. third-party license list generation)
 ```
 

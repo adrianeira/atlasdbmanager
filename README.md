@@ -8,7 +8,7 @@ objetos, editar dados num grid rápido, escrever SQL, projetar tabelas e views, 
 bancos, inclusive de **produtos diferentes**, com a segurança de revisar o que vai ser executado.
 
 > **Status:** versão 0.1.0, pré-alfa. Funciona com **PostgreSQL**, **SQL Server**, **MySQL**,
-> **SQLite** e **Firebird**. MariaDB, Oracle, MongoDB e Redis estão previstos e ficam para depois.
+> **SQLite**, **Firebird** e **Oracle** (em andamento). MariaDB, MongoDB e Redis estão previstos e ficam para depois.
 
 ![Atlas DB Manager: árvore de conexões à esquerda e o grid de dados de uma tabela Firebird](docs/home.png)
 
@@ -21,6 +21,7 @@ bancos, inclusive de **produtos diferentes**, com a segurança de revisar o que 
 | **MySQL** | Bancos como schemas, procedimentos e funções, `AUTO_INCREMENT`. Nas versões antigas o servidor não guarda `CHECK` |
 | **SQLite** | Escolher ou criar o arquivo na tela de conexão |
 | **Firebird** | Cliente em **Rust puro** (não precisa do `fbclient.dll`); abre `.fdb` e `.gdb`; identidade ou gerador com gatilho, conforme a versão do servidor. |
+| **Oracle** | Cliente em **Rust puro** (não precisa do Oracle Instant Client), 12.1 em diante. **Em andamento**: conexão, árvore, grade com edição, editor SQL (inclui blocos PL/SQL), transação manual e designer de tabela com identidade/sequência. Ainda faltam importar, exportar, dump, backup e as ferramentas do menu Tools |
 
 ## Funcionalidades
 
@@ -163,6 +164,8 @@ cargo test -p atlas-pg --test live_postgres
 ATLAS_TEST_FIREBIRD_HOST=localhost ATLAS_TEST_FIREBIRD_PORT=3050 \
 ATLAS_TEST_FIREBIRD_DATABASE=/caminho/banco.fdb ATLAS_TEST_FIREBIRD_USER=SYSDBA \
 ATLAS_TEST_FIREBIRD_PASSWORD=... cargo test -p atlas-firebird
+# Oracle: ATLAS_TEST_ORACLE_HOST, _PORT, _SERVICE (ex.: FREEPDB1), _USER e _PASSWORD
+ATLAS_TEST_ORACLE_HOST=localhost ATLAS_TEST_ORACLE_PORT=1521 ATLAS_TEST_ORACLE_SERVICE=FREEPDB1 \nATLAS_TEST_ORACLE_USER=system ATLAS_TEST_ORACLE_PASSWORD=... cargo test -p atlas-oracle
 ```
 
 O teste do cofre de credenciais é opcional: `ATLAS_TEST_KEYRING=1 cargo test -p atlas-local`.
@@ -177,6 +180,7 @@ crates/
   atlas-mysql/     provedor MySQL (mysql_async)
   atlas-sqlite/    provedor SQLite (rusqlite)
   atlas-firebird/  provedor Firebird (cliente em Rust puro)
+  atlas-oracle/    provedor Oracle (cliente em Rust puro)
   atlas-local/     armazenamento local (SQLite) e cofre de credenciais do sistema
   atlas-export/    gravação de resultados em CSV, JSON, SQL, Excel e outros (streaming)
   atlas-import/    leitura de arquivos para o assistente de importação
@@ -184,7 +188,7 @@ crates/
   atlas-ssh/       túnel SSH
 src-tauri/         aplicativo desktop (comandos Tauri, sessões, ferramentas entre produtos)
 src/               interface React + TypeScript
-vendor/            cópia ajustada do cliente Firebird em Rust puro (veja ATLAS-CHANGES.md)
+vendor/            cópias ajustadas dos clientes Firebird e Oracle em Rust puro (veja os ATLAS-CHANGES.md)
 scripts/           utilitários (ex.: geração da lista de licenças de terceiros)
 ```
 
