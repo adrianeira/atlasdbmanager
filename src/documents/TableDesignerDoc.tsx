@@ -12,6 +12,7 @@ import { quoteIdent, type ColumnDef, type DbObject, type TriggerDef } from "../m
 import { errorText, toAtlasError } from "../backend";
 import { FIREBIRD_TYPES, alterStatementsFirebird, canDropIdentity, createTableStatementsFirebird, generatorName, isAutoType as isFirebirdAutoType, normalizeFirebirdObject, triggerName } from "../sql/firebirdDdl";
 import { MYSQL_TYPES, alterStatementsMysql, createTableStatementsMysql, isAutoType } from "../sql/mysqlDdl";
+import { ORACLE_TYPES, alterStatementsOracle, createTableStatementsOracle, isAutoType as isOracleAutoType, q as oracleQuote } from "../sql/oracleDdl";
 import { MSSQL_TYPES, alterStatementsMssql, createTableStatementsMssql, isIdentityType } from "../sql/mssqlDdl";
 import { SQLITE_TYPES, alterStatementsSqlite, createTableStatementsSqlite, isRowidType } from "../sql/sqliteDdl";
 import { AUTO_INC_SERIAL, autoIncColumn, columnType, createTableSql, createTableStatements, triggerExtras, triggerSql } from "../sql/ddl";
@@ -278,7 +279,7 @@ interface Props {
   /** Conexão real: executa os comandos em uma transação (falha = nada aplicado). */
   applyDdl?: (statements: string[]) => Promise<void>;
   /** Banco da conexão; ausente = PostgreSQL. */
-  dialect?: "sqlite" | "mssql" | "mysql" | "firebird";
+  dialect?: "sqlite" | "mssql" | "mysql" | "firebird" | "oracle";
 }
 
 export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFunctions, serverVersionNum, active, production, onStatus, onSaved, loadDetail, applyDdl, dialect }: Props) {
@@ -287,10 +288,11 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
   const mssql = dialect === "mssql";
   const mysql = dialect === "mysql";
   const firebird = dialect === "firebird";
+  const oracle = dialect === "oracle";
   /** Qualquer banco que não seja o PostgreSQL: sem as abas, colunas e painéis que só ele tem. */
-  const notPg = sqlite || mssql || mysql || firebird;
+  const notPg = sqlite || mssql || mysql || firebird || oracle;
   const [original, setOriginal] = useState<DbObject | null>(table);
-  const [d, setD] = useState<DesignState>(() => toState(table, sqlite, mssql || mysql || firebird));
+  const [d, setD] = useState<DesignState>(() => toState(table, sqlite, mssql || mysql || firebird || oracle));
   const [loading, setLoading] = useState(!!loadDetail && !!table);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -303,7 +305,7 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
       .then((obj) => {
         if (!alive) return;
         setOriginal(obj);
-        setD(toState(obj, sqlite, mssql || mysql || firebird));
+        setD(toState(obj, sqlite, mssql || mysql || firebird || oracle));
       })
       .catch((e) => alive && setLoadError(errorText(toAtlasError(e))))
       .finally(() => alive && setLoading(false));
@@ -339,10 +341,11 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
     if (mssql) return alterStatementsMssql(schema, original, toObject(d), d.fields.map((f) => f._orig));
     if (mysql) return alterStatementsMysql(schema, original, toObject(d), d.fields.map((f) => f._orig));
     if (firebird) return alterStatementsFirebird(original, toObject(d), d.fields.map((f) => f._orig), serverVersionNum);
+    if (oracle) return alterStatementsOracle(schema, original, toObject(d), d.fields.map((f) => f._orig));
     return alterSql(schema, original, d, serverVersionNum);
-  }, [original, d, schema, serverVersionNum, sqlite, mssql, mysql, firebird]);
+  }, [original, d, schema, serverVersionNum, sqlite, mssql, mysql, firebird, oracle]);
   const dirty = isNew ? d.fields.length > 0 : !!plan?.sql;
-  const createSql = useMemo(() => (firebird ? createTableStatementsFirebird(toObject(d), serverVersionNum, isNew ? "Untitled" : undefined).map((x) => `${x};`).join(String.fromCharCode(10, 10)) : sqlite ? createTableStatementsSqlite(toObject(d), isNew ? "Untitled" : undefined).map((x) => `${x};`).join(String.fromCharCode(10, 10)) : mysql ? createTableStatementsMysql(schema, toObject(d), isNew ? "Untitled" : undefined).map((x) => `${x};`).join(String.fromCharCode(10, 10)) : mssql ? createTableStatementsMssql(schema, toObject(d), isNew ? "Untitled" : undefined).map((x) => `${x};`).join(String.fromCharCode(10, 10)) : createTableSql(schema, toObject(d), isNew ? "Untitled" : undefined, serverVersionNum)), [schema, d, isNew, serverVersionNum, sqlite, mssql, mysql, firebird]);
+  const createSql = useMemo(() => (oracle ? createTableStatementsOracle(schema, toObject(d), isNew ? "Untitled" : undefined).map((x) => `${x};`).join(String.fromCharCode(10, 10)) : firebird ? createTableStatementsFirebird(toObject(d), serverVersionNum, isNew ? "Untitled" : undefined).map((x) => `${x};`).join(String.fromCharCode(10, 10)) : sqlite ? createTableStatementsSqlite(toObject(d), isNew ? "Untitled" : undefined).map((x) => `${x};`).join(String.fromCharCode(10, 10)) : mysql ? createTableStatementsMysql(schema, toObject(d), isNew ? "Untitled" : undefined).map((x) => `${x};`).join(String.fromCharCode(10, 10)) : mssql ? createTableStatementsMssql(schema, toObject(d), isNew ? "Untitled" : undefined).map((x) => `${x};`).join(String.fromCharCode(10, 10)) : createTableSql(schema, toObject(d), isNew ? "Untitled" : undefined, serverVersionNum)), [schema, d, isNew, serverVersionNum, sqlite, mssql, mysql, firebird, oracle]);
 
   useEffect(() => {
     if (!pkMenu) return;
@@ -458,11 +461,23 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
     const obj = firebird && isNew ? normalizeFirebirdObject(built) : built;
     const previous = original?.name ?? null;
     if (applyDdl) {
-      const statements = isNew ? (firebird ? createTableStatementsFirebird(obj, serverVersionNum) : sqlite ? createTableStatementsSqlite(obj) : mysql ? createTableStatementsMysql(schema, obj) : mssql ? createTableStatementsMssql(schema, obj) : createTableStatements(schema, obj, undefined, serverVersionNum)) : plan?.statements ?? [];
+      const statements = isNew ? (oracle ? createTableStatementsOracle(schema, obj) : firebird ? createTableStatementsFirebird(obj, serverVersionNum) : sqlite ? createTableStatementsSqlite(obj) : mysql ? createTableStatementsMysql(schema, obj) : mssql ? createTableStatementsMssql(schema, obj) : createTableStatements(schema, obj, undefined, serverVersionNum)) : plan?.statements ?? [];
       setSaving(true);
       setSaveError(null);
       try {
-        await applyDdl(statements);
+        if (oracle && isNew && statements.length > 1) {
+          // O Oracle grava cada DDL na hora, sem desfazer: o CREATE TABLE vai sozinho (se falhar, nada foi criado) e, se um passo
+          // depois dele falhar, a tabela recém-criada é apagada para não ficar pela metade.
+          await applyDdl(statements.slice(0, 1));
+          try {
+            await applyDdl(statements.slice(1));
+          } catch (inner) {
+            await applyDdl([`DROP TABLE ${oracleQuote(schema)}.${oracleQuote(obj.name)} PURGE`]).catch(() => undefined);
+            throw inner;
+          }
+        } else {
+          await applyDdl(statements);
+        }
       } catch (e) {
         setSaveError(errorText(toAtlasError(e)));
         setSaving(false);
@@ -483,14 +498,14 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
       ...(notPg ? { triggers: original?.triggers, indexes: obj.indexes } : {}),
     };
     // No Firebird a numeração pode ser gerador + gatilho (nomes que só o servidor sabe): relê a estrutura gravada.
-    if (firebird && !isNew && loadDetail && applyDdl) {
+    if ((firebird || oracle) && !isNew && loadDetail && applyDdl) {
       try {
         saved = await loadDetail();
       } catch { /* mantém o que o designer tem */ }
     }
     onSaved(saved, previous);
     setOriginal(saved);
-    setD(toState(saved, sqlite, mssql || mysql || firebird));
+    setD(toState(saved, sqlite, mssql || mysql || firebird || oracle));
     setPreviewMode("save");
     setDialog(null);
   };
@@ -578,7 +593,7 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
   const fieldCols: EditColumn<FieldRow>[] = [
     { key: "name", label: t("col.name"), width: 200, kind: "text" },
     // Lista fixa: sem texto livre no tipo (evita tipo inválido ou SQL injetado no DDL).
-    { key: "type", label: t("des.type"), width: 120, kind: "select", options: sqlite ? SQLITE_TYPES : mssql ? MSSQL_TYPES : mysql ? MYSQL_TYPES : firebird ? FIREBIRD_TYPES : PG_TYPES },
+    { key: "type", label: t("des.type"), width: 120, kind: "select", options: sqlite ? SQLITE_TYPES : mssql ? MSSQL_TYPES : mysql ? MYSQL_TYPES : firebird ? FIREBIRD_TYPES : oracle ? ORACLE_TYPES : PG_TYPES },
     { key: "length", label: t("des.length"), width: 60, kind: "number" },
     { key: "decimal", label: t("des.decimal"), width: 60, kind: "number" },
     { key: "notNull", label: t("des.notNull"), width: 60, kind: "check" },
@@ -588,7 +603,7 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
   ];
 
   /** O SQLite não tem comentário de coluna, método de índice, schema de referência nem NO INHERIT. */
-  const sqliteCols = <T,>(cols: EditColumn<T>[]) => (sqlite ? cols.filter((c) => !["comment", "method", "concurrently", "refSchema", "noInherit"].includes(c.key)) : mssql || mysql || firebird ? cols.filter((c) => !["comment", "method", "concurrently", "noInherit"].includes(c.key)) : cols);
+  const sqliteCols = <T,>(cols: EditColumn<T>[]) => (sqlite ? cols.filter((c) => !["comment", "method", "concurrently", "refSchema", "noInherit"].includes(c.key)) : mssql || mysql || firebird || oracle ? cols.filter((c) => !["comment", "method", "concurrently", "noInherit"].includes(c.key)) : cols);
 
   const changeList = (k: ListKey) => (i: number, key: string, v: string | number | boolean) =>
     patch({ [k]: d[k].map((r, j) => (j === i ? { ...r, [key]: v } : r)) } as Partial<DesignState>);
@@ -626,7 +641,7 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
             <ComboInput
               className="prop-field"
               value={field.default ?? ""}
-              options={firebird ? ["NULL", "CURRENT_TIMESTAMP", "CURRENT_DATE", "CURRENT_TIME", "USER", "''", "0", "1"] : mysql ? ["NULL", "CURRENT_TIMESTAMP", "''", "0", "1"] : mssql ? ["NULL", "GETDATE()", "SYSDATETIME()", "NEWID()", "''", "0", "1"] : sqlite ? ["NULL", "CURRENT_TIMESTAMP", "CURRENT_DATE", "CURRENT_TIME", "''", "0", "1"] : ["NULL", "now()", "CURRENT_TIMESTAMP", "gen_random_uuid()", "''::text", "0", "true", "false"]}
+              options={oracle ? ["NULL", "SYSDATE", "SYSTIMESTAMP", "USER", "''", "0", "1"] : firebird ? ["NULL", "CURRENT_TIMESTAMP", "CURRENT_DATE", "CURRENT_TIME", "USER", "''", "0", "1"] : mysql ? ["NULL", "CURRENT_TIMESTAMP", "''", "0", "1"] : mssql ? ["NULL", "GETDATE()", "SYSDATETIME()", "NEWID()", "''", "0", "1"] : sqlite ? ["NULL", "CURRENT_TIMESTAMP", "CURRENT_DATE", "CURRENT_TIME", "''", "0", "1"] : ["NULL", "now()", "CURRENT_TIMESTAMP", "gen_random_uuid()", "''::text", "0", "true", "false"]}
               onChange={(v) => patch({ fields: d.fields.map((f, i) => (i === selected ? { ...f, default: v || undefined } : f)) })}
               spellCheck={false}
             />
@@ -757,6 +772,20 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
                 return;
               }
               if (key === "type" && cur.autoInc && !isFirebirdAutoType(String(v))) {
+                patch({ fields: d.fields.map((f, j) => (j === i ? { ...f, type: String(v), autoInc: false } : f)) });
+                return;
+              }
+            }
+            if (oracle) {
+              // Oracle: identidade (coluna nova) ou sequência com DEFAULT NEXTVAL (coluna que já existe); só NUMBER, uma por tabela.
+              if (key === "autoInc") {
+                if (v !== true) { patch({ fields: d.fields.map((f, j) => (j === i ? { ...f, autoInc: false } : f)) }); return; }
+                if (cur.type && !isOracleAutoType(cur.type)) { setAutoNote(t("des.autoIncOracleType")); return; }
+                if (d.fields.some((f, j) => j !== i && f.autoInc)) { setAutoNote(t("des.autoIncOracleOne")); return; }
+                patch({ fields: d.fields.map((f, j) => (j === i ? { ...f, autoInc: true, type: f.type || "number", notNull: true, default: undefined } : f)) });
+                return;
+              }
+              if (key === "type" && cur.autoInc && !isOracleAutoType(String(v))) {
                 patch({ fields: d.fields.map((f, j) => (j === i ? { ...f, type: String(v), autoInc: false } : f)) });
                 return;
               }
@@ -894,7 +923,7 @@ export function TableDesignerDoc({ schema, table, owners, otherTables, triggerFu
       </div>
 
       <div className="dlg-tabs des-tabs" role="tablist">
-        {SUBTABS.filter((x) => !(sqlite || mssql || mysql || firebird) || (sqlite ? SQLITE_SUBTABS : MSSQL_SUBTABS).has(x.id)).map((x) => (
+        {SUBTABS.filter((x) => !(sqlite || mssql || mysql || firebird || oracle) || (sqlite ? SQLITE_SUBTABS : MSSQL_SUBTABS).has(x.id)).map((x) => (
           <button key={x.id} type="button" role="tab" aria-selected={tab === x.id} className={`dlg-tab${tab === x.id ? " is-active" : ""}`} onClick={() => setTab(x.id)}>
             {t(x.label)}
           </button>

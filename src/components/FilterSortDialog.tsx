@@ -22,6 +22,8 @@ interface Props {
   initialSort: OrderBy[];
   /** Coluna a pré-selecionar numa nova regra quando não há filtro ainda (ex.: "Add Filter" do cabeçalho). */
   initialColumn?: string;
+  /** Banco da tabela; ausente = PostgreSQL (que aceita `'valor'::tipo`). */
+  dialect?: "sqlite" | "mssql" | "mysql" | "firebird" | "oracle";
   onApply: (filter: TableFilter | null, sort: OrderBy[]) => void;
   onClose: () => void;
 }
@@ -55,11 +57,26 @@ function castSuffix(col: ColumnDef): string {
   return `::${col.castType ?? col.type}`;
 }
 
-function literal(col: ColumnDef, v: string): string {
-  return `${pgQuote(v)}${castSuffix(col)}`;
+const NUMERIC_TEXT = /^[+-]?\d+(\.\d+)?$/;
+
+/**
+ * O valor como literal SQL. O PostgreSQL recebe o texto com o cast do tipo da coluna. Os outros bancos não têm `::tipo`: números vão
+ * sem aspas, e no Oracle datas e horas vão com `TO_DATE`/`TO_TIMESTAMP` (o texto de uma data depende do formato da sessão).
+ */
+function literal(col: ColumnDef, v: string, dialect?: Props["dialect"]): string {
+  if (!dialect) return `${pgQuote(v)}${castSuffix(col)}`;
+  const t = (col.castType ?? col.type).toLowerCase();
+  const text = v.trim();
+  if (/^(number|float|binary_(float|double)|int|smallint|bigint|tinyint|mediumint|numeric|decimal|real|double|money)/.test(t) && NUMERIC_TEXT.test(text)) return text;
+  if (dialect === "oracle") {
+    const m = /^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}:\d{2})(\.\d+)?)?$/.exec(text);
+    if (m && /^date/.test(t)) return `TO_DATE('${m[1]} ${m[2] ?? "00:00:00"}', 'YYYY-MM-DD HH24:MI:SS')`;
+    if (m && /^timestamp/.test(t)) return `TO_TIMESTAMP('${m[1]} ${m[2] ?? "00:00:00"}${m[3] ?? ".0"}', 'YYYY-MM-DD HH24:MI:SS.FF')`;
+  }
+  return pgQuote(v);
 }
 
-function buildExpr(rules: Rule[], columns: ColumnDef[]): string {
+function buildExpr(rules: Rule[], columns: ColumnDef[], dialect?: Props["dialect"]): string {
   const parts: string[] = [];
   for (const r of rules) {
     const col = columns.find((c) => c.name === r.column);
@@ -69,22 +86,22 @@ function buildExpr(rules: Rule[], columns: ColumnDef[]): string {
       parts.push(`${q} ${r.op}`);
     } else if (r.op === "BETWEEN") {
       if (!r.value || !r.value2) continue;
-      parts.push(`${q} BETWEEN ${literal(col, r.value)} AND ${literal(col, r.value2)}`);
+      parts.push(`${q} BETWEEN ${literal(col, r.value, dialect)} AND ${literal(col, r.value2, dialect)}`);
     } else if (r.op === "IN") {
       const items = r.value.split(",").map((x) => x.trim()).filter(Boolean);
       if (!items.length) continue;
-      parts.push(`${q} IN (${items.map((v) => literal(col, v)).join(", ")})`);
+      parts.push(`${q} IN (${items.map((v) => literal(col, v, dialect)).join(", ")})`);
     } else if (r.op === "LIKE" || r.op === "NOT LIKE") {
       parts.push(`${q} ${r.op} ${pgQuote(r.value)}`);
     } else {
       if (!r.value) continue;
-      parts.push(`${q} ${r.op} ${literal(col, r.value)}`);
+      parts.push(`${q} ${r.op} ${literal(col, r.value, dialect)}`);
     }
   }
   return parts.join(" AND ");
 }
 
-export function FilterSortDialog({ columns, initialFilter, initialSort, initialColumn, onApply, onClose }: Props) {
+export function FilterSortDialog({ columns, initialFilter, initialSort, initialColumn, dialect, onApply, onClose }: Props) {
   const t = useT();
   const colItems = useMemo(() => columns.map((c) => ({ value: c.name, label: `${c.name}  (${c.type})` })), [columns]);
 
@@ -106,7 +123,7 @@ export function FilterSortDialog({ columns, initialFilter, initialSort, initialC
   const updateSort = (i: number, patch: Partial<OrderBy>) => setSort((s) => s.map((o, j) => (j === i ? { ...o, ...patch } : o)));
   const removeSort = (i: number) => setSort((s) => s.filter((_, j) => j !== i));
 
-  const expr = useMemo(() => buildExpr(rules, columns), [rules, columns]);
+  const expr = useMemo(() => buildExpr(rules, columns, dialect), [rules, columns, dialect]);
   const orderPreview = useMemo(() => sort.map((o) => `${quoteIdent(o.column)} ${o.descending ? "DESC" : "ASC"}`).join(", "), [sort]);
 
   const apply = () => {

@@ -22,7 +22,12 @@ const NOT_IN_MYSQL = new Set<MessageKey>([
 /** O Firebird (até a versão 4) não tem schemas; começa com o que o SQLite esconde e ganha os itens conforme eles passam a existir. */
 const NOT_IN_FIREBIRD = new Set<MessageKey>([...NOT_IN_SQLITE, "cmd.renameTable", "cmd.renameView"]);
 
-const SETS: Record<string, Set<MessageKey>> = { sqlite: NOT_IN_SQLITE, sqlserver: NOT_IN_MSSQL, mysql: NOT_IN_MYSQL, firebird: NOT_IN_FIREBIRD };
+/** O Oracle tem schemas, mas o Atlas ainda não cria bancos nem schemas (usuários) nele; `RENAME` de view é outro comando. */
+const NOT_IN_ORACLE = new Set<MessageKey>([
+  "cmd.newDatabase", "cmd.editDatabase", "cmd.deleteDatabase", "cmd.newSchema", "cmd.editSchema", "cmd.deleteSchema", "cmd.extractSql", "cmd.renameView",
+]);
+
+const SETS: Record<string, Set<MessageKey>> = { sqlite: NOT_IN_SQLITE, sqlserver: NOT_IN_MSSQL, mysql: NOT_IN_MYSQL, firebird: NOT_IN_FIREBIRD, oracle: NOT_IN_ORACLE };
 
 /** Os bancos que têm lista de itens a esconder (o PostgreSQL não tem). */
 export const hasMenuFilter = (provider: string | undefined): boolean => !!provider && provider in SETS;
@@ -45,4 +50,4 @@ export function menuForProvider(provider: string, items: MenuEntry[], labels: Ma
 }
 
 /** Os textos dos itens que algum banco esconde (o menu guarda o texto, não a chave). */
-export const hiddenKeys = (): MessageKey[] => [...new Set([...NOT_IN_SQLITE, ...NOT_IN_MSSQL, ...NOT_IN_MYSQL, ...NOT_IN_FIREBIRD])].filter((k) => k.startsWith("cmd.") || k.startsWith("act."));
+export const hiddenKeys = (): MessageKey[] => [...new Set([...NOT_IN_SQLITE, ...NOT_IN_MSSQL, ...NOT_IN_MYSQL, ...NOT_IN_FIREBIRD, ...NOT_IN_ORACLE])].filter((k) => k.startsWith("cmd.") || k.startsWith("act."));

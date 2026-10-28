@@ -24,7 +24,7 @@ import { NO_EQUALITY } from "../live";
 /** Acesso ao banco real; ausente = modo de demonstração com dados fictícios. */
 export interface TableDataBackend {
   /** Banco dos comandos de gravação; ausente = PostgreSQL. */
-  dialect?: "sqlite" | "mssql" | "mysql" | "firebird";
+  dialect?: "sqlite" | "mssql" | "mysql" | "firebird" | "oracle";
   loadDetail: () => Promise<DbObject>;
   /** Opcional: Data Profiling (estatísticas de cada coluna sobre os registros escolhidos). */
   profileData?: (columns: string[], orderBy: OrderBy[], filter: TableFilter | null, limit: number | null) => Promise<import("../backend").DataProfile>;
@@ -96,7 +96,8 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
       isKey: !!c.key,
       required: c.notNull,
       comment: c.comment || undefined,
-      hasDefault: !!c.default,
+      // A identidade `BY DEFAULT` (e o AUTO_INCREMENT) numera sozinha quando o valor é omitido: não é campo obrigatório.
+      hasDefault: !!c.default || c.identity === "d",
       // Bloqueia edição em colunas geradas pelo banco: GENERATED ALWAYS AS IDENTITY ou STORED.
       generated: c.identity === "a" || c.generated === "s",
       hidden: hiddenCols.has(c.name),
@@ -894,7 +895,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
         )}
       </div>
 
-      {profileOpen && backend?.loadProfile && <TableProfileDialog table={table.name} dialect={backend.dialect === "mysql" || backend.dialect === "firebird" ? undefined : backend.dialect} load={backend.loadProfile} onClose={() => setProfileOpen(false)} />}
+      {profileOpen && backend?.loadProfile && <TableProfileDialog table={table.name} dialect={backend.dialect === "mysql" || backend.dialect === "firebird" || backend.dialect === "oracle" ? undefined : backend.dialect} load={backend.loadProfile} onClose={() => setProfileOpen(false)} />}
 
       {cellEditorOpen && view === "grid" && cols[activeCol] && (
         <CellEditorPanel
@@ -1040,6 +1041,7 @@ export function TableDataDoc({ schema, table: tableProp, active, production, onS
           initialFilter={filter}
           initialSort={sort}
           initialColumn={filterColumn}
+          dialect={backend?.dialect}
           onApply={applyFilterSort}
           onClose={() => setFilterOpen(false)}
         />

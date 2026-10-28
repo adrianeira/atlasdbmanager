@@ -44,6 +44,7 @@ export const esPart5 = {
   "conn.host": "Host",
   "conn.port": "Puerto",
   "conn.initialDb": "Base de datos inicial",
+  "conn.serviceName": "Nombre del servicio",
   "conn.user": "Nombre de usuario",
   "conn.password": "Contraseña",
   "conn.savePassword": "Guardar contraseña",

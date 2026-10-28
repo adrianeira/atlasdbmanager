@@ -4,6 +4,7 @@
 import { plannedStatementsMssql } from "./sql/mssqlPlan";
 import { plannedStatementsMysql } from "./sql/mysqlPlan";
 import { plannedStatementsFirebird } from "./sql/firebirdPlan";
+import { plannedStatementsOracle } from "./sql/oraclePlan";
 import { plannedStatementsSqlite } from "./sql/sqlitePlan";
 import type { ConstraintInfo, ObjectInfo, PlannedStatement, SchemaObjects, TableDetail, TriggerInfo } from "./backend";
 import { quoteIdent, type CellValue, type ColumnDef, type DbObject, type SchemaMock, type TriggerDef } from "./model";
@@ -110,7 +111,7 @@ export const NO_EQUALITY = new Set(["json", "xml", "point", "line", "lseg", "box
 
 export interface RowChanges {
   /** Banco que recebe os comandos; ausente = PostgreSQL. */
-  dialect?: "sqlite" | "mssql" | "mysql" | "firebird";
+  dialect?: "sqlite" | "mssql" | "mysql" | "firebird" | "oracle";
   schema: string;
   table: string;
   columns: ColumnDef[];
@@ -131,6 +132,7 @@ export function plannedStatements(c: RowChanges): PlannedStatement[] {
   if (c.dialect === "mssql") return plannedStatementsMssql(c);
   if (c.dialect === "mysql") return plannedStatementsMysql(c);
   if (c.dialect === "firebird") return plannedStatementsFirebird(c);
+  if (c.dialect === "oracle") return plannedStatementsOracle(c);
   const target = `${quoteIdent(c.schema)}.${quoteIdent(c.table)}`;
   const keys = c.columns.map((col, i) => ({ col, i })).filter((x) => x.col.key).sort((a, b) => (a.col.key ?? 0) - (b.col.key ?? 0));
   // Sem chave primária, a linha é achada por todos os valores (menos os de tipos sem igualdade). Linhas iguais marcadas juntas viram um

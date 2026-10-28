@@ -174,6 +174,8 @@ export const esPart2 = {
   "des.autoIncMssqlOne": "Una tabla de SQL Server solo puede tener una columna IDENTITY.",
   "des.autoIncMysqlType": "AUTO_INCREMENT solo funciona en columnas enteras (tinyint, smallint, mediumint, int, bigint).",
   "des.autoIncMysqlOne": "Una tabla de MySQL solo puede tener una columna AUTO_INCREMENT.",
+  "des.autoIncOracleType": "El autoincremento solo funciona en columnas NUMBER.",
+  "des.autoIncOracleOne": "Una tabla de Oracle solo puede tener una columna de identidad.",
   "des.autoIncMysqlKey": "Una columna AUTO_INCREMENT debe ser una clave: márcala como clave primaria (o quita antes las demás claves).",
   "des.autoIncFbType": "El autoincremento solo funciona en columnas enteras (smallint, integer, bigint).",
   "des.autoIncFbOne": "Una tabla de Firebird solo puede tener una columna autoincremental.",

@@ -44,7 +44,7 @@ export type JoinType = "INNER" | "LEFT" | "RIGHT" | "FULL";
 export const JOIN_TYPES: JoinType[] = ["INNER", "LEFT", "RIGHT", "FULL"];
 
 /** O banco do desenho; sem valor = PostgreSQL. */
-export type QbDialect = "sqlite" | "mssql" | "mysql" | "firebird" | undefined;
+export type QbDialect = "sqlite" | "mssql" | "mysql" | "firebird" | "oracle" | undefined;
 
 /** O MySQL não tem `FULL JOIN`. */
 export const joinTypesFor = (d: QbDialect): JoinType[] => (d === "mysql" ? JOIN_TYPES.filter((j) => j !== "FULL") : JOIN_TYPES);
@@ -108,7 +108,8 @@ const RESERVED = new Set([
 /** Aspas só quando preciso (maiúsculas, espaços, palavra reservada...), como num SELECT escrito à mão. */
 export function ident(name: string, d?: QbDialect): string {
   // Firebird: sem aspas o nome vira maiúsculo; os que o banco guarda em minúsculas só se alcançam entre aspas.
-  if (d === "firebird") return `"${name.replace(/"/g, '""')}"`;
+  // Oracle: os nomes ficam em maiúsculas no catálogo, então só entre aspas se alcançam todos.
+  if (d === "firebird" || d === "oracle") return `"${name.replace(/"/g, '""')}"`;
   if (/^[a-z_][a-z0-9_$]*$/.test(name) && !RESERVED.has(name)) return name;
   if (d === "mysql") return `\`${name.replace(/`/g, "``")}\``;
   if (d === "mssql") return `[${name.replace(/]/g, "]]")}]`;
@@ -224,6 +225,12 @@ export function buildSql(state: QbState, defaultSchema: string, d?: QbDialect): 
       out.push(`OFFSET ${offset} ROWS`);
       if (limit) out.push(`FETCH NEXT ${limit} ROWS ONLY`);
     }
+    return out.join("\n");
+  }
+  // Oracle (12c em diante): `OFFSET n ROWS FETCH NEXT m ROWS ONLY`.
+  if (d === "oracle") {
+    if (offset) out.push(`OFFSET ${offset} ROWS`);
+    if (limit) out.push(`FETCH NEXT ${limit} ROWS ONLY`);
     return out.join("\n");
   }
   // Firebird: `ROWS inicio TO fim`.

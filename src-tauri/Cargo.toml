@@ -26,6 +26,7 @@ atlas-sqlite.workspace = true
 atlas-mssql.workspace = true
 atlas-mysql.workspace = true
 atlas-firebird.workspace = true
+atlas-oracle.workspace = true
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 reqwest = { version = "0.13", default-features = false, features = ["native-tls"] }
 serde.workspace = true

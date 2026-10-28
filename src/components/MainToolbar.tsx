@@ -35,6 +35,7 @@ function buttonsFor(provider?: ProviderId): ButtonDef[] {
   // O SQLite não tem funções armazenadas, usuários nem os outros tipos de objeto.
   if (provider === "sqlserver") return all.filter((b) => b.id !== "others");
   if (provider === "mysql") return all.filter((b) => b.id !== "others");
+  if (provider === "oracle") return all.filter((b) => b.id !== "others" && b.id !== "user" && b.id !== "function");
   if (provider === "firebird") return all.filter((b) => b.id !== "others" && b.id !== "user");
   return sqlite ? all.filter((b) => b.id !== "function" && b.id !== "user" && b.id !== "others") : all;
 }

@@ -46,13 +46,13 @@ const isBlank = (v: CellValue) => v === null || v === "";
 
 export function typeKind(type: string): TypeKind {
   const t = type.toLowerCase();
-  if (/^(int|smallint|bigint|tinyint|mediumint|serial|numeric|decimal|real|double|float|money|smallmoney)/.test(t)) return "number";
+  if (/^(int|smallint|bigint|tinyint|mediumint|serial|numeric|decimal|real|double|float|money|smallmoney|number|binary_float|binary_double)/.test(t)) return "number";
   if (/^(timestamp|date|time|interval|smalldatetime)/.test(t)) return "time";
   if (t === "bool" || t === "boolean" || t === "bit") return "bool";
   if (t.startsWith("json")) return "json";
-  if (t === "bytea" || t.includes("binary") || /blob$/.test(t) || t === "image") return "binary";
+  if (t === "bytea" || t.includes("binary") || /blob$/.test(t) || t === "image" || t === "raw" || t === "long raw") return "binary";
   if (t === "uuid" || t === "uniqueidentifier") return "uuid";
-  if (/(char|text|name|citext)/.test(t)) return "text";
+  if (/(char|text|name|citext|^long$|clob)/.test(t)) return "text";
   return "other";
 }
 

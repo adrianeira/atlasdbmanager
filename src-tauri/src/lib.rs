@@ -24,6 +24,7 @@ mod mssql;
 mod mysql;
 mod sqlite;
 mod firebird;
+mod oracle;
 mod transfer;
 mod tunnel;
 mod tx;
@@ -88,6 +89,7 @@ pub fn run() {
         .manage(mssql::MssqlSessions::default())
         .manage(mysql::MysqlSessions::default())
         .manage(firebird::FirebirdSessions::default())
+        .manage(oracle::OracleSessions::default())
         .manage(datasync::Comparisons::default())
         .manage(dsync::ExtComparisons::default())
         .manage(ssync::ExtStructComparisons::default())
@@ -356,6 +358,30 @@ pub fn run() {
             firebird::firebird_tx_table_rows,
             firebird::firebird_tx_table_count,
             firebird::firebird_tx_end,
+            oracle::oracle_test_connection,
+            oracle::oracle_open,
+            oracle::oracle_close,
+            oracle::oracle_close_database,
+            oracle::oracle_list_databases,
+            oracle::oracle_list_schemas,
+            oracle::oracle_list_objects,
+            oracle::oracle_table_detail,
+            oracle::oracle_view_detail,
+            oracle::oracle_schema_diagram,
+            oracle::oracle_list_roles,
+            oracle::oracle_execute,
+            oracle::oracle_cancel,
+            oracle::oracle_table_rows,
+            oracle::oracle_table_count,
+            oracle::oracle_apply,
+            oracle::oracle_fk_labels,
+            oracle::oracle_unsupported,
+            oracle::oracle_tx_begin,
+            oracle::oracle_tx_apply,
+            oracle::oracle_tx_execute,
+            oracle::oracle_tx_table_rows,
+            oracle::oracle_tx_table_count,
+            oracle::oracle_tx_end,
             sqlite::sqlite_test_connection,
             sqlite::sqlite_open,
             sqlite::sqlite_close,

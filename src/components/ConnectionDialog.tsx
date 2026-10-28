@@ -24,8 +24,8 @@ const PROVIDERS: ProviderOption[] = [
   { id: "sqlite", name: "SQLite", defaultPort: 0, defaultUser: "", defaultDb: "", available: true },
   { id: "firebird", name: "Firebird", defaultPort: 3050, defaultUser: "SYSDBA", defaultDb: "", available: true },
   { id: "mariadb", name: "MariaDB", defaultPort: 3306, defaultUser: "root", defaultDb: "", available: true },
+  { id: "oracle", name: "Oracle", defaultPort: 1521, defaultUser: "system", defaultDb: "", available: true },
   // Fora da primeira release (spec §2.1): listados como "em breve", sem fluxo falso.
-  { id: "oracle", name: "Oracle", defaultPort: 1521, defaultUser: "", defaultDb: "", available: false },
   { id: "mongodb", name: "MongoDB", defaultPort: 27017, defaultUser: "", defaultDb: "", available: false },
   { id: "redis", name: "Redis", defaultPort: 6379, defaultUser: "", defaultDb: "", available: false },
 ];
@@ -125,7 +125,7 @@ export function formToParams(f: ConnectionForm, fallbackPassword = ""): Connecti
 }
 
 async function liveTest(f: ConnectionForm, fallbackPassword: string, notSupported: string, profileId?: string): Promise<TestState> {
-  if (f.provider !== "postgresql" && f.provider !== "sqlite" && f.provider !== "sqlserver" && f.provider !== "mysql" && f.provider !== "firebird") return { kind: "fail", message: notSupported };
+  if (f.provider !== "postgresql" && f.provider !== "sqlite" && f.provider !== "sqlserver" && f.provider !== "mysql" && f.provider !== "firebird" && f.provider !== "oracle") return { kind: "fail", message: notSupported };
   try {
     // Campo de senha vazio na edição: o núcleo usa a senha salva no cofre (via profileId).
     const info = await pg.testConnection(formToParams(f, fallbackPassword), profileId);
@@ -441,7 +441,7 @@ export function ConnectionDialog({ editing, recentProviders, knownPassword = "",
         <>
           {row("conn.host", text("host"))}
           {row("conn.port", text("port", { width: 48 }))}
-          {row("conn.initialDb", form.provider === "firebird" ? (
+          {row(form.provider === "oracle" ? "conn.serviceName" : "conn.initialDb", form.provider === "firebird" ? (
             <div className="field-with-button">
               {text("initialDatabase")}
               <button type="button" className="btn btn-ellipsis" title={t("conn.pickFile")} onClick={() => { void chooseOpenFile(["fdb", "gdb"]).then((f) => { if (f) set("initialDatabase", f); }); }}>…</button>
